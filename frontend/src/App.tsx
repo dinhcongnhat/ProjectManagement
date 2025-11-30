@@ -1,0 +1,35 @@
+
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import MainLayout from './layouts/MainLayout';
+import AdminLayout from './layouts/AdminLayout';
+import Dashboard from './pages/admin/Dashboard';
+import ProjectTasks from './pages/admin/ProjectTasks';
+import Workflow from './pages/admin/Workflow';
+import CreateProject from './pages/admin/CreateProject';
+import MyTasks from './pages/MyTasks';
+import Login from './pages/Login';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        {/* Admin Routes */}
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="projects" element={<ProjectTasks />} />
+          <Route path="workflow" element={<Workflow />} />
+          <Route path="create-project" element={<CreateProject />} />
+        </Route>
+
+        {/* User Routes (Temporary using MainLayout for now, can separate later) */}
+        <Route path="/" element={<MainLayout />}>
+          <Route index element={<Navigate to="/my-tasks" replace />} />
+          <Route path="my-tasks" element={<MyTasks />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
