@@ -1,5 +1,8 @@
 
+
+import { useState, useEffect } from 'react';
 import { Users, FolderKanban, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const StatCard = ({ icon: Icon, label, value, color, trend }: any) => (
     <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -17,11 +20,52 @@ const StatCard = ({ icon: Icon, label, value, color, trend }: any) => (
 );
 
 const Dashboard = () => {
-    const stats = [
-        { icon: FolderKanban, label: 'Tổng dự án', value: '12', color: 'bg-blue-500', trend: 8.5 },
-        { icon: Users, label: 'Thành viên', value: '24', color: 'bg-indigo-500', trend: 12 },
-        { icon: CheckCircle2, label: 'Hoàn thành', value: '1,234', color: 'bg-green-500', trend: 5.2 },
-        { icon: AlertCircle, label: 'Trễ hạn', value: '8', color: 'bg-red-500', trend: -2.4 },
+    const [stats, setStats] = useState({
+        totalProjects: 0,
+        totalUsers: 0,
+        completedTasks: 0,
+        overdueTasks: 0
+    });
+    const { token } = useAuth();
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                // Fetch tasks and users to calculate stats
+                // In a real app, we should have a dedicated /api/stats endpoint
+                // For now, we'll fetch all tasks and users and calculate client-side or just mock for demo if API is limited
+                // Let's try to fetch tasks and users
+                const [tasksRes, usersRes] = await Promise.all([
+                    fetch('http://localhost:3000/api/tasks', { headers: { Authorization: `Bearer ${token}` } }),
+                    fetch('http://localhost:3000/api/users', { headers: { Authorization: `Bearer ${token}` } })
+                ]);
+
+                const tasks = await tasksRes.json();
+                const users = await usersRes.json();
+
+                const completed = tasks.filter((t: any) => t.status === 'COMPLETED').length;
+                // Overdue logic needs dates, for now just mock or 0
+                const overdue = 0;
+
+                setStats({
+                    totalProjects: tasks.length, // Using tasks as proxy for projects/work items
+                    totalUsers: users.length,
+                    completedTasks: completed,
+                    overdueTasks: overdue
+                });
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            }
+        };
+
+        if (token) fetchStats();
+    }, [token]);
+
+    const statCards = [
+        { icon: FolderKanban, label: 'Tổng công việc', value: stats.totalProjects, color: 'bg-blue-500', trend: 8.5 },
+        { icon: Users, label: 'Thành viên', value: stats.totalUsers, color: 'bg-indigo-500', trend: 12 },
+        { icon: CheckCircle2, label: 'Hoàn thành', value: stats.completedTasks, color: 'bg-green-500', trend: 5.2 },
+        { icon: AlertCircle, label: 'Trễ hạn', value: stats.overdueTasks, color: 'bg-red-500', trend: -2.4 },
     ];
 
     return (
@@ -38,7 +82,7 @@ const Dashboard = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, index) => (
+                {statCards.map((stat, index) => (
                     <StatCard key={index} {...stat} />
                 ))}
             </div>

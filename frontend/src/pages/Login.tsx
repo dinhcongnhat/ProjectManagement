@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail, Loader2, ArrowRight } from 'lucide-react';
+import { Lock, User as UserIcon, Loader2, ArrowRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Login = () => {
-    const [email, setEmail] = useState('');
+    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
+    const { login } = useAuth();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -20,7 +22,7 @@ const Login = () => {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ email, password }),
+                body: JSON.stringify({ username, password }),
             });
 
             const data = await response.json();
@@ -29,11 +31,14 @@ const Login = () => {
                 throw new Error(data.message || 'Login failed');
             }
 
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
+            login(data.token, data.user);
 
-            // Redirect based on role, for now assume admin goes to dashboard
-            navigate('/admin');
+            // Redirect based on role
+            if (data.user.role === 'ADMIN') {
+                navigate('/admin');
+            } else {
+                navigate('/my-tasks');
+            }
         } catch (err: any) {
             setError(err.message || 'An error occurred during login');
         } finally {
@@ -50,7 +55,7 @@ const Login = () => {
                             <Lock className="w-8 h-8" />
                         </div>
                         <h2 className="text-3xl font-bold text-white mb-2 tracking-tight">Welcome Back</h2>
-                        <p className="text-slate-400">Sign in to access your admin dashboard</p>
+                        <p className="text-slate-400">Sign in to access your account</p>
                     </div>
 
                     {error && (
@@ -62,17 +67,17 @@ const Login = () => {
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-300 ml-1">Email Address</label>
+                            <label className="text-sm font-medium text-slate-300 ml-1">Username</label>
                             <div className="relative group">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 group-focus-within:text-blue-400 transition-colors">
-                                    <Mail className="w-5 h-5" />
+                                    <UserIcon className="w-5 h-5" />
                                 </div>
                                 <input
-                                    type="email"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    type="text"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
                                     className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all duration-200"
-                                    placeholder="admin@example.com"
+                                    placeholder="admin"
                                     required
                                 />
                             </div>
