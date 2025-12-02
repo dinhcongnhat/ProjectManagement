@@ -98,13 +98,31 @@ const CreateProject = () => {
 
     const handleSubmit = async () => {
         try {
+            const formDataToSend = new FormData();
+
+            // Append all text fields
+            Object.entries(formData).forEach(([key, value]) => {
+                if (key === 'implementerIds' || key === 'followerIds') {
+                    // Append arrays as JSON strings or individual items depending on backend expectation
+                    // Here sending as JSON string for simplicity in parsing on backend
+                    formDataToSend.append(key, JSON.stringify(value));
+                } else {
+                    formDataToSend.append(key, value as string);
+                }
+            });
+
+            // Append file if selected
+            if (selectedFile) {
+                formDataToSend.append('file', selectedFile);
+            }
+
             const response = await fetch('http://localhost:3000/api/projects', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    // 'Content-Type': 'multipart/form-data', // Browser sets this automatically with boundary
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify(formData),
+                body: formDataToSend,
             });
 
             if (response.ok) {

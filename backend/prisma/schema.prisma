@@ -71,6 +71,7 @@ model Project {
   value          String?
   progressMethod String
   description    String?
+  attachment     String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

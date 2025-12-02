@@ -2,6 +2,8 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 
+import { uploadFile, getFileStream, getFileStats } from '../services/minioService.js';
+
 export const createProject = async (req: AuthRequest, res: Response) => {
     try {
         const {
@@ -14,12 +16,30 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             value,
             progressMethod,
             managerId,
-            implementerIds,
-            followerIds,
             description,
         } = req.body;
 
+        // Parse array fields if they come as strings (FormData behavior)
+        let implementerIds = req.body.implementerIds;
+        if (typeof implementerIds === 'string') {
+            try {
+                implementerIds = JSON.parse(implementerIds);
+            } catch (e) {
+                implementerIds = [implementerIds];
+            }
+        }
+
+        let followerIds = req.body.followerIds;
+        if (typeof followerIds === 'string') {
+            try {
+                followerIds = JSON.parse(followerIds);
+            } catch (e) {
+                followerIds = [followerIds];
+            }
+        }
+
         console.log('Received createProject body:', req.body);
+        console.log('Received file:', req.file);
 
         // Basic validation
         const missingFields = [];
@@ -30,6 +50,14 @@ export const createProject = async (req: AuthRequest, res: Response) => {
 
         if (missingFields.length > 0) {
             return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
+        }
+
+        let attachmentPath = null;
+        if (req.file) {
+            const fileName = `${Date.now()}-${req.file.originalname}`;
+            attachmentPath = await uploadFile(fileName, req.file.buffer, {
+                'Content-Type': req.file.mimetype,
+            });
         }
 
         const project = await prisma.project.create({
@@ -43,12 +71,13 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 value,
                 progressMethod,
                 description,
+                attachment: attachmentPath,
                 managerId: Number(managerId),
                 implementers: {
-                    connect: implementerIds?.map((id: string) => ({ id: Number(id) })) || [],
+                    connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
                 followers: {
-                    connect: followerIds?.map((id: string) => ({ id: Number(id) })) || [],
+                    connect: Array.isArray(followerIds) ? followerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
             },
         });
@@ -159,6 +188,44 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
         res.json({ message: 'Project deleted' });
     } catch (error) {
         console.error('Error deleting project:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const downloadAttachment = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({
+            where: { id: Number(id) },
+        });
+
+        if (!project || !project.attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const fileStream = await getFileStream(project.attachment);
+        const fileStats = await getFileStats(project.attachment);
+
+        console.log('File stats:', fileStats);
+
+        // Set headers for download/preview
+        const originalName = project.attachment.split('-').slice(1).join('-');
+
+        // Use 'inline' to allow browser preview, fallback to 'attachment' if needed
+        res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+
+        // Set correct Content-Type from MinIO stats
+        if (fileStats.metaData && fileStats.metaData['content-type']) {
+            console.log('Setting Content-Type from metadata:', fileStats.metaData['content-type']);
+            res.setHeader('Content-Type', fileStats.metaData['content-type']);
+        } else {
+            console.log('Setting default Content-Type');
+            res.setHeader('Content-Type', 'application/octet-stream');
+        }
+
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error('Error downloading attachment:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
