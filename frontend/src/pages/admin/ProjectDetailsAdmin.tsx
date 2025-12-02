@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ArrowLeft, Calendar, User, Users, Eye, Clock, CheckCircle2, AlertCircle, FileText, Image as ImageIcon, X, MessageSquare, History } from 'lucide-react';
+import { DiscussionPanel } from '../../components/DiscussionPanel';
+import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
 
 interface Project {
     id: number;
@@ -40,18 +42,7 @@ const ProjectDetailsAdmin = () => {
             if (response.ok) {
                 const data = await response.json();
                 setProject(data);
-
-                // Fetch image as blob if it's an image attachment
-                if (data.attachment && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(data.attachment.split('.').pop()?.toLowerCase() || '')) {
-                    const imgResponse = await fetch(`http://localhost:3000/api/projects/${data.id}/attachment`, {
-                        headers: { Authorization: `Bearer ${token}` },
-                    });
-                    if (imgResponse.ok) {
-                        const blob = await imgResponse.blob();
-                        const url = URL.createObjectURL(blob);
-                        setImageUrl(url);
-                    }
-                }
+                // Don't load attachment immediately for better performance
             }
         } catch (error) {
             console.error('Error fetching project:', error);
@@ -397,10 +388,23 @@ const ProjectDetailsAdmin = () => {
                                         Tài liệu đính kèm
                                     </h2>
                                     <div
-                                        onClick={() => {
+                                        onClick={async () => {
                                             const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '');
-                                            if (isImage && imageUrl) {
-                                                setPreviewImage(imageUrl);
+                                            if (isImage) {
+                                                // Lazy load image when user clicks
+                                                if (!imageUrl) {
+                                                    const imgResponse = await fetch(`http://localhost:3000/api/projects/${project.id}/attachment`, {
+                                                        headers: { Authorization: `Bearer ${token}` },
+                                                    });
+                                                    if (imgResponse.ok) {
+                                                        const blob = await imgResponse.blob();
+                                                        const url = URL.createObjectURL(blob);
+                                                        setImageUrl(url);
+                                                        setPreviewImage(url);
+                                                    }
+                                                } else {
+                                                    setPreviewImage(imageUrl);
+                                                }
                                             } else {
                                                 window.open(`http://localhost:3000/api/projects/${project.id}/attachment`, '_blank');
                                             }
@@ -487,30 +491,13 @@ const ProjectDetailsAdmin = () => {
                 )}
 
                 {/* Discussion Tab */}
-                {activeTab === 'discussion' && (
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="h-96 flex items-center justify-center text-gray-500">
-                            <div className="text-center">
-                                <MessageSquare size={48} className="mx-auto mb-4 opacity-50" />
-                                <p className="text-lg font-medium">Tính năng thảo luận đang được phát triển</p>
-                                <p className="text-sm mt-2">Bạn sẽ có thể gửi tin nhắn, file đính kèm và ghi âm tại đây</p>
-                            </div>
-                        </div>
-                    </div>
+                {activeTab === 'discussion' && project && (
+                    <DiscussionPanel projectId={project.id} />
                 )}
 
                 {/* Activity History Tab */}
-                {activeTab === 'activity' && (
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <h2 className="text-lg font-bold text-gray-900 mb-4">Lịch sử hoạt động</h2>
-                        <div className="space-y-3">
-                            {/* Placeholder - this will be replaced with actual activity data */}
-                            <div className="text-center text-gray-500 py-8">
-                                <History size={48} className="mx-auto mb-4 opacity-50" />
-                                <p>Chưa có hoạt động nào được ghi nhận</p>
-                            </div>
-                        </div>
-                    </div>
+                {activeTab === 'activity' && project && (
+                    <ActivityHistoryPanel projectId={project.id} />
                 )}
 
                 {/* Image Preview Modal */}
