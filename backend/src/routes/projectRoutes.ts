@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createProject, getProjects, getProjectById, updateProject, deleteProject, downloadAttachment } from '../controllers/projectController.js';
+import { createProject, getProjects, getProjectById, updateProject, deleteProject, downloadAttachment, updateProjectProgress, approveProject } from '../controllers/projectController.js';
 import { authenticateToken, isAdmin } from '../middleware/authMiddleware.js';
 
 const router = Router();
@@ -14,5 +14,7 @@ router.get('/:id', authenticateToken, getProjectById);
 router.put('/:id', authenticateToken, isAdmin, updateProject);
 router.delete('/:id', authenticateToken, isAdmin, deleteProject);
 router.get('/:id/attachment', authenticateToken, downloadAttachment);
+router.patch('/:id/progress', authenticateToken, updateProjectProgress);
+router.post('/:id/approve', authenticateToken, isAdmin, approveProject);
 
 export default router;

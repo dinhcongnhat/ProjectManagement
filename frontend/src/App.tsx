@@ -5,6 +5,7 @@ import Dashboard from './pages/admin/Dashboard';
 import ProjectTasks from './pages/admin/ProjectTasks';
 import Workflow from './pages/admin/Workflow';
 import CreateProject from './pages/admin/CreateProject';
+import ProjectDetailsAdmin from './pages/admin/ProjectDetailsAdmin';
 import Users from './pages/admin/Users';
 import MyTasks from './pages/MyTasks';
 import UserDashboard from './pages/UserDashboard';
@@ -27,6 +28,7 @@ function App() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="projects" element={<ProjectTasks />} />
+              <Route path="projects/:id" element={<ProjectDetailsAdmin />} />
               <Route path="users" element={<Users />} />
               <Route path="workflow" element={<Workflow />} />
               <Route path="create-project" element={<CreateProject />} />

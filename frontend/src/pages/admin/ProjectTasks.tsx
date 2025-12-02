@@ -209,7 +209,7 @@ const ProjectTasks = () => {
                     ) : (
                         projects.map((project) => (
                             <div key={project.id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between group">
-                                <div className="flex items-center gap-4">
+                                <Link to={`/admin/projects/${project.id}`} className="flex items-center gap-4 flex-1">
                                     <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
                                         <Briefcase size={24} />
                                     </div>
@@ -225,7 +225,7 @@ const ProjectTasks = () => {
                                             </span>
                                         </div>
                                     </div>
-                                </div>
+                                </Link>
 
                                 <div className="flex items-center gap-6">
                                     <div className="flex items-center gap-2">

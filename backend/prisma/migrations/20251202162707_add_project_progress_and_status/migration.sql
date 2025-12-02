@@ -1,0 +1,6 @@
+-- CreateEnum
+CREATE TYPE "ProjectStatus" AS ENUM ('IN_PROGRESS', 'PENDING_APPROVAL', 'COMPLETED');
+
+-- AlterTable
+ALTER TABLE "Project" ADD COLUMN     "progress" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "status" "ProjectStatus" NOT NULL DEFAULT 'IN_PROGRESS';

@@ -1,5 +1,9 @@
-import { minioClient, bucketName } from '../config/minio';
+import { minioClient, bucketName } from '../config/minio.js';
 import { Readable } from 'stream';
+
+// Audio bucket for voice recordings
+export const audioBucketName = 'projectmanagement';
+export const audioPrefix = 'audio/';
 
 export const checkMinioConnection = async (): Promise<boolean> => {
     try {
@@ -38,6 +42,24 @@ export const uploadFile = async (
         return fileName;
     } catch (error) {
         console.error(`Error uploading file '${fileName}':`, error);
+        throw error;
+    }
+};
+
+// Upload audio file to audio subfolder
+export const uploadAudioFile = async (
+    fileName: string,
+    fileStream: Readable | Buffer | string,
+    metaData: Record<string, any> = {}
+): Promise<string> => {
+    try {
+        await ensureBucketExists();
+        const audioFileName = `${audioPrefix}${fileName}`;
+        await minioClient.putObject(audioBucketName, audioFileName, fileStream, undefined, metaData);
+        console.log(`Audio file '${audioFileName}' uploaded successfully.`);
+        return audioFileName;
+    } catch (error) {
+        console.error(`Error uploading audio file '${fileName}':`, error);
         throw error;
     }
 };
