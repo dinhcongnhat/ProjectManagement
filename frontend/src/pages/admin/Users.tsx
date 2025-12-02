@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, MoreVertical, Pencil, Trash2, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface UserData {
@@ -12,7 +12,6 @@ interface UserData {
 
 const Users = () => {
     const [users, setUsers] = useState<UserData[]>([]);
-    const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingUser, setEditingUser] = useState<UserData | null>(null);
     const { token } = useAuth();
@@ -45,8 +44,6 @@ const Users = () => {
             }
         } catch (error) {
             console.error('Error fetching users:', error);
-        } finally {
-            setLoading(false);
         }
     };
 

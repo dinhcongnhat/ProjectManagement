@@ -19,9 +19,17 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             description,
         } = req.body;
 
+        console.log('Received createProject body:', req.body);
+
         // Basic validation
-        if (!code || !name || !managerId || !progressMethod) {
-            return res.status(400).json({ message: 'Missing required fields' });
+        const missingFields = [];
+        if (!code) missingFields.push('code');
+        if (!name) missingFields.push('name');
+        if (!managerId) missingFields.push('managerId');
+        if (!progressMethod) missingFields.push('progressMethod');
+
+        if (missingFields.length > 0) {
+            return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
         }
 
         const project = await prisma.project.create({
@@ -59,15 +67,38 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
     try {
         const projects = await prisma.project.findMany({
             include: {
-                manager: { select: { name: true } },
-                implementers: { select: { name: true } },
-                followers: { select: { name: true } },
+                manager: { select: { id: true, name: true } },
+                implementers: { select: { id: true, name: true } },
+                followers: { select: { id: true, name: true } },
             },
             orderBy: { createdAt: 'desc' },
         });
         res.json(projects);
     } catch (error) {
         console.error('Error fetching projects:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const getProjectById = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const project = await prisma.project.findUnique({
+            where: { id: Number(id) },
+            include: {
+                manager: { select: { id: true, name: true } },
+                implementers: { select: { id: true, name: true } },
+                followers: { select: { id: true, name: true } },
+            },
+        });
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        res.json(project);
+    } catch (error) {
+        console.error('Error fetching project:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };

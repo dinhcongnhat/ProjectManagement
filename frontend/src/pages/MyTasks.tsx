@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X } from 'lucide-react';
+import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
 
 interface Task {
@@ -12,6 +14,33 @@ interface Task {
     endDate: string | null;
     project?: string; // Optional for now
 }
+
+const DraggableTask = ({ task, children }: { task: Task, children: React.ReactNode }) => {
+    const { attributes, listeners, setNodeRef, transform } = useDraggable({
+        id: task.id.toString(),
+    });
+    const style = {
+        transform: CSS.Translate.toString(transform),
+    };
+
+    return (
+        <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+            {children}
+        </div>
+    );
+};
+
+const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNode }) => {
+    const { setNodeRef } = useDroppable({
+        id: id,
+    });
+
+    return (
+        <div ref={setNodeRef} className="bg-gray-100 p-4 rounded-xl flex flex-col gap-3 h-full min-h-[200px]">
+            {children}
+        </div>
+    );
+};
 
 const MyTasks = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -102,6 +131,9 @@ const MyTasks = () => {
     };
 
     const updateStatus = async (id: number, status: string) => {
+        // Optimistic update
+        setTasks(prev => prev.map(t => t.id === id ? { ...t, status: status as any } : t));
+
         try {
             await fetch(`http://localhost:3000/api/tasks/${id}`, {
                 method: 'PUT',
@@ -111,9 +143,25 @@ const MyTasks = () => {
                 },
                 body: JSON.stringify({ status }),
             });
-            fetchTasks();
+            // fetchTasks(); // No need to re-fetch immediately if optimistic update is correct
         } catch (error) {
             console.error('Error updating status:', error);
+            fetchTasks(); // Revert on error
+        }
+    };
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (over && active.id !== over.id) {
+            const taskId = Number(active.id);
+            const newStatus = over.id as string;
+
+            // Check if status actually changed (though over.id check handles most)
+            const task = tasks.find(t => t.id === taskId);
+            if (task && task.status !== newStatus) {
+                updateStatus(taskId, newStatus);
+            }
         }
     };
 
@@ -214,42 +262,45 @@ const MyTasks = () => {
             )}
 
             {view === 'kanban' && (
-                <div className="grid grid-cols-3 gap-6 h-[500px]">
-                    {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
-                        <div key={status} className="bg-gray-100 p-4 rounded-xl flex flex-col gap-3">
-                            <h3 className="font-bold text-gray-700 mb-2">{status}</h3>
-                            {tasks.filter(t => t.status === status).map(task => (
-                                <div key={task.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 group relative">
-                                    <h4 className="font-medium text-gray-900 pr-6">{task.title}</h4>
-                                    <p className="text-xs text-gray-500 mt-1">{task.type}</p>
+                <DndContext onDragEnd={handleDragEnd}>
+                    <div className="grid grid-cols-3 gap-6 h-[500px]">
+                        {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
+                            <DroppableColumn key={status} id={status}>
+                                <h3 className="font-bold text-gray-700 mb-2">{status}</h3>
+                                {tasks.filter(t => t.status === status).map(task => (
+                                    <DraggableTask key={task.id} task={task}>
+                                        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 group relative cursor-move hover:shadow-md transition-shadow">
+                                            <h4 className="font-medium text-gray-900 pr-6">{task.title}</h4>
+                                            <p className="text-xs text-gray-500 mt-1">{task.type}</p>
 
-                                    {task.type === 'PERSONAL' && (
-                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600">
-                                                <Pencil size={14} />
-                                            </button>
-                                            <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600">
-                                                <Trash2 size={14} />
-                                            </button>
+                                            {task.type === 'PERSONAL' && (
+                                                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button onClick={(e) => { e.stopPropagation(); openEditModal(task); }} className="p-1 text-gray-400 hover:text-blue-600" onPointerDown={(e) => e.stopPropagation()}>
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-600" onPointerDown={(e) => e.stopPropagation()}>
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            )}
+
+                                            <div className="mt-3 flex justify-end">
+                                                {/* Status dropdown removed as drag and drop replaces it, or keep as alternative? Keeping it but maybe hidden or smaller? */}
+                                                {/* Let's keep it for accessibility or fallback, but drag is primary */}
+                                                <span className={`text-xs px-2 py-1 rounded-full ${task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
+                                                    task.status === 'IN_PROGRESS' ? 'bg-orange-100 text-orange-600' :
+                                                        'bg-green-100 text-green-600'
+                                                    }`}>
+                                                    {task.status}
+                                                </span>
+                                            </div>
                                         </div>
-                                    )}
-
-                                    <div className="mt-3 flex justify-end">
-                                        <select
-                                            value={task.status}
-                                            onChange={(e) => updateStatus(task.id, e.target.value)}
-                                            className="text-xs p-1 rounded border border-gray-300"
-                                        >
-                                            <option value="TODO">Todo</option>
-                                            <option value="IN_PROGRESS">In Progress</option>
-                                            <option value="COMPLETED">Completed</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ))}
-                </div>
+                                    </DraggableTask>
+                                ))}
+                            </DroppableColumn>
+                        ))}
+                    </div>
+                </DndContext>
             )}
 
             {view === 'gantt' && (

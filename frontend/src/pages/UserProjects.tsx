@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Briefcase, Calendar, User, Users, Eye } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,6 +26,8 @@ const UserProjects = () => {
                 });
                 const data = await response.json();
                 if (Array.isArray(data)) {
+                    console.log('All Projects:', data);
+                    console.log('Current User:', user);
                     // Filter projects where user is involved
                     const myProjects = data.filter(project =>
                         project.manager?.id === user?.id ||
@@ -52,42 +55,44 @@ const UserProjects = () => {
                     </div>
                 ) : (
                     projects.map((project) => (
-                        <div key={project.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
-                                    <Briefcase size={24} />
-                                </div>
-                                <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                                    {project.code}
-                                </span>
-                            </div>
-
-                            <h3 className="text-lg font-bold text-gray-900 mb-2">{project.name}</h3>
-
-                            <div className="space-y-3">
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    <User size={16} className="text-gray-400" />
-                                    <span>PM: {project.manager?.name || 'N/A'}</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-gray-600">
-                                    <Calendar size={16} className="text-gray-400" />
-                                    <span>
-                                        {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
-                                        {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                        <Link to={`/projects/${project.id}`} key={project.id} className="block group">
+                            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow h-full">
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
+                                        <Briefcase size={24} />
+                                    </div>
+                                    <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                                        {project.code}
                                     </span>
                                 </div>
-                                <div className="flex items-center gap-4 pt-2 border-t border-gray-100">
-                                    <div className="flex items-center gap-1 text-xs text-gray-500" title="Người thực hiện">
-                                        <Users size={14} />
-                                        <span>{project.implementers?.length || 0}</span>
+
+                                <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">{project.name}</h3>
+
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <User size={16} className="text-gray-400" />
+                                        <span>PM: {project.manager?.name || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center gap-1 text-xs text-gray-500" title="Người theo dõi">
-                                        <Eye size={14} />
-                                        <span>{project.followers?.length || 0}</span>
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                        <Calendar size={16} className="text-gray-400" />
+                                        <span>
+                                            {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
+                                            {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-4 pt-2 border-t border-gray-100">
+                                        <div className="flex items-center gap-1 text-xs text-gray-500" title="Người thực hiện">
+                                            <Users size={14} />
+                                            <span>{project.implementers?.length || 0}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-xs text-gray-500" title="Người theo dõi">
+                                            <Eye size={14} />
+                                            <span>{project.followers?.length || 0}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+                        </Link>
                     ))
                 )}
             </div>
