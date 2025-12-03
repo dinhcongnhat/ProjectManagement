@@ -75,7 +75,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
         const loadScript = async () => {
             try {
                 // Get OnlyOffice URL from env
-                const onlyofficeUrl = import.meta.env.VITE_ONLYOFFICE_URL || 'https://onlyoffice.jtscpro.top';
+                const onlyofficeUrl = import.meta.env.VITE_ONLYOFFICE_URL || 'https://jtscoffice.duckdns.org/';
 
                 // Start loading script and checking file in parallel
                 const scriptPromise = loadOnlyOfficeScript(onlyofficeUrl);

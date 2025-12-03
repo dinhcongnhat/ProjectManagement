@@ -10,7 +10,7 @@ declare global {
 
 export const preloadOnlyOfficeScript = () => {
     // Get OnlyOffice URL from env
-    const onlyofficeUrl = import.meta.env.VITE_ONLYOFFICE_URL || 'https://onlyoffice.jtscpro.top';
+    const onlyofficeUrl = import.meta.env.VITE_ONLYOFFICE_URL || 'https://jtscoffice.duckdns.org/';
     
     // Skip if already loaded or loading
     if (window.DocsAPI || window._onlyofficeScriptLoading) {
