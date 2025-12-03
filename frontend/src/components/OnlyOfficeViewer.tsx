@@ -13,8 +13,37 @@ declare global {
         DocsAPI?: {
             DocEditor: new (elementId: string, config: object) => object;
         };
+        _onlyofficeScriptLoading?: Promise<void>;
     }
 }
+
+// Singleton script loader - prevents multiple loads
+const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
+    // Return existing promise if already loading
+    if (window._onlyofficeScriptLoading) {
+        return window._onlyofficeScriptLoading;
+    }
+    
+    // Already loaded
+    if (window.DocsAPI) {
+        return Promise.resolve();
+    }
+    
+    // Start loading
+    window._onlyofficeScriptLoading = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = `${onlyofficeUrl}/web-apps/apps/api/documents/api.js`;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => {
+            window._onlyofficeScriptLoading = undefined;
+            reject(new Error('Không thể tải OnlyOffice'));
+        };
+        document.body.appendChild(script);
+    });
+    
+    return window._onlyofficeScriptLoading;
+};
 
 export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewerProps) => {
     const editorRef = useRef<HTMLDivElement>(null);
@@ -61,24 +90,9 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
 
                 const onlyofficeUrl = checkData.onlyofficeUrl;
 
-                // Check if script already loaded
-                if (window.DocsAPI) {
-                    setScriptLoaded(true);
-                    return;
-                }
-
-                // Load OnlyOffice script
-                const script = document.createElement('script');
-                script.src = `${onlyofficeUrl}/web-apps/apps/api/documents/api.js`;
-                script.async = true;
-                script.onload = () => {
-                    setScriptLoaded(true);
-                };
-                script.onerror = () => {
-                    setError('Không thể tải OnlyOffice. Vui lòng kiểm tra kết nối mạng.');
-                    setLoading(false);
-                };
-                document.body.appendChild(script);
+                // Load script (uses singleton pattern - only loads once)
+                await loadOnlyOfficeScript(onlyofficeUrl);
+                setScriptLoaded(true);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
                 setLoading(false);

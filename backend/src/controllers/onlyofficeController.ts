@@ -4,9 +4,9 @@ import prisma from '../config/prisma.js';
 import { isOfficeFile, getFileStream, getFileStats } from '../services/minioService.js';
 import jwt from 'jsonwebtoken';
 
-const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'http://10.10.1.200:8081';
+const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://onlyoffice.jtscpro.top';
 const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://10.10.1.24:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://ai.jtsc.io.vn/api';
 
 // Get document type based on file extension
 const getDocumentType = (filename: string): string => {

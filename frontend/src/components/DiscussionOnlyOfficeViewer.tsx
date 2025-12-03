@@ -14,8 +14,37 @@ declare global {
         DocsAPI?: {
             DocEditor: new (elementId: string, config: object) => object;
         };
+        _onlyofficeScriptLoading?: Promise<void>;
     }
 }
+
+// Singleton script loader - prevents multiple loads
+const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
+    // Return existing promise if already loading
+    if (window._onlyofficeScriptLoading) {
+        return window._onlyofficeScriptLoading;
+    }
+    
+    // Already loaded
+    if (window.DocsAPI) {
+        return Promise.resolve();
+    }
+    
+    // Start loading
+    window._onlyofficeScriptLoading = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = `${onlyofficeUrl}/web-apps/apps/api/documents/api.js`;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => {
+            window._onlyofficeScriptLoading = undefined;
+            reject(new Error('Không thể tải OnlyOffice'));
+        };
+        document.body.appendChild(script);
+    });
+    
+    return window._onlyofficeScriptLoading;
+};
 
 export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token }: DiscussionOnlyOfficeViewerProps) => {
     const editorRef = useRef<HTMLDivElement>(null);
@@ -45,10 +74,17 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
     useEffect(() => {
         const loadScript = async () => {
             try {
-                // First, check if file is supported and get OnlyOffice URL
-                const checkResponse = await fetch(`${API_URL}/onlyoffice/discussion/check/${messageId}`, {
+                // Get OnlyOffice URL from env
+                const onlyofficeUrl = import.meta.env.VITE_ONLYOFFICE_URL || 'https://onlyoffice.jtscpro.top';
+
+                // Start loading script and checking file in parallel
+                const scriptPromise = loadOnlyOfficeScript(onlyofficeUrl);
+                const checkPromise = fetch(`${API_URL}/onlyoffice/discussion/check/${messageId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
+
+                // Wait for check response first
+                const checkResponse = await checkPromise;
                 
                 if (!checkResponse.ok) {
                     throw new Error('Không thể kiểm tra file');
@@ -60,27 +96,9 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                     throw new Error('File này không được hỗ trợ bởi OnlyOffice');
                 }
 
-                // Get OnlyOffice URL from env
-                const onlyofficeUrl = import.meta.env.VITE_ONLYOFFICE_URL || 'http://10.10.1.200:8081';
-
-                // Check if script already loaded
-                if (window.DocsAPI) {
-                    setScriptLoaded(true);
-                    return;
-                }
-
-                // Load OnlyOffice script
-                const script = document.createElement('script');
-                script.src = `${onlyofficeUrl}/web-apps/apps/api/documents/api.js`;
-                script.async = true;
-                script.onload = () => {
-                    setScriptLoaded(true);
-                };
-                script.onerror = () => {
-                    setError('Không thể tải OnlyOffice. Vui lòng kiểm tra kết nối mạng.');
-                    setLoading(false);
-                };
-                document.body.appendChild(script);
+                // Wait for script to finish loading
+                await scriptPromise;
+                setScriptLoaded(true);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
                 setLoading(false);
