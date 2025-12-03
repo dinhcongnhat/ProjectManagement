@@ -74,10 +74,90 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
 export const deleteUser = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        await prisma.user.delete({ where: { id: Number(id) } });
-        res.json({ message: 'User deleted' });
+        const userId = Number(id);
+
+        // Check if user is managing any projects
+        const managedProjects = await prisma.project.findMany({
+            where: { managerId: userId },
+            select: { id: true, name: true }
+        });
+
+        if (managedProjects.length > 0) {
+            return res.status(400).json({ 
+                message: `Không thể xóa người dùng này vì đang quản lý ${managedProjects.length} dự án. Vui lòng chuyển quyền quản lý trước khi xóa.`,
+                projects: managedProjects
+            });
+        }
+
+        // Check if user has created tasks
+        const createdTasks = await prisma.task.findMany({
+            where: { creatorId: userId },
+            select: { id: true }
+        });
+
+        // Check if user has assigned tasks
+        const assignedTasks = await prisma.task.findMany({
+            where: { assigneeId: userId },
+            select: { id: true }
+        });
+
+        // Use transaction to safely delete user and related data
+        await prisma.$transaction(async (tx) => {
+            // Disconnect from implementers
+            const implementedProjects = await tx.project.findMany({
+                where: { implementers: { some: { id: userId } } }
+            });
+            for (const project of implementedProjects) {
+                await tx.project.update({
+                    where: { id: project.id },
+                    data: { implementers: { disconnect: { id: userId } } }
+                });
+            }
+
+            // Disconnect from followers
+            const followedProjects = await tx.project.findMany({
+                where: { followers: { some: { id: userId } } }
+            });
+            for (const project of followedProjects) {
+                await tx.project.update({
+                    where: { id: project.id },
+                    data: { followers: { disconnect: { id: userId } } }
+                });
+            }
+
+            // Update created tasks to transfer to current admin
+            if (createdTasks.length > 0) {
+                await tx.task.updateMany({
+                    where: { creatorId: userId },
+                    data: { creatorId: req.user?.id || 1 }
+                });
+            }
+
+            // Unassign tasks from user
+            if (assignedTasks.length > 0) {
+                await tx.task.updateMany({
+                    where: { assigneeId: userId },
+                    data: { assigneeId: null }
+                });
+            }
+
+            // Delete user's messages
+            await tx.message.deleteMany({
+                where: { senderId: userId }
+            });
+
+            // Delete user's activities
+            await tx.projectActivity.deleteMany({
+                where: { userId: userId }
+            });
+
+            // Finally delete the user
+            await tx.user.delete({ where: { id: userId } });
+        });
+
+        res.json({ message: 'User deleted successfully' });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Không thể xóa người dùng. Vui lòng thử lại.' });
     }
 };
