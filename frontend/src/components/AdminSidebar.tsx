@@ -21,16 +21,14 @@ const AdminSidebar = () => {
     };
 
     return (
-        <aside className="w-72 bg-slate-900 text-white flex flex-col h-screen fixed left-0 top-0 z-20 shadow-xl">
-            <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-white">
-                    A
-                </div>
-                <h1 className="text-xl font-bold tracking-tight">Admin<span className="text-blue-400">Portal</span></h1>
+        <aside className="w-72 bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-20 shadow-lg">
+            <div className="p-6 flex items-center gap-3 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-cyan-50/50">
+                <img src="/Logo.png" alt="Logo" className="h-10 w-auto" />
+                <h1 className="text-xl font-bold tracking-tight text-gray-800">Admin<span className="text-blue-600">Portal</span></h1>
             </div>
 
-            <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4 px-4 mt-2">Menu chính</div>
+            <nav className="flex-1 p-4 space-y-1 overflow-y-auto bg-gray-50/30">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-4 mt-2">Menu chính</div>
                 {navItems.map((item) => (
                     <NavLink
                         key={item.path}
@@ -40,8 +38,8 @@ const AdminSidebar = () => {
                             clsx(
                                 'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group',
                                 isActive
-                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg shadow-blue-500/25'
+                                    : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
                             )
                         }
                     >
@@ -51,10 +49,10 @@ const AdminSidebar = () => {
                 ))}
             </nav>
 
-            <div className="p-4 border-t border-slate-800">
+            <div className="p-4 border-t border-gray-100 bg-white">
                 <button
                     onClick={handleLogout}
-                    className="flex items-center gap-3 px-4 py-3 w-full text-left text-slate-400 hover:bg-red-500/10 hover:text-red-400 rounded-xl transition-all duration-200 group"
+                    className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all duration-200 group"
                 >
                     <LogOut size={20} className="group-hover:-translate-x-1 transition-transform" />
                     <span className="font-medium">Đăng xuất</span>

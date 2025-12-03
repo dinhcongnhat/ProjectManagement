@@ -34,6 +34,7 @@ enum MessageType {
   TEXT
   VOICE
   FILE
+  IMAGE
   TEXT_WITH_FILE
 }
 

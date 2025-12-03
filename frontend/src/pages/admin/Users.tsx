@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../config/api';
 
 interface UserData {
     id: number;
@@ -10,6 +11,14 @@ interface UserData {
     position: string | null;
 }
 
+interface FormDataType {
+    username: string;
+    password: string;
+    name: string;
+    role: string;
+    position: string;
+}
+
 const Users = () => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [showModal, setShowModal] = useState(false);
@@ -17,7 +26,7 @@ const Users = () => {
     const { token } = useAuth();
 
     // Form state
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<FormDataType>({
         username: '',
         password: '',
         name: '',
@@ -25,30 +34,32 @@ const Users = () => {
         position: '',
     });
 
-    const fetchUsers = async () => {
-        try {
-            const response = await fetch('http://localhost:3000/api/users', {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            if (!response.ok) {
-                console.error('Failed to fetch users:', response.status, response.statusText);
-                return;
-            }
-
-            const data = await response.json();
-            if (Array.isArray(data)) {
-                setUsers(data);
-            } else {
-                console.error('Users data is not an array:', data);
-            }
-        } catch (error) {
-            console.error('Error fetching users:', error);
-        }
-    };
-
     useEffect(() => {
-        fetchUsers();
+        const fetchUsers = async () => {
+            try {
+                const response = await fetch(`${API_URL}/users`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                if (!response.ok) {
+                    console.error('Failed to fetch users:', response.status, response.statusText);
+                    return;
+                }
+
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    setUsers(data);
+                } else {
+                    console.error('Users data is not an array:', data);
+                }
+            } catch (error) {
+                console.error('Error fetching users:', error);
+            }
+        };
+        
+        if (token) {
+            fetchUsers();
+        }
     }, [token]);
 
     const resetForm = () => {
@@ -61,13 +72,13 @@ const Users = () => {
         e.preventDefault();
         try {
             const url = editingUser
-                ? `http://localhost:3000/api/users/${editingUser.id}`
-                : 'http://localhost:3000/api/users';
+                ? `${API_URL}/users/${editingUser.id}`
+                : `${API_URL}/users`;
 
             const method = editingUser ? 'PUT' : 'POST';
 
             // Don't send empty password when editing if not changed
-            const bodyData: any = { ...formData };
+            const bodyData: Partial<FormDataType> = { ...formData };
             if (editingUser && !bodyData.password) {
                 delete bodyData.password;
             }
@@ -83,7 +94,14 @@ const Users = () => {
 
             if (response.ok) {
                 resetForm();
-                fetchUsers();
+                // Refetch users
+                const usersResponse = await fetch(`${API_URL}/users`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                const usersData = await usersResponse.json();
+                if (Array.isArray(usersData)) {
+                    setUsers(usersData);
+                }
             } else {
                 alert('Failed to save user');
             }
@@ -95,13 +113,20 @@ const Users = () => {
     const handleDeleteUser = async (id: number) => {
         if (!confirm('Are you sure you want to delete this user?')) return;
         try {
-            const response = await fetch(`http://localhost:3000/api/users/${id}`, {
+            const response = await fetch(`${API_URL}/users/${id}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
             });
 
             if (response.ok) {
-                fetchUsers();
+                // Refetch users
+                const usersResponse = await fetch(`${API_URL}/users`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                const usersData = await usersResponse.json();
+                if (Array.isArray(usersData)) {
+                    setUsers(usersData);
+                }
             } else {
                 alert('Failed to delete user');
             }
@@ -126,8 +151,8 @@ const Users = () => {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-                    <p className="text-sm text-gray-500 mt-1">Manage system users and their roles</p>
+                    <h2 className="text-2xl font-bold text-gray-900">Quản lý nhân viên</h2>
+                    <p className="text-sm text-gray-500 mt-1">Quản lý hệ thống tài khoản của nhân viên</p>
                 </div>
                 <button
                     onClick={() => { resetForm(); setShowModal(true); }}
@@ -174,10 +199,10 @@ const Users = () => {
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => openEditModal(user)} className="p-1 text-gray-400 hover:text-blue-600">
+                                        <button title="Chỉnh sửa" onClick={() => openEditModal(user)} className="p-1 text-gray-400 hover:text-blue-600">
                                             <Pencil size={18} />
                                         </button>
-                                        <button onClick={() => handleDeleteUser(user.id)} className="p-1 text-gray-400 hover:text-red-600">
+                                        <button title="Xóa" onClick={() => handleDeleteUser(user.id)} className="p-1 text-gray-400 hover:text-red-600">
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
@@ -194,7 +219,7 @@ const Users = () => {
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-gray-900">{editingUser ? 'Edit User' : 'Create New User'}</h3>
-                            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
+                            <button title="Đóng" onClick={resetForm} className="text-gray-400 hover:text-gray-600">
                                 <X size={24} />
                             </button>
                         </div>
@@ -204,6 +229,7 @@ const Users = () => {
                                 <input
                                     type="text"
                                     required
+                                    placeholder="Nhập họ tên"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -214,6 +240,7 @@ const Users = () => {
                                 <input
                                     type="text"
                                     required
+                                    placeholder="Nhập tên đăng nhập"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.username}
                                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -226,6 +253,7 @@ const Users = () => {
                                 <input
                                     type="password"
                                     required={!editingUser}
+                                    placeholder="Nhập mật khẩu"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.password}
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -234,6 +262,7 @@ const Users = () => {
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
                                 <select
+                                    title="Chọn vai trò"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.role}
                                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
@@ -246,6 +275,7 @@ const Users = () => {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
                                 <input
                                     type="text"
+                                    placeholder="Nhập chức vụ"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.position}
                                     onChange={(e) => setFormData({ ...formData, position: e.target.value })}

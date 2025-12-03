@@ -1,14 +1,19 @@
 import type { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
-import { uploadFile, uploadAudioFile } from '../services/minioService.js';
+import { uploadFile, uploadAudioFile, uploadDiscussionFile, getPresignedUrl, deleteFile } from '../services/minioService.js';
 import { Readable } from 'stream';
 
 const prisma = new PrismaClient();
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
-export const upload = multer({ storage });
+export const upload = multer({ 
+    storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB max file size
+    }
+});
 
 // Get all messages for a project
 export const getMessages = async (req: Request, res: Response): Promise<void> => {
@@ -30,12 +35,26 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
             take: limit
         });
 
+        // Generate presigned URLs for attachments
+        const messagesWithUrls = await Promise.all(messages.map(async (message) => {
+            if (message.attachment) {
+                try {
+                    const attachmentUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
+                    return { ...message, attachmentUrl };
+                } catch (error) {
+                    console.error('Error generating presigned URL for message:', message.id, error);
+                    return { ...message, attachmentUrl: null };
+                }
+            }
+            return { ...message, attachmentUrl: null };
+        }));
+
         const total = await prisma.message.count({
             where: { projectId: parseInt(projectId) }
         });
 
         res.json({
-            messages,
+            messages: messagesWithUrls,
             pagination: {
                 page,
                 limit,
@@ -136,19 +155,24 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
         // Generate unique filename
         const timestamp = Date.now();
         const extension = file.originalname.split('.').pop();
-        const fileName = `file-${userId}-${timestamp}.${extension}`;
+        const originalName = file.originalname;
+        const fileName = `${projectId}-${userId}-${timestamp}-${originalName}`;
 
-        // Upload to MinIO
-        const filePath = await uploadFile(fileName, file.buffer, {
-            'Content-Type': file.mimetype
+        // Upload to MinIO discussions folder
+        const filePath = await uploadDiscussionFile(fileName, file.buffer, {
+            'Content-Type': file.mimetype,
+            'X-Original-Name': encodeURIComponent(originalName)
         });
 
+        // Determine message type based on file type
+        const isImage = file.mimetype.startsWith('image/');
+        const messageType = content ? 'TEXT_WITH_FILE' : (isImage ? 'IMAGE' : 'FILE');
+
         // Create message record
-        const messageType = content ? 'TEXT_WITH_FILE' : 'FILE';
         const message = await prisma.message.create({
             data: {
                 content: content || null,
-                messageType,
+                messageType: messageType as any,
                 attachment: filePath,
                 projectId: parseInt(projectId),
                 senderId: userId
@@ -160,7 +184,10 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
             }
         });
 
-        res.status(201).json(message);
+        // Generate presigned URL for the attachment
+        const attachmentUrl = await getPresignedUrl(filePath, 3600);
+
+        res.status(201).json({ ...message, attachmentUrl, originalFileName: originalName });
     } catch (error) {
         console.error('Error uploading file message:', error);
         res.status(500).json({ error: 'Failed to upload file message' });

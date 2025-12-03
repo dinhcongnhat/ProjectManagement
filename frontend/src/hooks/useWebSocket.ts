@@ -1,16 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState} from 'react';
 import { io, Socket } from 'socket.io-client';
+import { WS_URL } from '../config/api';
+
+interface MessagePayload {
+    content?: string;
+    type?: string;
+    [key: string]: unknown;
+}
 
 interface UseWebSocketReturn {
-    socket: Socket | null;
+    socketRef: React.MutableRefObject<Socket | null>;
     connected: boolean;
-    sendMessage: (projectId: number, message: any) => void;
+    sendMessage: (projectId: number, message: MessagePayload) => void;
     typing: (projectId: number, userName: string) => void;
     stopTyping: (projectId: number) => void;
 }
 
 export const useWebSocket = (token: string | null): UseWebSocketReturn => {
-    const [socket, setSocket] = useState<Socket | null>(null);
     const [connected, setConnected] = useState(false);
     const socketRef = useRef<Socket | null>(null);
 
@@ -18,7 +24,7 @@ export const useWebSocket = (token: string | null): UseWebSocketReturn => {
         if (!token) return;
 
         // Connect to Socket.io server
-        const newSocket = io('http://localhost:3000', {
+        const newSocket = io(WS_URL, {
             auth: { token }
         });
 
@@ -32,20 +38,20 @@ export const useWebSocket = (token: string | null): UseWebSocketReturn => {
             setConnected(false);
         });
 
-        newSocket.on('connect_error', (error) => {
+        newSocket.on('connect_error', (error: Error) => {
             console.error('WebSocket connection error:', error);
             setConnected(false);
         });
 
         socketRef.current = newSocket;
-        setSocket(newSocket);
 
         return () => {
             newSocket.disconnect();
+            socketRef.current = null;
         };
     }, [token]);
 
-    const sendMessage = (projectId: number, message: any) => {
+    const sendMessage = (projectId: number, message: MessagePayload) => {
         if (socketRef.current) {
             socketRef.current.emit('send_message', { projectId, message });
         }
@@ -64,7 +70,7 @@ export const useWebSocket = (token: string | null): UseWebSocketReturn => {
     };
 
     return {
-        socket,
+        socketRef,
         connected,
         sendMessage,
         typing,

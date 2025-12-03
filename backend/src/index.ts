@@ -12,12 +12,13 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-        methods: ['GET', 'POST']
+        origin: '*',
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
     }
 });
 
 const port = process.env.PORT || 3000;
+const host = process.env.HOST || '0.0.0.0';
 
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
@@ -26,7 +27,11 @@ import projectRoutes from './routes/projectRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
@@ -114,7 +119,8 @@ io.on('connection', (socket) => {
     });
 });
 
-httpServer.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+httpServer.listen(Number(port), host, () => {
+    console.log(`Server is running on http://${host}:${port}`);
     console.log(`Socket.io server ready`);
+    console.log(`Access from LAN: http://<your-ip>:${port}`);
 });

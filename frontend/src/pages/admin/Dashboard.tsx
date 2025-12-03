@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Users, FolderKanban, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../config/api';
 
 interface Project {
     id: number;
@@ -42,8 +43,8 @@ const Dashboard = () => {
         const fetchStats = async () => {
             try {
                 const [projectsRes, usersRes] = await Promise.all([
-                    fetch('http://localhost:3000/api/projects', { headers: { Authorization: `Bearer ${token}` } }),
-                    fetch('http://localhost:3000/api/users', { headers: { Authorization: `Bearer ${token}` } })
+                    fetch(`${API_URL}/projects`, { headers: { Authorization: `Bearer ${token}` } }),
+                    fetch(`${API_URL}/users`, { headers: { Authorization: `Bearer ${token}` } })
                 ]);
 
                 if (projectsRes.ok && usersRes.ok) {
@@ -83,7 +84,7 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
                 <div className="flex gap-3">
-                    <select className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select title="Chọn khoảng thời gian" className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option>7 ngày qua</option>
                         <option>Tháng này</option>
                         <option>Năm nay</option>

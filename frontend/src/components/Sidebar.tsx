@@ -22,7 +22,8 @@ const Sidebar = () => {
 
     return (
         <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-10">
-            <div className="p-6 flex items-center justify-center border-b border-gray-100">
+            <div className="p-6 flex items-center justify-center gap-3 border-b border-gray-100">
+                <img src="/Logo.png" alt="Logo" className="h-12 w-auto" />
                 <h1 className="text-2xl font-bold text-blue-600">JTSC<span className="text-gray-800">Manager</span></h1>
             </div>
 

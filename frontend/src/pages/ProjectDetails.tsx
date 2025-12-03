@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Calendar, User, Users, Eye, Clock, X, FileText, Image as ImageIcon, MessageSquare, History } from 'lucide-react';
 import { DiscussionPanel } from '../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
+import { API_URL } from '../config/api';
 
 interface Project {
     id: number;
@@ -31,10 +32,16 @@ const ProjectDetails = () => {
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'discussion' | 'activity'>('info');
 
+    const cleanupImageUrl = useCallback(() => {
+        if (imageUrl) {
+            URL.revokeObjectURL(imageUrl);
+        }
+    }, [imageUrl]);
+
     useEffect(() => {
         const fetchProject = async () => {
             try {
-                const response = await fetch(`http://localhost:3000/api/projects/${id}`, {
+                const response = await fetch(`${API_URL}/projects/${id}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 if (response.ok) {
@@ -53,11 +60,9 @@ const ProjectDetails = () => {
 
         // Cleanup blob URL on unmount
         return () => {
-            if (imageUrl) {
-                URL.revokeObjectURL(imageUrl);
-            }
+            cleanupImageUrl();
         };
-    }, [token, id]);
+    }, [token, id, cleanupImageUrl]);
 
     if (loading) return <div className="p-6">Loading...</div>;
     if (!project) return <div className="p-6">Project not found</div>;
@@ -165,7 +170,7 @@ const ProjectDetails = () => {
                                             if (isImage) {
                                                 // Lazy load image when user clicks
                                                 if (!imageUrl) {
-                                                    const imgResponse = await fetch(`http://localhost:3000/api/projects/${project.id}/attachment`, {
+                                                    const imgResponse = await fetch(`${API_URL}/projects/${project.id}/attachment`, {
                                                         headers: { Authorization: `Bearer ${token}` },
                                                     });
                                                     if (imgResponse.ok) {
@@ -178,7 +183,7 @@ const ProjectDetails = () => {
                                                     setPreviewImage(imageUrl);
                                                 }
                                             } else {
-                                                window.open(`http://localhost:3000/api/projects/${project.id}/attachment`, '_blank');
+                                                window.open(`${API_URL}/projects/${project.id}/attachment`, '_blank');
                                             }
                                         }}
                                         className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border-2 border-gray-200 hover:border-blue-400 cursor-pointer transition-all hover:shadow-md group"
@@ -308,6 +313,7 @@ const ProjectDetails = () => {
                     <button
                         className="absolute top-4 right-4 text-white hover:text-gray-300 p-3 bg-black/50 rounded-full hover:bg-black/70 transition-all"
                         onClick={() => setPreviewImage(null)}
+                        title="Đóng"
                     >
                         <X size={28} />
                     </button>

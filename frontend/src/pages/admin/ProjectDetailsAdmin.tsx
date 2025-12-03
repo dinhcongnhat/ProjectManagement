@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../config/api';
 import { ArrowLeft, Calendar, User, Users, Eye, Clock, CheckCircle2, AlertCircle, FileText, Image as ImageIcon, X, MessageSquare, History } from 'lucide-react';
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
@@ -36,7 +37,7 @@ const ProjectDetailsAdmin = () => {
 
     const fetchProject = async () => {
         try {
-            const response = await fetch(`http://localhost:3000/api/projects/${id}`, {
+            const response = await fetch(`${API_URL}/projects/${id}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             if (response.ok) {
@@ -69,7 +70,7 @@ const ProjectDetailsAdmin = () => {
 
         setApproving(true);
         try {
-            const response = await fetch(`http://localhost:3000/api/projects/${project.id}/approve`, {
+            const response = await fetch(`${API_URL}/projects/${project.id}/approve`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -216,11 +217,12 @@ const ProjectDetailsAdmin = () => {
                                                 type="range"
                                                 min="0"
                                                 max="100"
+                                                title="Điều chỉnh tiến độ"
                                                 value={project.progress}
                                                 onChange={async (e) => {
                                                     const newProgress = Number(e.target.value);
                                                     try {
-                                                        const response = await fetch(`http://localhost:3000/api/projects/${project.id}/progress`, {
+                                                        const response = await fetch(`${API_URL}/projects/${project.id}/progress`, {
                                                             method: 'PATCH',
                                                             headers: {
                                                                 'Content-Type': 'application/json',
@@ -262,11 +264,12 @@ const ProjectDetailsAdmin = () => {
                                         <div className="flex items-center gap-3">
                                             <label className="text-sm font-medium text-gray-700">Chọn nhanh:</label>
                                             <select
+                                                title="Chọn tiến độ"
                                                 value={project.progress}
                                                 onChange={async (e) => {
                                                     const newProgress = Number(e.target.value);
                                                     try {
-                                                        const response = await fetch(`http://localhost:3000/api/projects/${project.id}/progress`, {
+                                                        const response = await fetch(`${API_URL}/projects/${project.id}/progress`, {
                                                             method: 'PATCH',
                                                             headers: {
                                                                 'Content-Type': 'application/json',
@@ -393,7 +396,7 @@ const ProjectDetailsAdmin = () => {
                                             if (isImage) {
                                                 // Lazy load image when user clicks
                                                 if (!imageUrl) {
-                                                    const imgResponse = await fetch(`http://localhost:3000/api/projects/${project.id}/attachment`, {
+                                                    const imgResponse = await fetch(`${API_URL}/projects/${project.id}/attachment`, {
                                                         headers: { Authorization: `Bearer ${token}` },
                                                     });
                                                     if (imgResponse.ok) {
@@ -406,7 +409,7 @@ const ProjectDetailsAdmin = () => {
                                                     setPreviewImage(imageUrl);
                                                 }
                                             } else {
-                                                window.open(`http://localhost:3000/api/projects/${project.id}/attachment`, '_blank');
+                                                window.open(`${API_URL}/projects/${project.id}/attachment`, '_blank');
                                             }
                                         }}
                                         className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border-2 border-gray-200 hover:border-blue-400 cursor-pointer transition-all hover:shadow-md group"
@@ -507,6 +510,7 @@ const ProjectDetailsAdmin = () => {
                         onClick={() => setPreviewImage(null)}
                     >
                         <button
+                            title="Đóng"
                             className="absolute top-4 right-4 text-white hover:text-gray-300 p-3 bg-black/50 rounded-full hover:bg-black/70 transition-all"
                             onClick={() => setPreviewImage(null)}
                         >

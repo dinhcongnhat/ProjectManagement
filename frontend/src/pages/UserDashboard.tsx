@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config/api';
 import { CheckCircle, Clock, AlertCircle } from 'lucide-react';
 
 const UserDashboard = () => {
@@ -9,7 +10,7 @@ const UserDashboard = () => {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const response = await fetch('http://localhost:3000/api/tasks', {
+                const response = await fetch(`${API_URL}/tasks`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
                 const data = await response.json();

@@ -4,6 +4,7 @@ import { Readable } from 'stream';
 // Audio bucket for voice recordings
 export const audioBucketName = 'projectmanagement';
 export const audioPrefix = 'audio/';
+export const discussionPrefix = 'discussions/';
 
 export const checkMinioConnection = async (): Promise<boolean> => {
     try {
@@ -80,6 +81,47 @@ export const getFileStats = async (fileName: string): Promise<any> => {
         return await minioClient.statObject(bucketName, fileName);
     } catch (error) {
         console.error(`Error getting file stats for '${fileName}':`, error);
+        throw error;
+    }
+};
+
+// Upload discussion attachment file
+export const uploadDiscussionFile = async (
+    fileName: string,
+    fileStream: Readable | Buffer | string,
+    metaData: Record<string, any> = {}
+): Promise<string> => {
+    try {
+        await ensureBucketExists();
+        const discussionFileName = `${discussionPrefix}${fileName}`;
+        await minioClient.putObject(bucketName, discussionFileName, fileStream, undefined, metaData);
+        console.log(`Discussion file '${discussionFileName}' uploaded successfully.`);
+        return discussionFileName;
+    } catch (error) {
+        console.error(`Error uploading discussion file '${fileName}':`, error);
+        throw error;
+    }
+};
+
+// Get presigned URL for file download (for viewing images directly)
+export const getPresignedUrl = async (fileName: string, expirySeconds: number = 3600): Promise<string> => {
+    try {
+        await ensureBucketExists();
+        return await minioClient.presignedGetObject(bucketName, fileName, expirySeconds);
+    } catch (error) {
+        console.error(`Error getting presigned URL for '${fileName}':`, error);
+        throw error;
+    }
+};
+
+// Delete file from MinIO
+export const deleteFile = async (fileName: string): Promise<void> => {
+    try {
+        await ensureBucketExists();
+        await minioClient.removeObject(bucketName, fileName);
+        console.log(`File '${fileName}' deleted successfully.`);
+    } catch (error) {
+        console.error(`Error deleting file '${fileName}':`, error);
         throw error;
     }
 };

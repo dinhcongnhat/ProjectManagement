@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X } from 'lucide-react';
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config/api';
 
 interface Task {
     id: number;
@@ -56,9 +57,9 @@ const MyTasks = () => {
         type: 'PERSONAL'
     });
 
-    const fetchTasks = async () => {
+    const fetchTasks = useCallback(async () => {
         try {
-            const response = await fetch('http://localhost:3000/api/tasks', {
+            const response = await fetch(`${API_URL}/tasks`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await response.json();
@@ -66,11 +67,12 @@ const MyTasks = () => {
         } catch (error) {
             console.error('Error fetching tasks:', error);
         }
-    };
+    }, [token]);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (token) fetchTasks();
-    }, [token]);
+    }, [token, fetchTasks]);
 
     const resetForm = () => {
         setFormData({ title: '', description: '', startDate: '', endDate: '', type: 'PERSONAL' });
@@ -82,8 +84,8 @@ const MyTasks = () => {
         e.preventDefault();
         try {
             const url = editingTask
-                ? `http://localhost:3000/api/tasks/${editingTask.id}`
-                : 'http://localhost:3000/api/tasks';
+                ? `${API_URL}/tasks/${editingTask.id}`
+                : `${API_URL}/tasks`;
 
             const method = editingTask ? 'PUT' : 'POST';
 
@@ -108,7 +110,7 @@ const MyTasks = () => {
     const handleDeleteTask = async (id: number) => {
         if (!confirm('Bạn có chắc chắn muốn xóa công việc này?')) return;
         try {
-            await fetch(`http://localhost:3000/api/tasks/${id}`, {
+            await fetch(`${API_URL}/tasks/${id}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -132,10 +134,10 @@ const MyTasks = () => {
 
     const updateStatus = async (id: number, status: string) => {
         // Optimistic update
-        setTasks(prev => prev.map(t => t.id === id ? { ...t, status: status as any } : t));
+        setTasks(prev => prev.map(t => t.id === id ? { ...t, status: status as Task['status'] } : t));
 
         try {
-            await fetch(`http://localhost:3000/api/tasks/${id}`, {
+            await fetch(`${API_URL}/tasks/${id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -177,9 +179,9 @@ const MyTasks = () => {
                 <h2 className="text-2xl font-bold text-gray-900">Công việc của tôi</h2>
                 <div className="flex gap-2">
                     <div className="flex bg-white rounded-lg border border-gray-200 p-1">
-                        <button onClick={() => setView('list')} className={`p-2 rounded ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`}><List size={20} /></button>
-                        <button onClick={() => setView('kanban')} className={`p-2 rounded ${view === 'kanban' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`}><Layout size={20} /></button>
-                        <button onClick={() => setView('gantt')} className={`p-2 rounded ${view === 'gantt' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`}><Calendar size={20} /></button>
+                        <button onClick={() => setView('list')} className={`p-2 rounded ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`} title="Xem dạng danh sách"><List size={20} /></button>
+                        <button onClick={() => setView('kanban')} className={`p-2 rounded ${view === 'kanban' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`} title="Xem dạng Kanban"><Layout size={20} /></button>
+                        <button onClick={() => setView('gantt')} className={`p-2 rounded ${view === 'gantt' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`} title="Xem dạng Gantt"><Calendar size={20} /></button>
                     </div>
                     <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                         <Plus size={20} /> Tạo việc cá nhân
@@ -227,6 +229,7 @@ const MyTasks = () => {
                                             checked={task.status === 'COMPLETED'}
                                             onChange={() => updateStatus(task.id, task.status === 'COMPLETED' ? 'TODO' : 'COMPLETED')}
                                             className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            title="Đánh dấu hoàn thành"
                                         />
                                         <div>
                                             <h4 className={`font-medium text-gray-900 ${task.status === 'COMPLETED' ? 'line-through text-gray-500' : ''}`}>{task.title}</h4>
@@ -238,6 +241,7 @@ const MyTasks = () => {
                                             value={task.status}
                                             onChange={(e) => updateStatus(task.id, e.target.value)}
                                             className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 border-none focus:ring-0"
+                                            title="Chọn trạng thái"
                                         >
                                             <option value="TODO">Todo</option>
                                             <option value="IN_PROGRESS">In Progress</option>
@@ -245,10 +249,10 @@ const MyTasks = () => {
                                         </select>
                                         {task.type === 'PERSONAL' && (
                                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600">
+                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
                                                     <Pencil size={16} />
                                                 </button>
-                                                <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600">
+                                                <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
                                                     <Trash2 size={16} />
                                                 </button>
                                             </div>
@@ -275,10 +279,10 @@ const MyTasks = () => {
 
                                             {task.type === 'PERSONAL' && (
                                                 <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={(e) => { e.stopPropagation(); openEditModal(task); }} className="p-1 text-gray-400 hover:text-blue-600" onPointerDown={(e) => e.stopPropagation()}>
+                                                    <button onClick={(e) => { e.stopPropagation(); openEditModal(task); }} className="p-1 text-gray-400 hover:text-blue-600" onPointerDown={(e) => e.stopPropagation()} title="Chỉnh sửa">
                                                         <Pencil size={14} />
                                                     </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-600" onPointerDown={(e) => e.stopPropagation()}>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-600" onPointerDown={(e) => e.stopPropagation()} title="Xóa">
                                                         <Trash2 size={14} />
                                                     </button>
                                                 </div>
@@ -321,10 +325,10 @@ const MyTasks = () => {
                                     {task.title}
                                     {task.type === 'PERSONAL' && (
                                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600">
+                                            <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
                                                 <Pencil size={14} />
                                             </button>
-                                            <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600">
+                                            <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
                                                 <Trash2 size={14} />
                                             </button>
                                         </div>
@@ -355,7 +359,7 @@ const MyTasks = () => {
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-xl font-bold text-gray-900">{editingTask ? 'Edit Task' : 'Create Personal Task'}</h3>
-                            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
+                            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600" title="Đóng">
                                 <X size={24} />
                             </button>
                         </div>
@@ -368,6 +372,7 @@ const MyTasks = () => {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.title}
                                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                    placeholder="Nhập tiêu đề"
                                 />
                             </div>
                             <div>
@@ -376,6 +381,7 @@ const MyTasks = () => {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={formData.description}
                                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                    placeholder="Nhập mô tả"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -386,6 +392,7 @@ const MyTasks = () => {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         value={formData.startDate}
                                         onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                        title="Ngày bắt đầu"
                                     />
                                 </div>
                                 <div>
@@ -395,6 +402,7 @@ const MyTasks = () => {
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         value={formData.endDate}
                                         onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                                        title="Ngày kết thúc"
                                     />
                                 </div>
                             </div>

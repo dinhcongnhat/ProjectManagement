@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, X, ChevronDown, Check, CloudUpload } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../config/api';
 import { useNavigate } from 'react-router-dom';
 
 interface UserData {
@@ -33,7 +34,7 @@ const CreateProject = () => {
     useEffect(() => {
         const fetchUsers = async () => {
             try {
-                const response = await fetch('http://localhost:3000/api/users', {
+                const response = await fetch(`${API_URL}/users`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -116,7 +117,7 @@ const CreateProject = () => {
                 formDataToSend.append('file', selectedFile);
             }
 
-            const response = await fetch('http://localhost:3000/api/projects', {
+            const response = await fetch(`${API_URL}/projects`, {
                 method: 'POST',
                 headers: {
                     // 'Content-Type': 'multipart/form-data', // Browser sets this automatically with boundary
@@ -319,13 +320,14 @@ const CreateProject = () => {
                             type="file"
                             ref={fileInputRef}
                             className="hidden"
+                            aria-label="Chọn tệp đính kèm"
                             onChange={handleFileChange}
                         />
                     </div>
                     {selectedFile && (
                         <div className="mt-2 flex items-center gap-2 text-sm text-gray-700 bg-gray-50 px-3 py-1 rounded-full">
                             <span>{selectedFile.name}</span>
-                            <button onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-red-500">
+                            <button type="button" onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-red-500" aria-label="Xóa tệp đã chọn">
                                 <X size={14} />
                             </button>
                         </div>
@@ -378,6 +380,7 @@ const CreateProject = () => {
                                     <input
                                         type="date"
                                         name="startDate"
+                                        title="Chọn ngày bắt đầu"
                                         value={formData.startDate}
                                         onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -391,6 +394,7 @@ const CreateProject = () => {
                                     <input
                                         type="date"
                                         name="endDate"
+                                        title="Chọn ngày kết thúc"
                                         value={formData.endDate}
                                         onChange={handleChange}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -405,6 +409,8 @@ const CreateProject = () => {
                             <input
                                 type="number"
                                 name="duration"
+                                title="Thời hạn dự án"
+                                placeholder="Nhập số ngày"
                                 value={formData.duration}
                                 onChange={handleChange}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -423,6 +429,7 @@ const CreateProject = () => {
                                 name="group"
                                 value={formData.group}
                                 onChange={handleChange}
+                                placeholder="Nhập nhóm dự án"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -434,6 +441,7 @@ const CreateProject = () => {
                                 name="value"
                                 value={formData.value}
                                 onChange={handleChange}
+                                placeholder="Nhập giá trị hợp đồng"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -444,6 +452,7 @@ const CreateProject = () => {
                             <label className="block text-sm font-medium text-gray-700 mb-1">Quản trị dự án <span className="text-red-500">*</span></label>
                             <select
                                 name="managerId"
+                                title="Chọn quản trị dự án"
                                 value={formData.managerId}
                                 onChange={handleChange}
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -467,6 +476,7 @@ const CreateProject = () => {
                             value={formData.description}
                             onChange={handleChange}
                             rows={4}
+                            placeholder="Nhập mô tả dự án"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         ></textarea>
                     </div>

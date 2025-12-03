@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../config/api';
 
 interface UserData {
     id: number;
@@ -24,6 +25,36 @@ interface Project {
     progressMethod: string;
     description: string;
 }
+
+interface UserMultiSelectProps {
+    label: string;
+    name: 'implementerIds' | 'followerIds';
+    selectedIds: string[];
+    users: UserData[];
+    onSelectionChange: (name: 'implementerIds' | 'followerIds', userId: string) => void;
+}
+
+const UserMultiSelect = ({ label, name, selectedIds, users, onSelectionChange }: UserMultiSelectProps) => (
+    <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700">{label}</label>
+        <div className="border border-gray-300 rounded-lg p-3 max-h-32 overflow-y-auto bg-white">
+            {users.map(user => (
+                <div key={user.id} className="flex items-center gap-2 py-1">
+                    <input
+                        type="checkbox"
+                        id={`edit-${name}-${user.id}`}
+                        checked={selectedIds.includes(String(user.id))}
+                        onChange={() => onSelectionChange(name, String(user.id))}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                    />
+                    <label htmlFor={`edit-${name}-${user.id}`} className="text-sm text-gray-700 cursor-pointer select-none">
+                        {user.name}
+                    </label>
+                </div>
+            ))}
+        </div>
+    </div>
+);
 
 const ProjectTasks = () => {
     const [projects, setProjects] = useState<Project[]>([]);
@@ -50,7 +81,7 @@ const ProjectTasks = () => {
 
     const fetchProjects = async () => {
         try {
-            const response = await fetch('http://localhost:3000/api/projects', {
+            const response = await fetch(`${API_URL}/projects`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await response.json();
@@ -62,7 +93,7 @@ const ProjectTasks = () => {
 
     const fetchUsers = async () => {
         try {
-            const response = await fetch('http://localhost:3000/api/users', {
+            const response = await fetch(`${API_URL}/users`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await response.json();
@@ -82,7 +113,7 @@ const ProjectTasks = () => {
     const handleDelete = async (id: number) => {
         if (!confirm('Bạn có chắc chắn muốn xóa dự án này?')) return;
         try {
-            const response = await fetch(`http://localhost:3000/api/projects/${id}`, {
+            const response = await fetch(`${API_URL}/projects/${id}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
             });
@@ -134,7 +165,7 @@ const ProjectTasks = () => {
     const handleUpdateProject = async () => {
         if (!editingProject) return;
         try {
-            const response = await fetch(`http://localhost:3000/api/projects/${editingProject.id}`, {
+            const response = await fetch(`${API_URL}/projects/${editingProject.id}`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -155,28 +186,6 @@ const ProjectTasks = () => {
         }
     };
 
-    const UserMultiSelect = ({ label, name, selectedIds }: { label: string, name: 'implementerIds' | 'followerIds', selectedIds: string[] }) => (
-        <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">{label}</label>
-            <div className="border border-gray-300 rounded-lg p-3 max-h-32 overflow-y-auto bg-white">
-                {users.map(user => (
-                    <div key={user.id} className="flex items-center gap-2 py-1">
-                        <input
-                            type="checkbox"
-                            id={`edit-${name}-${user.id}`}
-                            checked={selectedIds.includes(String(user.id))}
-                            onChange={() => handleMultiSelectChange(name, String(user.id))}
-                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                        />
-                        <label htmlFor={`edit-${name}-${user.id}`} className="text-sm text-gray-700 cursor-pointer select-none">
-                            {user.name}
-                        </label>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -193,7 +202,7 @@ const ProjectTasks = () => {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
                     <div className="flex items-center gap-2">
-                        <button className="p-2 hover:bg-gray-200 rounded-lg text-gray-600">
+                        <button title="Lọc dự án" className="p-2 hover:bg-gray-200 rounded-lg text-gray-600">
                             <Filter size={20} />
                         </button>
                         <div className="h-6 w-px bg-gray-300 mx-2"></div>
@@ -236,10 +245,10 @@ const ProjectTasks = () => {
                                     </div>
 
                                     <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => openEditModal(project)} className="p-2 text-gray-400 hover:text-blue-600">
+                                        <button title="Chỉnh sửa" onClick={() => openEditModal(project)} className="p-2 text-gray-400 hover:text-blue-600">
                                             <Pencil size={18} />
                                         </button>
-                                        <button onClick={() => handleDelete(project.id)} className="p-2 text-gray-400 hover:text-red-600">
+                                        <button title="Xóa" onClick={() => handleDelete(project.id)} className="p-2 text-gray-400 hover:text-red-600">
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
@@ -256,7 +265,7 @@ const ProjectTasks = () => {
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold text-gray-900">Cập nhật dự án</h3>
-                            <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
+                            <button title="Đóng" onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
                                 <X size={24} />
                             </button>
                         </div>
@@ -266,20 +275,20 @@ const ProjectTasks = () => {
                                 <h4 className="font-semibold border-b pb-2">Thông tin chung</h4>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Mã dự án</label>
-                                    <input type="text" name="code" value={editFormData.code} onChange={handleEditChange} className="w-full px-3 py-2 border rounded-lg" />
+                                    <input type="text" name="code" value={editFormData.code} onChange={handleEditChange} placeholder="VD: DA001" className="w-full px-3 py-2 border rounded-lg" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tên dự án</label>
-                                    <input type="text" name="name" value={editFormData.name} onChange={handleEditChange} className="w-full px-3 py-2 border rounded-lg" />
+                                    <input type="text" name="name" value={editFormData.name} onChange={handleEditChange} placeholder="Nhập tên dự án" className="w-full px-3 py-2 border rounded-lg" />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu</label>
-                                        <input type="date" name="startDate" value={editFormData.startDate} onChange={handleEditChange} className="w-full px-3 py-2 border rounded-lg" />
+                                        <input type="date" name="startDate" value={editFormData.startDate} onChange={handleEditChange} title="Ngày bắt đầu" className="w-full px-3 py-2 border rounded-lg" />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc</label>
-                                        <input type="date" name="endDate" value={editFormData.endDate} onChange={handleEditChange} className="w-full px-3 py-2 border rounded-lg" />
+                                        <input type="date" name="endDate" value={editFormData.endDate} onChange={handleEditChange} title="Ngày kết thúc" className="w-full px-3 py-2 border rounded-lg" />
                                     </div>
                                 </div>
                             </div>
@@ -288,13 +297,13 @@ const ProjectTasks = () => {
                                 <h4 className="font-semibold border-b pb-2">Phân quyền</h4>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Quản trị dự án</label>
-                                    <select name="managerId" value={editFormData.managerId} onChange={handleEditChange} className="w-full px-3 py-2 border rounded-lg">
+                                    <select name="managerId" value={editFormData.managerId} onChange={handleEditChange} title="Quản trị dự án" className="w-full px-3 py-2 border rounded-lg">
                                         <option value="">-- Chọn quản trị --</option>
                                         {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                                     </select>
                                 </div>
-                                <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={editFormData.implementerIds} />
-                                <UserMultiSelect label="Người theo dõi" name="followerIds" selectedIds={editFormData.followerIds} />
+                                <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={editFormData.implementerIds} users={users} onSelectionChange={handleMultiSelectChange} />
+                                <UserMultiSelect label="Người theo dõi" name="followerIds" selectedIds={editFormData.followerIds} users={users} onSelectionChange={handleMultiSelectChange} />
                             </div>
                         </div>
 

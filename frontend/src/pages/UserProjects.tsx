@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config/api';
 
 interface Project {
     id: number;
@@ -21,9 +22,9 @@ const UserProjects = () => {
     const { token, user } = useAuth();
     const [updatingProgress, setUpdatingProgress] = useState<number | null>(null);
 
-    const fetchProjects = async () => {
+    const fetchProjects = useCallback(async () => {
         try {
-            const response = await fetch('http://localhost:3000/api/projects', {
+            const response = await fetch(`${API_URL}/projects`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
             const data = await response.json();
@@ -39,16 +40,16 @@ const UserProjects = () => {
         } catch (error) {
             console.error('Error fetching projects:', error);
         }
-    };
+    }, [token, user]);
 
     useEffect(() => {
         if (token && user) fetchProjects();
-    }, [token, user]);
+    }, [token, user, fetchProjects]);
 
     const handleProgressChange = async (projectId: number, newProgress: number) => {
         setUpdatingProgress(projectId);
         try {
-            const response = await fetch(`http://localhost:3000/api/projects/${projectId}/progress`, {
+            const response = await fetch(`${API_URL}/projects/${projectId}/progress`, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
@@ -159,17 +160,11 @@ const UserProjects = () => {
                                                 value={project.progress}
                                                 onChange={(e) => handleProgressChange(project.id, Number(e.target.value))}
                                                 disabled={project.status === 'COMPLETED' || project.status === 'PENDING_APPROVAL' || updatingProgress === project.id}
-                                                className={`w-full h-3 rounded-lg appearance-none cursor-pointer ${project.status === 'COMPLETED' ? 'bg-green-200' :
+                                                className={`w-full h-3 rounded-lg appearance-none cursor-pointer progress-slider ${project.status === 'COMPLETED' ? 'bg-green-200' :
                                                     project.status === 'PENDING_APPROVAL' ? 'bg-orange-200' :
                                                         'bg-blue-200'
                                                     } ${project.status === 'COMPLETED' || project.status === 'PENDING_APPROVAL' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                                style={{
-                                                    background: project.status === 'COMPLETED'
-                                                        ? `linear-gradient(to right, #10b981 0%, #10b981 ${project.progress}%, #d1fae5 ${project.progress}%, #d1fae5 100%)`
-                                                        : project.status === 'PENDING_APPROVAL'
-                                                            ? `linear-gradient(to right, #f97316 0%, #f97316 ${project.progress}%, #fed7aa ${project.progress}%, #fed7aa 100%)`
-                                                            : `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${project.progress}%, #bfdbfe ${project.progress}%, #bfdbfe 100%)`
-                                                }}
+                                                title={`Tiến độ: ${project.progress}%`}
                                             />
                                         </div>
 
