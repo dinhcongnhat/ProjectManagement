@@ -26,6 +26,7 @@ import taskRoutes from './routes/taskRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
+import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 
 app.use(cors({
     origin: '*',
@@ -40,6 +41,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', activityRoutes);
+app.use('/api/onlyoffice', onlyofficeRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');

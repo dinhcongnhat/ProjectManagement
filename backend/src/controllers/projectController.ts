@@ -3,7 +3,7 @@ import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { createActivity } from './activityController.js';
 
-import { uploadFile, getFileStream, getFileStats } from '../services/minioService.js';
+import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename } from '../services/minioService.js';
 
 export const createProject = async (req: AuthRequest, res: Response) => {
     try {
@@ -55,7 +55,9 @@ export const createProject = async (req: AuthRequest, res: Response) => {
 
         let attachmentPath = null;
         if (req.file) {
-            const fileName = `${Date.now()}-${req.file.originalname}`;
+            // Normalize Vietnamese filename to ensure proper encoding
+            const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
+            const fileName = `${Date.now()}-${normalizedFilename}`;
             attachmentPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -211,11 +213,29 @@ export const downloadAttachment = async (req: AuthRequest, res: Response) => {
 
         console.log('File stats:', fileStats);
 
-        // Set headers for download/preview
-        const originalName = project.attachment.split('-').slice(1).join('-');
+        // Extract original filename and decode if needed
+        let originalName = project.attachment.split('-').slice(1).join('-');
+        
+        // Handle path with prefix (e.g., onlyoffice/timestamp-filename)
+        if (project.attachment.includes('/')) {
+            const pathParts = project.attachment.split('/');
+            const fileName = pathParts[pathParts.length - 1];
+            originalName = fileName.split('-').slice(1).join('-');
+        }
+        
+        // Decode URI encoded filename
+        try {
+            originalName = decodeURIComponent(originalName);
+        } catch {
+            // If decoding fails, use as is
+        }
+
+        // Encode filename for Content-Disposition header (RFC 5987)
+        const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
 
         // Use 'inline' to allow browser preview, fallback to 'attachment' if needed
-        res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+        // Use RFC 5987 encoding for non-ASCII filenames
+        res.setHeader('Content-Disposition', `inline; filename="${originalName}"; filename*=UTF-8''${encodedFilename}`);
 
         // Set correct Content-Type from MinIO stats
         if (fileStats.metaData && fileStats.metaData['content-type']) {
@@ -303,15 +323,30 @@ export const updateProjectProgress = async (req: AuthRequest, res: Response) => 
 export const approveProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+        const userId = req.user?.id;
 
         // Check if project exists and is pending approval
         const currentProject = await prisma.project.findUnique({
             where: { id: Number(id) },
-            select: { status: true, progress: true },
+            select: {
+                status: true,
+                progress: true,
+                managerId: true,
+                followers: { select: { id: true } },
+            },
         });
 
         if (!currentProject) {
             return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Check if user is admin, manager, or follower
+        const isAdmin = req.user?.role === 'ADMIN';
+        const isManager = currentProject.managerId === userId;
+        const isFollower = currentProject.followers.some(f => f.id === userId);
+
+        if (!isAdmin && !isManager && !isFollower) {
+            return res.status(403).json({ message: 'Bạn không có quyền duyệt dự án này. Chỉ quản trị viên, quản lý dự án hoặc người theo dõi mới có thể duyệt.' });
         }
 
         if (currentProject.status !== 'PENDING_APPROVAL') {

@@ -1,25 +1,25 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import prisma from '../config/prisma.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 export const register = async (req, res) => {
     try {
-        const { email, password, name, role } = req.body;
-        const existingUser = await prisma.user.findUnique({ where: { email } });
+        const { username, password, name, role, position } = req.body;
+        const existingUser = await prisma.user.findUnique({ where: { username } });
         if (existingUser) {
             return res.status(400).json({ message: 'User already exists' });
         }
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = await prisma.user.create({
             data: {
-                email,
+                username,
                 password: hashedPassword,
                 name,
                 role: role || 'USER',
+                position,
             },
         });
-        res.status(201).json({ message: 'User created successfully', user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+        res.status(201).json({ message: 'User created successfully', user: { id: user.id, username: user.username, name: user.name, role: user.role } });
     }
     catch (error) {
         console.error(error);
@@ -28,8 +28,8 @@ export const register = async (req, res) => {
 };
 export const login = async (req, res) => {
     try {
-        const { email, password } = req.body;
-        const user = await prisma.user.findUnique({ where: { email } });
+        const { username, password } = req.body;
+        const user = await prisma.user.findUnique({ where: { username } });
         if (!user) {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
@@ -38,7 +38,7 @@ export const login = async (req, res) => {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
         const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+        res.json({ token, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
     }
     catch (error) {
         console.error(error);

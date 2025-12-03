@@ -15,6 +15,6 @@ router.put('/:id', authenticateToken, isAdmin, updateProject);
 router.delete('/:id', authenticateToken, isAdmin, deleteProject);
 router.get('/:id/attachment', authenticateToken, downloadAttachment);
 router.patch('/:id/progress', authenticateToken, updateProjectProgress);
-router.post('/:id/approve', authenticateToken, isAdmin, approveProject);
+router.post('/:id/approve', authenticateToken, approveProject);
 
 export default router;

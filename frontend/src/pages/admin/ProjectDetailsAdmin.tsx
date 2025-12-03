@@ -5,6 +5,14 @@ import { API_URL } from '../../config/api';
 import { ArrowLeft, Calendar, User, Users, Eye, Clock, CheckCircle2, AlertCircle, FileText, Image as ImageIcon, X, MessageSquare, History } from 'lucide-react';
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
+import { OnlyOfficeViewer } from '../../components/OnlyOfficeViewer';
+
+// Office file extensions supported by OnlyOffice
+const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf'];
+const isOfficeFile = (fileName: string): boolean => {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    return officeExtensions.includes(ext);
+};
 
 interface Project {
     id: number;
@@ -34,6 +42,7 @@ const ProjectDetailsAdmin = () => {
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'discussion' | 'activity'>('info');
+    const [showOnlyOffice, setShowOnlyOffice] = useState(false);
 
     const fetchProject = async () => {
         try {
@@ -192,7 +201,7 @@ const ProjectDetailsAdmin = () => {
                             {/* Progress and Timeline Combined */}
                             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {/* Progress Section - Compact */}
+                                        {/* Progress Section - Compact */}
                                     <div>
                                         <h3 className="text-lg font-bold text-gray-900 mb-3">Tiến độ thực hiện</h3>
                                         <div className="space-y-3">
@@ -201,8 +210,8 @@ const ProjectDetailsAdmin = () => {
                                                 <span className="text-2xl font-bold text-blue-600">{project.progress}%</span>
                                             </div>
 
-                                            {/* Compact Progress Bar */}
-                                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                            {/* Progress Bar Display */}
+                                            <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
                                                 <div
                                                     className={`h-full rounded-full transition-all ${project.status === 'COMPLETED' ? 'bg-green-500' :
                                                         project.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
@@ -212,108 +221,98 @@ const ProjectDetailsAdmin = () => {
                                                 ></div>
                                             </div>
 
-                                            {/* Compact Slider */}
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="100"
-                                                title="Điều chỉnh tiến độ"
-                                                value={project.progress}
-                                                onChange={async (e) => {
-                                                    const newProgress = Number(e.target.value);
-                                                    try {
-                                                        const response = await fetch(`${API_URL}/projects/${project.id}/progress`, {
-                                                            method: 'PATCH',
-                                                            headers: {
-                                                                'Content-Type': 'application/json',
-                                                                Authorization: `Bearer ${token}`,
-                                                            },
-                                                            body: JSON.stringify({ progress: newProgress }),
-                                                        });
-                                                        if (response.ok) {
-                                                            const updatedProject = await response.json();
-                                                            setProject(updatedProject);
+                                            {/* Interactive Slider */}
+                                            <div className="relative pt-1">
+                                                <input
+                                                    type="range"
+                                                    min="0"
+                                                    max="100"
+                                                    step="1"
+                                                    title="Kéo để điều chỉnh tiến độ"
+                                                    value={project.progress}
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    onInput={async (e) => {
+                                                        const target = e.target as HTMLInputElement;
+                                                        const newProgress = Number(target.value);
+                                                        // Update UI immediately
+                                                        setProject(prev => prev ? { ...prev, progress: newProgress } : prev);
+                                                    }}
+                                                    onMouseUp={async (e) => {
+                                                        const target = e.target as HTMLInputElement;
+                                                        const newProgress = Number(target.value);
+                                                        try {
+                                                            const response = await fetch(`${API_URL}/projects/${project.id}/progress`, {
+                                                                method: 'PATCH',
+                                                                headers: {
+                                                                    'Content-Type': 'application/json',
+                                                                    Authorization: `Bearer ${token}`,
+                                                                },
+                                                                body: JSON.stringify({ progress: newProgress }),
+                                                            });
+                                                            if (response.ok) {
+                                                                const updatedProject = await response.json();
+                                                                setProject(updatedProject);
+                                                            }
+                                                        } catch (error) {
+                                                            console.error('Error updating progress:', error);
                                                         }
-                                                    } catch (error) {
-                                                        console.error('Error updating progress:', error);
-                                                    }
-                                                }}
-                                                disabled={project.status === 'COMPLETED'}
-                                                className={`w-full h-3 rounded-lg appearance-none cursor-pointer ${project.status === 'COMPLETED' ? 'opacity-50 cursor-not-allowed' : ''
+                                                    }}
+                                                    onTouchEnd={async (e) => {
+                                                        const target = e.target as HTMLInputElement;
+                                                        const newProgress = Number(target.value);
+                                                        try {
+                                                            const response = await fetch(`${API_URL}/projects/${project.id}/progress`, {
+                                                                method: 'PATCH',
+                                                                headers: {
+                                                                    'Content-Type': 'application/json',
+                                                                    Authorization: `Bearer ${token}`,
+                                                                },
+                                                                body: JSON.stringify({ progress: newProgress }),
+                                                            });
+                                                            if (response.ok) {
+                                                                const updatedProject = await response.json();
+                                                                setProject(updatedProject);
+                                                            }
+                                                        } catch (error) {
+                                                            console.error('Error updating progress:', error);
+                                                        }
+                                                    }}
+                                                    disabled={project.status === 'COMPLETED'}
+                                                    className={`w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600 ${
+                                                        project.status === 'COMPLETED' ? 'opacity-50 cursor-not-allowed' : ''
                                                     }`}
-                                                style={{
-                                                    background: project.status === 'COMPLETED'
-                                                        ? `linear-gradient(to right, #10b981 0%, #10b981 ${project.progress}%, #d1fae5 ${project.progress}%, #d1fae5 100%)`
-                                                        : project.status === 'PENDING_APPROVAL'
-                                                            ? `linear-gradient(to right, #f97316 0%, #f97316 ${project.progress}%, #fed7aa ${project.progress}%, #fed7aa 100%)`
-                                                            : `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${project.progress}%, #bfdbfe ${project.progress}%, #bfdbfe 100%)`
-                                                }}
-                                            />
-                                            <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
-                                                <div
-                                                    className={`h-full rounded-full transition-all ${project.status === 'COMPLETED' ? 'bg-green-500' :
-                                                        project.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
-                                                            'bg-blue-500'
-                                                        }`}
-                                                    style={{ width: `${project.progress}%` }}
-                                                ></div>
+                                                    style={{
+                                                        background: project.status === 'COMPLETED'
+                                                            ? `linear-gradient(to right, #10b981 0%, #10b981 ${project.progress}%, #e5e7eb ${project.progress}%, #e5e7eb 100%)`
+                                                            : project.status === 'PENDING_APPROVAL'
+                                                                ? `linear-gradient(to right, #f97316 0%, #f97316 ${project.progress}%, #e5e7eb ${project.progress}%, #e5e7eb 100%)`
+                                                                : `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${project.progress}%, #e5e7eb ${project.progress}%, #e5e7eb 100%)`
+                                                    }}
+                                                />
+                                                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                                    <span>0%</span>
+                                                    <span>50%</span>
+                                                    <span>100%</span>
+                                                </div>
                                             </div>
-                                        </div>
-
-                                        {/* Quick Select Dropdown */}
-                                        <div className="flex items-center gap-3">
-                                            <label className="text-sm font-medium text-gray-700">Chọn nhanh:</label>
-                                            <select
-                                                title="Chọn tiến độ"
-                                                value={project.progress}
-                                                onChange={async (e) => {
-                                                    const newProgress = Number(e.target.value);
-                                                    try {
-                                                        const response = await fetch(`${API_URL}/projects/${project.id}/progress`, {
-                                                            method: 'PATCH',
-                                                            headers: {
-                                                                'Content-Type': 'application/json',
-                                                                Authorization: `Bearer ${token}`,
-                                                            },
-                                                            body: JSON.stringify({ progress: newProgress }),
-                                                        });
-                                                        if (response.ok) {
-                                                            const updatedProject = await response.json();
-                                                            setProject(updatedProject);
-                                                        }
-                                                    } catch (error) {
-                                                        console.error('Error updating progress:', error);
-                                                    }
-                                                }}
-                                                disabled={project.status === 'COMPLETED'}
-                                                className="flex-1 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                <option value="0">0% - Chưa bắt đầu</option>
-                                                <option value="25">25% - Đang tiến hành</option>
-                                                <option value="50">50% - Hoàn thành một nửa</option>
-                                                <option value="75">75% - Gần hoàn thành</option>
-                                                <option value="100">100% - Hoàn thành</option>
-                                            </select>
                                         </div>
 
                                         {/* Status Message */}
                                         {project.status === 'PENDING_APPROVAL' && (
-                                            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg mt-3">
                                                 <p className="text-sm text-orange-800 font-medium text-center">
                                                     ⏳ Dự án đang chờ duyệt
                                                 </p>
                                             </div>
                                         )}
                                         {project.status === 'COMPLETED' && (
-                                            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                            <div className="p-3 bg-green-50 border border-green-200 rounded-lg mt-3">
                                                 <p className="text-sm text-green-800 font-medium text-center">
                                                     ✅ Dự án đã được duyệt và hoàn thành
                                                 </p>
                                             </div>
                                         )}
-                                    </div>
-
-                                    {/* Timeline Section - Right Column */}
+                                    </div>                                    {/* Timeline Section - Right Column */}
                                     <div>
                                         <h3 className="text-lg font-bold text-gray-900 mb-3">Thời gian</h3>
                                         <div className="space-y-3">
@@ -354,9 +353,9 @@ const ProjectDetailsAdmin = () => {
                             </div>
 
                             {/* Description */}
-                            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                                <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-                                    <FileText size={18} className="text-blue-600" />
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                                <h2 className="text-base font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                    <FileText size={16} className="text-blue-600" />
                                     Mô tả dự án
                                 </h2>
                                 <div className="text-sm text-gray-700 leading-relaxed">
@@ -392,7 +391,10 @@ const ProjectDetailsAdmin = () => {
                                     </h2>
                                     <div
                                         onClick={async () => {
-                                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '');
+                                            const ext = project.attachment?.split('.').pop()?.toLowerCase() || '';
+                                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+                                            const isOffice = isOfficeFile(project.attachment || '');
+                                            
                                             if (isImage) {
                                                 // Lazy load image when user clicks
                                                 if (!imageUrl) {
@@ -408,7 +410,11 @@ const ProjectDetailsAdmin = () => {
                                                 } else {
                                                     setPreviewImage(imageUrl);
                                                 }
+                                            } else if (isOffice) {
+                                                // Open with OnlyOffice
+                                                setShowOnlyOffice(true);
                                             } else {
+                                                // Download other files
                                                 window.open(`${API_URL}/projects/${project.id}/attachment`, '_blank');
                                             }
                                         }}
@@ -417,20 +423,34 @@ const ProjectDetailsAdmin = () => {
                                         <div className="p-3 bg-white rounded-lg border border-gray-200 group-hover:border-blue-400 transition-colors">
                                             {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') ? (
                                                 <ImageIcon size={28} className="text-blue-600" />
+                                            ) : isOfficeFile(project.attachment || '') ? (
+                                                <FileText size={28} className="text-green-600" />
                                             ) : (
                                                 <FileText size={28} className="text-red-600" />
                                             )}
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
-                                                {project.attachment.split('-').slice(1).join('-')}
+                                                {decodeURIComponent(project.attachment.split('-').slice(1).join('-'))}
                                             </p>
                                             <p className="text-xs text-gray-500 mt-1">
-                                                {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') ? 'Click để xem ảnh' : 'Click để tải xuống'}
+                                                {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') 
+                                                    ? 'Click để xem ảnh' 
+                                                    : isOfficeFile(project.attachment || '')
+                                                        ? 'Click để xem với OnlyOffice'
+                                                        : 'Click để tải xuống'}
                                             </p>
                                         </div>
-                                        <div className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg group-hover:bg-blue-700 transition-colors">
-                                            {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') ? '👁️ Xem' : '⬇️ Tải'}
+                                        <div className={`px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
+                                            isOfficeFile(project.attachment || '') 
+                                                ? 'bg-green-600 group-hover:bg-green-700' 
+                                                : 'bg-blue-600 group-hover:bg-blue-700'
+                                        }`}>
+                                            {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') 
+                                                ? '👁️ Xem' 
+                                                : isOfficeFile(project.attachment || '')
+                                                    ? '📄 Mở'
+                                                    : '⬇️ Tải'}
                                         </div>
                                     </div>
                                 </div>
@@ -523,6 +543,15 @@ const ProjectDetailsAdmin = () => {
                             onClick={(e) => e.stopPropagation()}
                         />
                     </div>
+                )}
+
+                {/* OnlyOffice Viewer Modal */}
+                {showOnlyOffice && project && token && (
+                    <OnlyOfficeViewer
+                        projectId={project.id}
+                        token={token}
+                        onClose={() => setShowOnlyOffice(false)}
+                    />
                 )}
             </div>
         </div >

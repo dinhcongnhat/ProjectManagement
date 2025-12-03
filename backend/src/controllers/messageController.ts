@@ -6,6 +6,31 @@ import { Readable } from 'stream';
 
 const prisma = new PrismaClient();
 
+// Helper function to decode filename from various encodings
+const decodeFilename = (filename: string): string => {
+    // Check if the filename appears to be incorrectly decoded from UTF-8 as latin1
+    // This happens when browsers send UTF-8 but multer interprets as latin1
+    if (/[\xC0-\xFF]/.test(filename)) {
+        try {
+            // Convert from latin1 bytes back to UTF-8
+            return Buffer.from(filename, 'latin1').toString('utf8');
+        } catch {
+            return filename;
+        }
+    }
+    
+    // Try URL decoding
+    try {
+        if (filename.includes('%')) {
+            return decodeURIComponent(filename);
+        }
+    } catch {
+        // Keep as is
+    }
+    
+    return filename;
+};
+
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 export const upload = multer({ 
@@ -22,6 +47,7 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
         const skip = (page - 1) * limit;
+        const BACKEND_URL = process.env.BACKEND_URL || 'http://10.10.1.24:3000';
 
         const messages = await prisma.message.findMany({
             where: { projectId: parseInt(projectId) },
@@ -35,19 +61,15 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
             take: limit
         });
 
-        // Generate presigned URLs for attachments
-        const messagesWithUrls = await Promise.all(messages.map(async (message) => {
+        // Generate backend proxy URLs for attachments (accessible from LAN)
+        const messagesWithUrls = messages.map((message) => {
             if (message.attachment) {
-                try {
-                    const attachmentUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
-                    return { ...message, attachmentUrl };
-                } catch (error) {
-                    console.error('Error generating presigned URL for message:', message.id, error);
-                    return { ...message, attachmentUrl: null };
-                }
+                // Use backend proxy URL instead of MinIO presigned URL
+                const attachmentUrl = `${BACKEND_URL}/api/messages/${message.id}/file`;
+                return { ...message, attachmentUrl };
             }
             return { ...message, attachmentUrl: null };
-        }));
+        });
 
         const total = await prisma.message.count({
             where: { projectId: parseInt(projectId) }
@@ -152,10 +174,16 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
             return;
         }
 
-        // Generate unique filename
+        // Decode Vietnamese filename using helper function
+        let originalName = decodeFilename(file.originalname);
+        // Normalize to NFC form for Vietnamese characters
+        originalName = originalName.normalize('NFC');
+        
+        console.log('Original filename from multer:', file.originalname);
+        console.log('Decoded filename:', originalName);
+        
+        // Generate unique filename - keep original name, MinIO handles UTF-8
         const timestamp = Date.now();
-        const extension = file.originalname.split('.').pop();
-        const originalName = file.originalname;
         const fileName = `${projectId}-${userId}-${timestamp}-${originalName}`;
 
         // Upload to MinIO discussions folder
@@ -167,6 +195,7 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
         // Determine message type based on file type
         const isImage = file.mimetype.startsWith('image/');
         const messageType = content ? 'TEXT_WITH_FILE' : (isImage ? 'IMAGE' : 'FILE');
+        const BACKEND_URL = process.env.BACKEND_URL || 'http://10.10.1.24:3000';
 
         // Create message record
         const message = await prisma.message.create({
@@ -184,8 +213,8 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
             }
         });
 
-        // Generate presigned URL for the attachment
-        const attachmentUrl = await getPresignedUrl(filePath, 3600);
+        // Use backend proxy URL instead of MinIO presigned URL
+        const attachmentUrl = `${BACKEND_URL}/api/messages/${message.id}/file`;
 
         res.status(201).json({ ...message, attachmentUrl, originalFileName: originalName });
     } catch (error) {
@@ -243,7 +272,7 @@ export const downloadAttachment = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const { getFileStream, getFileStats } = await import('../services/minioService');
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
         const fileStream = await getFileStream(message.attachment);
         const stats = await getFileStats(message.attachment);
 
@@ -254,5 +283,43 @@ export const downloadAttachment = async (req: Request, res: Response): Promise<v
     } catch (error) {
         console.error('Error downloading attachment:', error);
         res.status(500).json({ error: 'Failed to download attachment' });
+    }
+};
+
+// Serve attachment file directly (for images and direct access)
+export const serveAttachment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        const message = await prisma.message.findUnique({
+            where: { id: parseInt(id) }
+        });
+
+        if (!message || !message.attachment) {
+            res.status(404).json({ error: 'Attachment not found' });
+            return;
+        }
+
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        const fileStream = await getFileStream(message.attachment);
+        const stats = await getFileStats(message.attachment);
+
+        // Set appropriate content type
+        const contentType = stats.metaData['content-type'] || 'application/octet-stream';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', stats.size);
+        
+        // For images, allow caching
+        if (contentType.startsWith('image/')) {
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
+        
+        // Allow CORS
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error('Error serving attachment:', error);
+        res.status(500).json({ error: 'Failed to serve attachment' });
     }
 };

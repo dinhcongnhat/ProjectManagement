@@ -6,13 +6,17 @@ import {
     uploadFileMessage,
     deleteMessage,
     downloadAttachment,
+    serveAttachment,
     upload
 } from '../controllers/messageController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// All routes require authentication
+// Serve attachment file (no auth - for direct image/file access)
+router.get('/messages/:id/file', serveAttachment);
+
+// All other routes require authentication
 router.use(authenticateToken);
 
 // Get all messages for a project

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Paperclip, File, Download, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause } from 'lucide-react';
+import { Send, Paperclip, File, Download, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, Eye, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 
 interface Message {
     id: number;
@@ -22,6 +23,20 @@ interface DiscussionPanelProps {
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
+// Check if file is an Office document
+const isOfficeFile = (filename: string | null): boolean => {
+    if (!filename) return false;
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv', 'txt'].includes(ext);
+};
+
+// Check if file is an image
+const isImageFile = (filename: string | null): boolean => {
+    if (!filename) return false;
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+};
+
 export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const { user } = useAuth();
     const [messages, setMessages] = useState<Message[]>([]);
@@ -35,6 +50,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const [isRecording, setIsRecording] = useState(false);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const [playingAudio, setPlayingAudio] = useState<number | null>(null);
+    const [showOnlyOffice, setShowOnlyOffice] = useState<{messageId: number; fileName: string} | null>(null);
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -274,9 +290,23 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         if (!attachment) return 'File';
         const parts = attachment.split('/');
         const fileName = parts[parts.length - 1];
-        // Remove timestamp prefix if present
+        // Remove timestamp prefix if present (format: projectId-userId-timestamp-filename)
         const match = fileName.match(/^\d+-\d+-\d+-(.+)$/);
-        return match ? match[1] : fileName;
+        let name = match ? match[1] : fileName;
+        
+        // Try to decode URI encoded filename (may need multiple decodes)
+        try {
+            // First decode
+            name = decodeURIComponent(name);
+            // Check if still encoded (contains %)
+            if (name.includes('%')) {
+                name = decodeURIComponent(name);
+            }
+        } catch {
+            // Keep as is if decoding fails
+        }
+        
+        return name;
     };
 
     // Render message content based on type
@@ -306,20 +336,35 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             case 'FILE':
                 return (
                     <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwnMessage ? 'bg-blue-400' : 'bg-gray-100'}`}>
-                        <File size={20} />
-                        <span className="text-sm flex-1 truncate">{getFileName(message.attachment)}</span>
-                        {message.attachmentUrl && (
-                            <a 
-                                href={message.attachmentUrl} 
-                                download
-                                className="p-1 hover:bg-gray-200 rounded"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                title="Tải xuống file"
-                            >
-                                <Download size={16} />
-                            </a>
+                        {isOfficeFile(message.attachment) ? (
+                            <FileText size={20} />
+                        ) : (
+                            <File size={20} />
                         )}
+                        <span className="text-sm flex-1 truncate">{getFileName(message.attachment)}</span>
+                        <div className="flex items-center gap-1">
+                            {isOfficeFile(message.attachment) && (
+                                <button
+                                    onClick={() => setShowOnlyOffice({ messageId: message.id, fileName: getFileName(message.attachment) })}
+                                    className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
+                                    title="Xem file"
+                                >
+                                    <Eye size={16} />
+                                </button>
+                            )}
+                            {message.attachmentUrl && (
+                                <a 
+                                    href={message.attachmentUrl} 
+                                    download
+                                    className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Tải xuống file"
+                                >
+                                    <Download size={16} />
+                                </a>
+                            )}
+                        </div>
                     </div>
                 );
                 
@@ -329,7 +374,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         {message.content && (
                             <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
                         )}
-                        {message.attachment?.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                        {isImageFile(message.attachment) ? (
                             message.attachmentUrl && (
                                 <img 
                                     src={message.attachmentUrl} 
@@ -340,20 +385,35 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                             )
                         ) : (
                             <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwnMessage ? 'bg-blue-400' : 'bg-gray-100'}`}>
-                                <File size={20} />
-                                <span className="text-sm flex-1 truncate">{getFileName(message.attachment)}</span>
-                                {message.attachmentUrl && (
-                                    <a 
-                                        href={message.attachmentUrl} 
-                                        download
-                                        className="p-1 hover:bg-gray-200 rounded"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        title="Tải xuống file"
-                                    >
-                                        <Download size={16} />
-                                    </a>
+                                {isOfficeFile(message.attachment) ? (
+                                    <FileText size={20} />
+                                ) : (
+                                    <File size={20} />
                                 )}
+                                <span className="text-sm flex-1 truncate">{getFileName(message.attachment)}</span>
+                                <div className="flex items-center gap-1">
+                                    {isOfficeFile(message.attachment) && (
+                                        <button
+                                            onClick={() => setShowOnlyOffice({ messageId: message.id, fileName: getFileName(message.attachment) })}
+                                            className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
+                                            title="Xem file"
+                                        >
+                                            <Eye size={16} />
+                                        </button>
+                                    )}
+                                    {message.attachmentUrl && (
+                                        <a 
+                                            href={message.attachmentUrl} 
+                                            download
+                                            className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title="Tải xuống file"
+                                        >
+                                            <Download size={16} />
+                                        </a>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -389,9 +449,9 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: '500px', maxHeight: '800px' }}>
             {/* Header */}
-            <div className="p-4 border-b border-gray-100">
+            <div className="p-4 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-center gap-2">
                     <MessageSquare size={24} className="text-blue-500" />
                     <h3 className="text-lg font-semibold text-gray-800">Thảo luận</h3>
@@ -400,7 +460,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
                 {messages.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                         <MessageSquare size={48} className="mx-auto mb-4 text-gray-300" />
@@ -448,14 +508,14 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
             {/* Error message */}
             {error && (
-                <div className="px-4 py-2 bg-red-50 border-t border-red-100">
+                <div className="px-4 py-2 bg-red-50 border-t border-red-100 flex-shrink-0">
                     <p className="text-sm text-red-600">{error}</p>
                 </div>
             )}
 
             {/* File preview */}
             {selectedFile && (
-                <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex-shrink-0">
                     <div className="flex items-center gap-2">
                         {previewUrl ? (
                             <img src={previewUrl} alt="Preview" className="w-16 h-16 object-cover rounded" />
@@ -483,7 +543,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
             {/* Voice recording preview */}
             {audioBlob && (
-                <div className="px-4 py-2 bg-blue-50 border-t border-blue-100">
+                <div className="px-4 py-2 bg-blue-50 border-t border-blue-100 flex-shrink-0">
                     <div className="flex items-center gap-2">
                         <Mic size={20} className="text-blue-500" />
                         <span className="text-sm text-blue-700 flex-1">Tin nhắn thoại đã ghi</span>
@@ -506,7 +566,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             )}
 
             {/* Input area */}
-            <div className="p-4 border-t border-gray-100">
+            <div className="p-4 border-t border-gray-100 flex-shrink-0 bg-white">
                 <div className="flex items-end gap-2">
                     {/* File attachment button */}
                     <input
@@ -585,6 +645,16 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         <X size={24} />
                     </button>
                 </div>
+            )}
+
+            {/* OnlyOffice viewer modal for discussion attachments */}
+            {showOnlyOffice && (
+                <DiscussionOnlyOfficeViewer
+                    messageId={showOnlyOffice.messageId}
+                    fileName={showOnlyOffice.fileName}
+                    onClose={() => setShowOnlyOffice(null)}
+                    token={localStorage.getItem('token') || ''}
+                />
             )}
         </div>
     );
