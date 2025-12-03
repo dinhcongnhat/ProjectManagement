@@ -6,6 +6,7 @@ import { DiscussionPanel } from '../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../components/OnlyOfficeViewer';
 import { API_URL } from '../config/api';
+import { getDisplayFilename } from '../utils/filenameUtils';
 
 // Office file extensions supported by OnlyOffice
 const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf'];
@@ -455,7 +456,7 @@ const ProjectDetails = () => {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-xs font-medium text-gray-900 truncate group-hover:text-blue-600">
-                                                {decodeURIComponent(project.attachment.split('-').slice(1).join('-'))}
+                                                {getDisplayFilename(project.attachment)}
                                             </p>
                                             <p className="text-xs text-gray-500">
                                                 {isImage ? 'Ảnh' : isOfficeFile(project.attachment || '') ? 'Click để xem với OnlyOffice' : 'File'}

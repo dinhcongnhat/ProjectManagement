@@ -6,6 +6,7 @@ import { ArrowLeft, Calendar, User, Users, Eye, Clock, CheckCircle2, AlertCircle
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../../components/OnlyOfficeViewer';
+import { getDisplayFilename } from '../../utils/filenameUtils';
 
 // Office file extensions supported by OnlyOffice
 const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf'];
@@ -431,7 +432,7 @@ const ProjectDetailsAdmin = () => {
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
-                                                {decodeURIComponent(project.attachment.split('-').slice(1).join('-'))}
+                                                {getDisplayFilename(project.attachment)}
                                             </p>
                                             <p className="text-xs text-gray-500 mt-1">
                                                 {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') 

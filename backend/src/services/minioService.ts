@@ -18,12 +18,39 @@ export const isOfficeFile = (fileName: string): boolean => {
 
 // Normalize Vietnamese filename to ensure proper encoding
 export const normalizeVietnameseFilename = (filename: string): string => {
-    // Ensure filename is properly encoded in UTF-8
-    // Remove any invalid characters but keep Vietnamese diacritics
-    return filename
-        .normalize('NFC') // Normalize to composed form (NFC)
-        .replace(/[\x00-\x1f\x7f]/g, '') // Remove control characters
-        .trim();
+    try {
+        // Try to decode if it's URI encoded
+        let decoded = filename;
+        try {
+            decoded = decodeURIComponent(filename);
+        } catch {
+            // Not URI encoded, continue
+        }
+        
+        // Fix common encoding issues (Latin-1 interpreted as UTF-8)
+        // This handles cases where UTF-8 bytes are misinterpreted as Latin-1
+        try {
+            // Check if it looks like mojibake (garbled text)
+            if (/Ã|Æ|Â|á»|áº/.test(decoded)) {
+                // Try to fix by re-encoding
+                const bytes = new Uint8Array([...decoded].map(c => c.charCodeAt(0)));
+                const fixedText = new TextDecoder('utf-8').decode(bytes);
+                if (fixedText && !/�/.test(fixedText)) {
+                    decoded = fixedText;
+                }
+            }
+        } catch {
+            // Keep original if fix fails
+        }
+        
+        // Normalize to composed form (NFC) for consistent display
+        return decoded
+            .normalize('NFC')
+            .replace(/[\x00-\x1f\x7f]/g, '') // Remove control characters
+            .trim();
+    } catch {
+        return filename;
+    }
 };
 
 export const checkMinioConnection = async (): Promise<boolean> => {
