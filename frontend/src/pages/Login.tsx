@@ -49,8 +49,8 @@ const Login = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50 flex items-center justify-center p-4 relative overflow-hidden">
-            {/* Animated Tech Background */}
-            <div className="absolute inset-0 overflow-hidden">
+            {/* Animated Tech Background - Hidden on mobile for performance */}
+            <div className="absolute inset-0 overflow-hidden hidden sm:block">
                 {/* Grid Pattern */}
                 <div className="absolute inset-0 opacity-[0.03]" 
                     style={{
@@ -99,28 +99,28 @@ const Login = () => {
 
             {/* Login Card */}
             <div className="max-w-md w-full relative z-10">
-                {/* Glowing border effect */}
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500 rounded-2xl opacity-75 blur-sm animate-pulse" />
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500 rounded-2xl opacity-50" />
+                {/* Glowing border effect - simplified on mobile */}
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500 rounded-2xl opacity-75 blur-sm animate-pulse hidden sm:block" />
+                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500 rounded-2xl opacity-50 hidden sm:block" />
                 
                 <div className="relative bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl shadow-blue-500/20 overflow-hidden">
-                    <div className="p-8">
-                    <div className="text-center mb-8">
+                    <div className="p-6 lg:p-8">
+                    <div className="text-center mb-6 lg:mb-8">
                         <div className="flex justify-center mb-4">
-                            <img src="/Logo.png" alt="Logo" className="h-20 w-auto" />
+                            <img src="/Logo.png" alt="Logo" className="h-16 lg:h-20 w-auto" />
                         </div>
-                        <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-2 tracking-tight">PROJECT MANAGEMENT</h2>
-                        <p className="text-gray-500">Đăng nhập để truy cập hệ thống quản lý dự án</p>
+                        <h2 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-2 tracking-tight">PROJECT MANAGEMENT</h2>
+                        <p className="text-gray-500 text-sm lg:text-base">Đăng nhập để truy cập hệ thống quản lý dự án</p>
                     </div>
 
                     {error && (
-                        <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                        <div className="mb-4 lg:mb-6 p-3 lg:p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
                             {error}
                         </div>
                     )}
 
-                    <form onSubmit={handleSubmit} className="space-y-5">
+                    <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-5">
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-gray-700 ml-1">Tên đăng nhập</label>
                             <div className="relative group">
@@ -131,9 +131,10 @@ const Login = () => {
                                     type="text"
                                     value={username}
                                     onChange={(e) => setUsername(e.target.value)}
-                                    className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200"
+                                    className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
                                     placeholder="Nhập tên đăng nhập"
                                     required
+                                    autoComplete="username"
                                 />
                             </div>
                         </div>
@@ -148,9 +149,10 @@ const Login = () => {
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200"
+                                    className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
                                     placeholder="••••••••"
                                     required
+                                    autoComplete="current-password"
                                 />
                             </div>
                         </div>
@@ -158,7 +160,7 @@ const Login = () => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+                            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 active:from-blue-700 active:to-cyan-700 text-white font-semibold py-3.5 lg:py-4 rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group touch-target"
                         >
                             {loading ? (
                                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -172,7 +174,7 @@ const Login = () => {
                     </form>
                 </div>
 
-                <div className="px-8 py-4 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 border-t border-gray-100 text-center">
+                <div className="px-6 lg:px-8 py-3 lg:py-4 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 border-t border-gray-100 text-center">
                     <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
                         <Shield className="w-3.5 h-3.5 text-blue-500" />
                         Được bảo vệ bởi hệ thống bảo mật cấp doanh nghiệp

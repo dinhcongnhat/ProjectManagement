@@ -13,19 +13,19 @@ interface Project {
 }
 
 const StatCard = ({ icon: Icon, label, value, color, trend }: any) => (
-    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-        <div className="flex items-center justify-between mb-4">
-            <div className={`p-3 rounded-lg ${color}`}>
-                <Icon size={24} className="text-white" />
+    <div className="bg-white p-4 lg:p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md active:shadow-sm transition-shadow">
+        <div className="flex items-center justify-between mb-3 lg:mb-4">
+            <div className={`p-2 lg:p-3 rounded-lg ${color}`}>
+                <Icon size={20} className="text-white lg:w-6 lg:h-6" />
             </div>
             {trend !== null && (
-                <span className={`text-sm font-medium ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <span className={`text-xs lg:text-sm font-medium ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {trend > 0 ? '+' : ''}{trend}%
                 </span>
             )}
         </div>
-        <h3 className="text-gray-500 text-sm font-medium">{label}</h3>
-        <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+        <h3 className="text-gray-500 text-xs lg:text-sm font-medium">{label}</h3>
+        <p className="text-xl lg:text-2xl font-bold text-gray-900 mt-1">{value}</p>
     </div>
 );
 
@@ -80,11 +80,11 @@ const Dashboard = () => {
     ];
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Dashboard</h2>
+        <div className="space-y-4 lg:space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Dashboard</h2>
                 <div className="flex gap-3">
-                    <select title="Chọn khoảng thời gian" className="px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select title="Chọn khoảng thời gian" className="px-3 lg:px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option>7 ngày qua</option>
                         <option>Tháng này</option>
                         <option>Năm nay</option>
@@ -92,30 +92,30 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
                 {statCards.map((stat, index) => (
                     <StatCard key={index} {...stat} />
                 ))}
             </div>
 
-            <div className="grid grid-cols-1 gap-6">
-                <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">Tiến độ dự án</h3>
+            <div className="grid grid-cols-1 gap-4 lg:gap-6">
+                <div className="bg-white p-4 lg:p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 className="text-base lg:text-lg font-bold text-gray-900 mb-3 lg:mb-4">Tiến độ dự án</h3>
                     {projects.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
+                        <div className="text-center py-6 lg:py-8 text-gray-500 text-sm lg:text-base">
                             Chưa có dự án nào trong hệ thống
                         </div>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-3 lg:space-y-4">
                             {projects.map((project) => (
                                 <div key={project.id} className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="font-medium text-gray-700">{project.name}</span>
-                                        <span className="text-gray-500">{project.progress}%</span>
+                                    <div className="flex justify-between text-xs lg:text-sm">
+                                        <span className="font-medium text-gray-700 truncate mr-2">{project.name}</span>
+                                        <span className="text-gray-500 shrink-0">{project.progress}%</span>
                                     </div>
                                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                                         <div
-                                            className={`h-full rounded-full ${project.status === 'COMPLETED' ? 'bg-green-500' :
+                                            className={`h-full rounded-full transition-all ${project.status === 'COMPLETED' ? 'bg-green-500' :
                                                     project.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
                                                         'bg-blue-500'
                                                 }`}

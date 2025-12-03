@@ -10,14 +10,24 @@ dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost',
+    'https://jtsc.io.vn',
+    'http://jtsc.io.vn',
+    'https://www.jtsc.io.vn',
+    'http://www.jtsc.io.vn'
+];
+
 const io = new Server(httpServer, {
     cors: {
-        origin: '*',
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+        origin: allowedOrigins,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+        credentials: true
     }
 });
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3001;
 const host = process.env.HOST || '0.0.0.0';
 
 import authRoutes from './routes/authRoutes.js';
@@ -29,9 +39,19 @@ import activityRoutes from './routes/activityRoutes.js';
 import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 
 app.use(cors({
-    origin: '*',
+    origin: function(origin, callback) {
+        // Cho phép requests không có origin (như mobile apps, Postman)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            // Cho phép tất cả để debug - có thể thắt chặt sau
+            callback(null, true);
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true
 }));
 app.use(express.json());
 

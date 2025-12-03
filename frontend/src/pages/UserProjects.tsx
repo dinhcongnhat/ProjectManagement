@@ -99,43 +99,45 @@ const UserProjects = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900">Dự án của tôi</h2>
+        <div className="space-y-4 lg:space-y-6">
+            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Dự án của tôi</h2>
 
-            <div className="grid grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 gap-4 lg:gap-6">
                 {projects.length === 0 ? (
-                    <div className="col-span-full text-center py-12 bg-white rounded-xl border border-gray-200 text-gray-500">
+                    <div className="col-span-full text-center py-8 lg:py-12 bg-white rounded-xl border border-gray-200 text-gray-500 text-sm lg:text-base">
                         Chưa có dự án nào được giao cho bạn.
                     </div>
                 ) : (
                     projects.map((project) => (
-                        <div key={project.id} className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-                            <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-                                {/* Left: Project Info */}
+                        <div key={project.id} className="bg-white p-4 lg:p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md active:shadow-sm transition-shadow">
+                            <div className="flex flex-col gap-4 lg:gap-6">
+                                {/* Project Info */}
                                 <div className="flex-1">
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
-                                                <Briefcase size={24} />
+                                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                                        <div className="flex items-start gap-3">
+                                            <div className="p-2 lg:p-3 bg-blue-50 rounded-lg text-blue-600 shrink-0">
+                                                <Briefcase size={20} className="lg:w-6 lg:h-6" />
                                             </div>
-                                            <div>
-                                                <Link to={`/projects/${project.id}`} className="text-lg font-bold text-gray-900 hover:text-blue-600 transition-colors">
+                                            <div className="min-w-0">
+                                                <Link to={`/projects/${project.id}`} className="text-base lg:text-lg font-bold text-gray-900 hover:text-blue-600 active:text-blue-700 transition-colors line-clamp-2">
                                                     {project.name}
                                                 </Link>
-                                                <p className="text-sm text-gray-500 mt-1">Mã: {project.code}</p>
+                                                <p className="text-xs lg:text-sm text-gray-500 mt-1">Mã: {project.code}</p>
                                             </div>
                                         </div>
-                                        {getStatusBadge(project.status)}
+                                        <div className="self-start sm:shrink-0">
+                                            {getStatusBadge(project.status)}
+                                        </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-3 mt-4">
-                                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                                            <User size={16} className="text-gray-400" />
-                                            <span>PM: {project.manager?.name || 'N/A'}</span>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:gap-3 mt-3 lg:mt-4">
+                                        <div className="flex items-center gap-2 text-xs lg:text-sm text-gray-600">
+                                            <User size={14} className="text-gray-400 shrink-0 lg:w-4 lg:h-4" />
+                                            <span className="truncate">PM: {project.manager?.name || 'N/A'}</span>
                                         </div>
-                                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                                            <Calendar size={16} className="text-gray-400" />
-                                            <span>
+                                        <div className="flex items-center gap-2 text-xs lg:text-sm text-gray-600">
+                                            <Calendar size={14} className="text-gray-400 shrink-0 lg:w-4 lg:h-4" />
+                                            <span className="truncate">
                                                 {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
                                                 {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
                                             </span>
@@ -143,8 +145,8 @@ const UserProjects = () => {
                                     </div>
                                 </div>
 
-                                {/* Right: Progress Control */}
-                                <div className="lg:w-80 border-t lg:border-t-0 lg:border-l border-gray-200 pt-4 lg:pt-0 lg:pl-6">
+                                {/* Progress Control */}
+                                <div className="border-t lg:border-t-0 lg:border-l border-gray-200 pt-4 lg:pt-0 lg:pl-6 lg:w-80">
                                     <div className="space-y-3">
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm font-medium text-gray-700">Tiến độ</span>
