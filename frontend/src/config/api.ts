@@ -2,27 +2,33 @@
 // Backend: ai.jtsc.io.vn (port 3001)
 // Frontend: jtsc.io.vn (port 3000)
 
+const isProduction = () => {
+    return typeof window !== 'undefined' && 
+        (window.location.hostname === 'jtsc.io.vn' || 
+         window.location.hostname.endsWith('.jtsc.io.vn') ||
+         window.location.hostname === 'ai.jtsc.io.vn');
+};
+
 const getDefaultApiUrl = () => {
-    // Production - sử dụng domain backend
-    if (typeof window !== 'undefined' && 
-        (window.location.hostname === 'jtsc.io.vn' || window.location.hostname.endsWith('.jtsc.io.vn'))) {
+    // Production - always use domain backend (ignore env vars for production)
+    if (isProduction()) {
         return 'https://ai.jtsc.io.vn/api';
     }
-    // Development mode - localhost
-    return 'http://localhost:3001/api';
+    // Development mode - use env or localhost
+    return import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 };
 
 const getDefaultWsUrl = () => {
-    // Production - sử dụng domain backend với WSS
-    if (typeof window !== 'undefined' && 
-        (window.location.hostname === 'jtsc.io.vn' || window.location.hostname.endsWith('.jtsc.io.vn'))) {
+    // Production - always use domain backend with WSS
+    if (isProduction()) {
         return 'wss://ai.jtsc.io.vn';
     }
-    return 'http://localhost:3001';
+    // Development mode - use env or localhost
+    return import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
 };
 
-export const API_URL = import.meta.env.VITE_API_URL || getDefaultApiUrl();
-export const WS_URL = import.meta.env.VITE_WS_URL || getDefaultWsUrl();
+export const API_URL = getDefaultApiUrl();
+export const WS_URL = getDefaultWsUrl();
 
 // Helper function to get API base URL (without /api suffix)
 export const getApiBaseUrl = () => {
