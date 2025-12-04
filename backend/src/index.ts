@@ -54,6 +54,7 @@ import projectRoutes from './routes/projectRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
 
 app.use(cors({
     origin: function(origin, callback) {
@@ -85,6 +86,7 @@ app.use('/api/projects', projectRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', activityRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
+app.use('/api/chat', chatRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');
@@ -120,6 +122,9 @@ io.use((socket, next) => {
 // Socket.io connection handling
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.data.userId}`);
+    
+    // Join user's personal room for notifications
+    socket.join(`user:${socket.data.userId}`);
 
     // Join project room
     socket.on('join_project', (projectId: string) => {
@@ -154,6 +159,55 @@ io.on('connection', (socket) => {
     // Stop typing
     socket.on('stop_typing', (data: { projectId: number }) => {
         socket.to(`project:${data.projectId}`).emit('user_stop_typing', {
+            userId: socket.data.userId
+        });
+    });
+
+    // ===== CHAT EVENTS =====
+    
+    // Join conversation room
+    socket.on('join_conversation', (conversationId: string) => {
+        socket.join(`conversation:${conversationId}`);
+        console.log(`User ${socket.data.userId} joined conversation ${conversationId}`);
+    });
+
+    // Leave conversation room
+    socket.on('leave_conversation', (conversationId: string) => {
+        socket.leave(`conversation:${conversationId}`);
+        console.log(`User ${socket.data.userId} left conversation ${conversationId}`);
+    });
+
+    // Send chat message
+    socket.on('send_chat_message', (data: { conversationId: number; message: any }) => {
+        // Broadcast to all users in the conversation room
+        io.to(`conversation:${data.conversationId}`).emit('new_chat_message', {
+            conversationId: data.conversationId,
+            message: data.message
+        });
+    });
+
+    // Chat typing indicator
+    socket.on('chat_typing', (data: { conversationId: number; userName: string }) => {
+        socket.to(`conversation:${data.conversationId}`).emit('chat_user_typing', {
+            conversationId: data.conversationId,
+            userId: socket.data.userId,
+            userName: data.userName
+        });
+    });
+
+    // Chat stop typing
+    socket.on('chat_stop_typing', (data: { conversationId: number }) => {
+        socket.to(`conversation:${data.conversationId}`).emit('chat_user_stop_typing', {
+            conversationId: data.conversationId,
+            userId: socket.data.userId
+        });
+    });
+
+    // Mark conversation as read
+    socket.on('mark_read', (conversationId: string) => {
+        // Notify other members that this user has read the messages
+        socket.to(`conversation:${conversationId}`).emit('conversation_read', {
+            conversationId,
             userId: socket.data.userId
         });
     });

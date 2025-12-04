@@ -38,6 +38,11 @@ enum MessageType {
   TEXT_WITH_FILE
 }
 
+enum ConversationType {
+  PRIVATE   // Chat 1-1
+  GROUP     // Chat nhóm
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique
@@ -45,6 +50,10 @@ model User {
   name      String
   role      Role     @default(USER)
   position  String?
+  avatar    String?  // Đường dẫn ảnh đại diện trong MinIO
+  bio       String?  // Mô tả ngắn về bản thân
+  phone     String?  // Số điện thoại
+  email     String?  // Email
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -58,6 +67,11 @@ model User {
   
   messages   Message[]         @relation("UserMessages")
   activities ProjectActivity[] @relation("UserActivities")
+  
+  // Chat system
+  conversations     ConversationMember[]
+  chatMessages      ChatMessage[]       @relation("ChatMessageSender")
+  createdConversations Conversation[]   @relation("ConversationCreator")
 }
 
 model Task {
@@ -138,4 +152,53 @@ model ProjectActivity {
 
   userId Int
   user   User @relation("UserActivities", fields: [userId], references: [id])
+}
+
+// ==================== CHAT SYSTEM ====================
+
+model Conversation {
+  id          Int              @id @default(autoincrement())
+  name        String?          // Tên nhóm chat (null cho chat 1-1)
+  type        ConversationType @default(PRIVATE)
+  avatar      String?          // Ảnh đại diện nhóm
+  description String?          // Mô tả nhóm
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  createdById Int
+  createdBy   User @relation("ConversationCreator", fields: [createdById], references: [id])
+
+  members  ConversationMember[]
+  messages ChatMessage[]
+}
+
+model ConversationMember {
+  id        Int      @id @default(autoincrement())
+  joinedAt  DateTime @default(now())
+  isAdmin   Boolean  @default(false)  // Admin của nhóm chat
+  lastRead  DateTime @default(now())  // Thời điểm đọc tin nhắn cuối
+
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+}
+
+model ChatMessage {
+  id          Int         @id @default(autoincrement())
+  content     String?     // Nội dung text
+  messageType MessageType @default(TEXT)
+  attachment  String?     // File path trong MinIO
+  isRead      Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  senderId Int
+  sender   User @relation("ChatMessageSender", fields: [senderId], references: [id])
 }

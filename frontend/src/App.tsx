@@ -12,6 +12,8 @@ import UserDashboard from './pages/UserDashboard';
 import UserProjects from './pages/UserProjects';
 import ProjectDetails from './pages/ProjectDetails';
 import UserWorkflow from './pages/UserWorkflow';
+import CompanyChat from './pages/CompanyChat';
+import UserProfile from './pages/UserProfile';
 import Login from './pages/Login';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -43,6 +45,8 @@ function App() {
               <Route path="projects/:id" element={<ProjectDetails />} />
               <Route path="my-tasks" element={<MyTasks />} />
               <Route path="workflow" element={<UserWorkflow />} />
+              <Route path="chat" element={<CompanyChat />} />
+              <Route path="profile" element={<UserProfile />} />
             </Route>
           </Route>
         </Routes>

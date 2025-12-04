@@ -1,6 +1,6 @@
 
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X, MessageCircle, User } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,7 +17,9 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
         { icon: CheckSquare, label: 'Quản lý công việc', path: '/projects' },
         { icon: ListTodo, label: 'Công việc cá nhân', path: '/my-tasks' },
+        { icon: MessageCircle, label: 'Tin nhắn', path: '/chat' },
         { icon: GitGraph, label: 'Quy trình', path: '/workflow' },
+        { icon: User, label: 'Hồ sơ cá nhân', path: '/profile' },
     ];
 
     const handleLogout = () => {

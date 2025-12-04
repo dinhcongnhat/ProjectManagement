@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import bcrypt from 'bcryptjs';
+import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
     try {
@@ -159,5 +160,244 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Không thể xóa người dùng. Vui lòng thử lại.' });
+    }
+};
+
+// Lấy profile hiện tại
+export const getProfile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                username: true,
+                name: true,
+                role: true,
+                position: true,
+                avatar: true,
+                bio: true,
+                phone: true,
+                email: true,
+                createdAt: true
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Lấy URL avatar nếu có
+        let avatarUrl = null;
+        if (user.avatar) {
+            try {
+                avatarUrl = await getPresignedUrl(user.avatar);
+            } catch (e) {
+                console.error('Error getting avatar URL:', e);
+            }
+        }
+
+        res.json({ ...user, avatarUrl });
+    } catch (error) {
+        console.error('Error getting profile:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Cập nhật profile
+export const updateProfile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { name, bio, phone, email } = req.body;
+
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: {
+                name,
+                bio,
+                phone,
+                email
+            },
+            select: {
+                id: true,
+                username: true,
+                name: true,
+                role: true,
+                position: true,
+                avatar: true,
+                bio: true,
+                phone: true,
+                email: true
+            }
+        });
+
+        // Lấy URL avatar nếu có
+        let avatarUrl = null;
+        if (user.avatar) {
+            try {
+                avatarUrl = await getPresignedUrl(user.avatar);
+            } catch (e) {
+                console.error('Error getting avatar URL:', e);
+            }
+        }
+
+        res.json({ ...user, avatarUrl });
+    } catch (error) {
+        console.error('Error updating profile:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Upload avatar
+export const uploadAvatar = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'No file uploaded' });
+        }
+
+        // Upload avatar to MinIO
+        const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
+        const fileName = `avatars/${userId}-${Date.now()}-${normalizedFilename}`;
+        const avatarPath = await uploadFile(fileName, req.file.buffer, {
+            'Content-Type': req.file.mimetype,
+        });
+
+        // Update user avatar
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { avatar: avatarPath },
+            select: {
+                id: true,
+                username: true,
+                name: true,
+                role: true,
+                position: true,
+                avatar: true,
+                bio: true,
+                phone: true,
+                email: true
+            }
+        });
+
+        const avatarUrl = await getPresignedUrl(avatarPath);
+
+        res.json({ ...user, avatarUrl });
+    } catch (error) {
+        console.error('Error uploading avatar:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Đổi mật khẩu
+export const changePassword = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ message: 'Current and new password are required' });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Verify current password
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Mật khẩu hiện tại không đúng' });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        await prisma.user.update({
+            where: { id: userId },
+            data: { password: hashedPassword }
+        });
+
+        res.json({ message: 'Đổi mật khẩu thành công' });
+    } catch (error) {
+        console.error('Error changing password:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Lấy thông tin user theo ID (public)
+export const getUserById = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+
+        const user = await prisma.user.findUnique({
+            where: { id: Number(id) },
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                position: true,
+                avatar: true,
+                bio: true
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Lấy URL avatar nếu có
+        let avatarUrl = null;
+        if (user.avatar) {
+            try {
+                avatarUrl = await getPresignedUrl(user.avatar);
+            } catch (e) {
+                console.error('Error getting avatar URL:', e);
+            }
+        }
+
+        res.json({ ...user, avatarUrl });
+    } catch (error) {
+        console.error('Error getting user:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Lấy tất cả users với avatar (cho chat)
+export const getAllUsersWithAvatar = async (req: AuthRequest, res: Response) => {
+    try {
+        const users = await prisma.user.findMany({
+            select: {
+                id: true,
+                username: true,
+                name: true,
+                role: true,
+                position: true,
+                avatar: true
+            }
+        });
+
+        // Thêm URL avatar cho từng user
+        const usersWithAvatarUrls = await Promise.all(users.map(async (user) => {
+            let avatarUrl = null;
+            if (user.avatar) {
+                try {
+                    avatarUrl = await getPresignedUrl(user.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+            return { ...user, avatarUrl };
+        }));
+
+        res.json(usersWithAvatarUrls);
+    } catch (error) {
+        console.error('Error getting users:', error);
+        res.status(500).json({ message: 'Server error' });
     }
 };

@@ -47,6 +47,92 @@ export const getApiBaseUrl = () => {
 // Check if device is mobile
 export const isMobile = isMobileApp;
 
+// Create axios-like API instance
+const createApi = () => {
+    const getAuthHeaders = (): Record<string, string> => {
+        const token = localStorage.getItem('token');
+        return token ? { 'Authorization': `Bearer ${token}` } : {};
+    };
+
+    return {
+        get: async (path: string, config?: { params?: Record<string, any> }) => {
+            const url = new URL(`${API_URL}${path}`);
+            if (config?.params) {
+                Object.entries(config.params).forEach(([key, value]) => {
+                    if (value !== undefined) url.searchParams.append(key, String(value));
+                });
+            }
+            const res = await fetch(url.toString(), {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders()
+                } as HeadersInit
+            });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({ message: 'Request failed' }));
+                throw { response: { data: error, status: res.status } };
+            }
+            return { data: await res.json() };
+        },
+        
+        post: async (path: string, data?: any, config?: { headers?: Record<string, string> }) => {
+            const isFormData = data instanceof FormData;
+            const headers: Record<string, string> = {
+                ...getAuthHeaders(),
+                ...(config?.headers || {})
+            };
+            if (!isFormData) {
+                headers['Content-Type'] = 'application/json';
+            }
+            const res = await fetch(`${API_URL}${path}`, {
+                method: 'POST',
+                headers: headers as HeadersInit,
+                body: isFormData ? data : JSON.stringify(data)
+            });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({ message: 'Request failed' }));
+                throw { response: { data: error, status: res.status } };
+            }
+            return { data: await res.json() };
+        },
+        
+        put: async (path: string, data?: any) => {
+            const res = await fetch(`${API_URL}${path}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders()
+                } as HeadersInit,
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({ message: 'Request failed' }));
+                throw { response: { data: error, status: res.status } };
+            }
+            return { data: await res.json() };
+        },
+        
+        delete: async (path: string) => {
+            const res = await fetch(`${API_URL}${path}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getAuthHeaders()
+                } as HeadersInit
+            });
+            if (!res.ok) {
+                const error = await res.json().catch(() => ({ message: 'Request failed' }));
+                throw { response: { data: error, status: res.status } };
+            }
+            return { data: await res.json() };
+        }
+    };
+};
+
+const api = createApi();
+export default api;
+
 // Fetch with retry for mobile network issues
 export const fetchWithRetry = async (
     url: string, 
