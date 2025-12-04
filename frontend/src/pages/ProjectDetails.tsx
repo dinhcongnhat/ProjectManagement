@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Calendar, User, Users, Eye, Clock, X, FileText, Image as ImageIcon, MessageSquare, History, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Users, Eye, Clock, X, FileText, Image as ImageIcon, MessageSquare, History, CheckCircle2, FolderTree, ChevronRight } from 'lucide-react';
 import { DiscussionPanel } from '../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../components/OnlyOfficeViewer';
@@ -14,6 +14,17 @@ const isOfficeFile = (fileName: string): boolean => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     return officeExtensions.includes(ext);
 };
+
+interface SubProject {
+    id: number;
+    code: string;
+    name: string;
+    progress: number;
+    status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
+    startDate: string;
+    endDate: string;
+    manager?: { id: number, name: string };
+}
 
 interface Project {
     id: number;
@@ -32,6 +43,9 @@ interface Project {
     attachment?: string;
     progress: number;
     status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
+    parentId?: number;
+    parent?: { id: number, name: string, code: string };
+    children?: SubProject[];
 }
 
 const ProjectDetails = () => {
@@ -477,6 +491,84 @@ const ProjectDetails = () => {
                                 )}
                             </div>
                         </div>
+
+                        {/* Parent Project */}
+                        {project.parent && (
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                                <h2 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                    <FolderTree size={16} className="text-purple-600" />
+                                    Dự án cha
+                                </h2>
+                                <Link 
+                                    to={`/projects/${project.parent.id}`}
+                                    className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors group"
+                                >
+                                    <div className="p-2 bg-purple-600 text-white rounded-lg">
+                                        <FolderTree size={16} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-purple-600">
+                                            {project.parent.name}
+                                        </p>
+                                        <p className="text-xs text-gray-500">Mã: {project.parent.code}</p>
+                                    </div>
+                                    <ChevronRight size={16} className="text-gray-400 group-hover:text-purple-600" />
+                                </Link>
+                            </div>
+                        )}
+
+                        {/* Sub Projects */}
+                        {project.children && project.children.length > 0 && (
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                                <h2 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+                                    <FolderTree size={16} className="text-blue-600" />
+                                    Dự án con ({project.children.length})
+                                </h2>
+                                <div className="space-y-2">
+                                    {project.children.map(child => (
+                                        <Link
+                                            key={child.id}
+                                            to={`/projects/${child.id}`}
+                                            className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
+                                        >
+                                            <div className={`p-2 rounded-lg text-white ${
+                                                child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
+                                            }`}>
+                                                <FolderTree size={14} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-blue-600">
+                                                    {child.name}
+                                                </p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-xs text-gray-500">{child.code}</span>
+                                                    <span className="text-xs text-gray-400">•</span>
+                                                    <span className={`text-xs font-medium ${
+                                                        child.status === 'COMPLETED' ? 'text-green-600' :
+                                                        child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
+                                                    }`}>
+                                                        {child.progress}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-end gap-1">
+                                                <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div 
+                                                        className={`h-full rounded-full ${
+                                                            child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                            child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
+                                                        }`}
+                                                        style={{ width: `${child.progress}%` }}
+                                                    />
+                                                </div>
+                                                <ChevronRight size={14} className="text-gray-400 group-hover:text-blue-600" />
+                                            </div>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

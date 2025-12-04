@@ -18,6 +18,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             progressMethod,
             managerId,
             description,
+            parentId,  // Add parentId for sub-project
         } = req.body;
 
         // Parse array fields if they come as strings (FormData behavior)
@@ -78,12 +79,17 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 progress: 0,
                 status: 'IN_PROGRESS',
                 managerId: Number(managerId),
+                parentId: parentId ? Number(parentId) : null,  // Add parentId
                 implementers: {
                     connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
                 followers: {
                     connect: Array.isArray(followerIds) ? followerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
+            },
+            include: {
+                parent: { select: { id: true, name: true, code: true } },
+                children: { select: { id: true, name: true, code: true, progress: true, status: true } },
             },
         });
 
@@ -148,6 +154,18 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                 manager: { select: { id: true, name: true } },
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
+                parent: { select: { id: true, name: true, code: true } },
+                children: { 
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        code: true, 
+                        progress: true, 
+                        status: true,
+                        startDate: true,
+                        endDate: true,
+                    } 
+                },
             },
             orderBy: { createdAt: 'desc' },
         });
@@ -167,6 +185,20 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                 manager: { select: { id: true, name: true } },
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
+                parent: { select: { id: true, name: true, code: true } },
+                children: { 
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        code: true, 
+                        progress: true, 
+                        status: true,
+                        startDate: true,
+                        endDate: true,
+                        manager: { select: { id: true, name: true } },
+                    },
+                    orderBy: { createdAt: 'desc' },
+                },
             },
         });
 

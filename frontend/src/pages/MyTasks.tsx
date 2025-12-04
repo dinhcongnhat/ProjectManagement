@@ -279,13 +279,46 @@ const MyTasks = () => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Công việc của tôi</h2>
                 <div className="flex gap-2">
-                    {/* View Toggle - Smaller on mobile */}
-                    <div className="flex bg-white rounded-lg border border-gray-200 p-0.5 lg:p-1">
-                        <button onClick={() => setView('list')} className={`p-2 rounded touch-target ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`} title="Xem dạng danh sách"><List size={18} className="lg:w-5 lg:h-5" /></button>
-                        <button onClick={() => setView('kanban')} className={`p-2 rounded touch-target hidden sm:block ${view === 'kanban' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`} title="Xem dạng Kanban"><Layout size={18} className="lg:w-5 lg:h-5" /></button>
-                        <button onClick={() => setView('gantt')} className={`p-2 rounded touch-target hidden sm:block ${view === 'gantt' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'}`} title="Xem dạng Gantt"><Calendar size={18} className="lg:w-5 lg:h-5" /></button>
+                    {/* View Toggle - With labels for better UX */}
+                    <div className="flex bg-white rounded-lg border border-gray-200 p-0.5 lg:p-1 shadow-sm">
+                        <button 
+                            onClick={() => setView('list')} 
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                                view === 'list' 
+                                    ? 'bg-blue-600 text-white shadow-sm' 
+                                    : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Xem dạng danh sách"
+                        >
+                            <List size={18} />
+                            <span className="hidden md:inline">List</span>
+                        </button>
+                        <button 
+                            onClick={() => setView('kanban')} 
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                                view === 'kanban' 
+                                    ? 'bg-blue-600 text-white shadow-sm' 
+                                    : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Xem dạng Kanban"
+                        >
+                            <Layout size={18} />
+                            <span className="hidden md:inline">Kanban</span>
+                        </button>
+                        <button 
+                            onClick={() => setView('gantt')} 
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                                view === 'gantt' 
+                                    ? 'bg-blue-600 text-white shadow-sm' 
+                                    : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            title="Xem dạng Gantt"
+                        >
+                            <Calendar size={18} />
+                            <span className="hidden md:inline">Gantt</span>
+                        </button>
                     </div>
-                    <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 text-sm lg:text-base touch-target">
+                    <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 text-sm lg:text-base touch-target shadow-sm">
                         <Plus size={18} className="lg:w-5 lg:h-5" /> <span className="hidden sm:inline">Tạo việc cá nhân</span><span className="sm:hidden">Thêm</span>
                     </button>
                 </div>

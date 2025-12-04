@@ -53,8 +53,8 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
                 )}
             >
                 <div className="p-4 lg:p-6 flex items-center justify-between gap-3 border-b border-gray-100 safe-top">
-                    <div className="flex items-center gap-3 mt-2">
-                        <img src="/Logo.png" alt="Logo" className="h-14 lg:h-16 w-auto" />
+                    <div className="flex items-center gap-3 mt-3">
+                        <img src="/Logo.png" alt="Logo" className="h-16 lg:h-18 w-auto" />
                     </div>
                     {/* Close button for mobile */}
                     <button 

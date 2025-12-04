@@ -1,8 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle, FolderTree, ChevronRight, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
+
+interface SubProject {
+    id: number;
+    code: string;
+    name: string;
+    progress: number;
+    status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
+    startDate: string;
+    endDate: string;
+}
 
 interface Project {
     id: number;
@@ -15,12 +25,28 @@ interface Project {
     endDate: string;
     progress: number;
     status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
+    parentId?: number;
+    parent?: { id: number, name: string, code: string };
+    children?: SubProject[];
 }
 
 const UserProjects = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const { token, user } = useAuth();
     const [updatingProgress, setUpdatingProgress] = useState<number | null>(null);
+    const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+
+    const toggleExpanded = (projectId: number) => {
+        setExpandedProjects(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(projectId)) {
+                newSet.delete(projectId);
+            } else {
+                newSet.add(projectId);
+            }
+            return newSet;
+        });
+    };
 
     const fetchProjects = useCallback(async () => {
         try {
@@ -29,11 +55,13 @@ const UserProjects = () => {
             });
             const data = await response.json();
             if (Array.isArray(data)) {
-                // Filter projects where user is involved
+                // Filter projects where user is involved and only show root projects (no parentId)
                 const myProjects = data.filter((project: Project) =>
-                    project.manager?.id === user?.id ||
-                    project.implementers?.some((imp: { id: number }) => imp.id === user?.id) ||
-                    project.followers?.some((fol: { id: number }) => fol.id === user?.id)
+                    !project.parentId && (
+                        project.manager?.id === user?.id ||
+                        project.implementers?.some((imp: { id: number }) => imp.id === user?.id) ||
+                        project.followers?.some((fol: { id: number }) => fol.id === user?.id)
+                    )
                 );
                 setProjects(myProjects);
             }
@@ -189,6 +217,69 @@ const UserProjects = () => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* Sub Projects */}
+                            {project.children && project.children.length > 0 && (
+                                <div className="border-t border-gray-200 pt-4 mt-2">
+                                    <button
+                                        onClick={() => toggleExpanded(project.id)}
+                                        className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors"
+                                    >
+                                        {expandedProjects.has(project.id) ? (
+                                            <ChevronDown size={16} />
+                                        ) : (
+                                            <ChevronRight size={16} />
+                                        )}
+                                        <FolderTree size={16} className="text-blue-500" />
+                                        <span>Dự án con ({project.children.length})</span>
+                                    </button>
+
+                                    {expandedProjects.has(project.id) && (
+                                        <div className="mt-3 space-y-2 pl-6">
+                                            {project.children.map(child => (
+                                                <Link
+                                                    key={child.id}
+                                                    to={`/projects/${child.id}`}
+                                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors group"
+                                                >
+                                                    <div className={`p-1.5 rounded-lg text-white ${
+                                                        child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                        child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
+                                                    }`}>
+                                                        <FolderTree size={12} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-600">
+                                                            {child.name}
+                                                        </p>
+                                                        <p className="text-xs text-gray-500">{child.code}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-right">
+                                                            <span className={`text-sm font-bold ${
+                                                                child.status === 'COMPLETED' ? 'text-green-600' :
+                                                                child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
+                                                            }`}>
+                                                                {child.progress}%
+                                                            </span>
+                                                            <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden mt-1">
+                                                                <div 
+                                                                    className={`h-full rounded-full ${
+                                                                        child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                                        child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
+                                                                    }`}
+                                                                    style={{ width: `${child.progress}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <ChevronRight size={16} className="text-gray-400 group-hover:text-blue-600" />
+                                                    </div>
+                                                </Link>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ))
                 )}

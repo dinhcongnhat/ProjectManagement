@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, X, ChevronDown, Check, CloudUpload } from 'lucide-react';
+import { Calendar, X, ChevronDown, Check, CloudUpload, FolderTree, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 
 interface UserData {
     id: number;
@@ -10,10 +10,20 @@ interface UserData {
     role: string;
 }
 
+interface ParentProject {
+    id: number;
+    code: string;
+    name: string;
+}
+
 const CreateProject = () => {
     const { token } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const parentIdParam = searchParams.get('parentId');
+    
     const [users, setUsers] = useState<UserData[]>([]);
+    const [parentProject, setParentProject] = useState<ParentProject | null>(null);
 
     const [formData, setFormData] = useState({
         code: '',
@@ -27,7 +37,8 @@ const CreateProject = () => {
         managerId: '',
         implementerIds: [] as string[],
         followerIds: [] as string[],
-        description: ''
+        description: '',
+        parentId: parentIdParam || ''
     });
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -54,9 +65,26 @@ const CreateProject = () => {
             }
         };
 
-        if (token) fetchUsers();
-        if (token) fetchUsers();
-    }, [token]);
+        const fetchParentProject = async () => {
+            if (!parentIdParam) return;
+            try {
+                const response = await fetch(`${API_URL}/projects/${parentIdParam}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setParentProject({ id: data.id, code: data.code, name: data.name });
+                }
+            } catch (error) {
+                console.error('Error fetching parent project:', error);
+            }
+        };
+
+        if (token) {
+            fetchUsers();
+            fetchParentProject();
+        }
+    }, [token, parentIdParam]);
 
     // Auto-calculate duration
     useEffect(() => {
@@ -127,8 +155,14 @@ const CreateProject = () => {
             });
 
             if (response.ok) {
+                await response.json();
                 alert('Dự án đã được tạo thành công!');
-                navigate('/admin/projects');
+                // Navigate to parent project if creating sub-project, otherwise to projects list
+                if (parentIdParam) {
+                    navigate(`/admin/projects/${parentIdParam}`);
+                } else {
+                    navigate('/admin/projects');
+                }
             } else {
                 const data = await response.json();
                 alert(`Lỗi: ${data.message}`);
@@ -340,8 +374,40 @@ const CreateProject = () => {
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-gray-900">Tạo dự án mới</h2>
+                <div className="flex items-center gap-3">
+                    {parentProject && (
+                        <Link 
+                            to={`/admin/projects/${parentProject.id}`}
+                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+                        >
+                            <ArrowLeft size={20} />
+                        </Link>
+                    )}
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900">
+                            {parentProject ? 'Tạo dự án con' : 'Tạo dự án mới'}
+                        </h2>
+                        {parentProject && (
+                            <p className="text-sm text-gray-500 mt-1">
+                                Dự án cha: <span className="font-medium text-blue-600">{parentProject.name}</span> ({parentProject.code})
+                            </p>
+                        )}
+                    </div>
+                </div>
             </div>
+
+            {/* Parent Project Info Banner */}
+            {parentProject && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                    <div className="p-2 bg-blue-600 text-white rounded-lg">
+                        <FolderTree size={20} />
+                    </div>
+                    <div>
+                        <p className="text-sm font-medium text-blue-800">Đang tạo dự án con cho:</p>
+                        <p className="text-blue-600 font-semibold">{parentProject.name}</p>
+                    </div>
+                </div>
+            )}
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

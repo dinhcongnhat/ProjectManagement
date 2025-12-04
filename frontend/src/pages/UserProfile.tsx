@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import { 
     User as UserIcon, 
@@ -29,7 +28,6 @@ interface UserProfileData {
 }
 
 export default function UserProfile() {
-    const { user } = useAuth();
     const [profile, setProfile] = useState<UserProfileData | null>(null);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
