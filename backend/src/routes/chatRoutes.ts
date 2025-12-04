@@ -13,7 +13,10 @@ import {
     leaveConversation,
     updateConversation,
     searchConversations,
-    searchUsers
+    searchUsers,
+    addReaction,
+    removeReaction,
+    markConversationAsRead
 } from '../controllers/chatController.js';
 
 const router = express.Router();
@@ -28,6 +31,7 @@ router.post('/conversations', upload.single('avatar'), createConversation);
 router.get('/conversations/search', searchConversations);
 router.get('/conversations/:id', getConversationById);
 router.put('/conversations/:id', upload.single('avatar'), updateConversation);
+router.put('/conversations/:id/read', markConversationAsRead);
 router.post('/conversations/:id/members', addMembers);
 router.delete('/conversations/:id/leave', leaveConversation);
 
@@ -36,6 +40,10 @@ router.get('/conversations/:id/messages', getMessages);
 router.post('/conversations/:id/messages', sendMessage);
 router.post('/conversations/:id/messages/file', upload.single('file'), sendFileMessage);
 router.post('/conversations/:id/messages/voice', upload.single('audio'), sendVoiceMessage);
+
+// Reactions
+router.post('/messages/:messageId/reactions', addReaction);
+router.delete('/messages/:messageId/reactions/:emoji', removeReaction);
 
 // Users search for new chat
 router.get('/users/search', searchUsers);

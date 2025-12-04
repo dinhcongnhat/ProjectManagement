@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Users as UsersIcon } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 
@@ -148,23 +148,24 @@ const Users = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
+        <div className="space-y-4 lg:space-y-6">
+            {/* Header - Mobile Optimized */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Quản lý nhân viên</h2>
-                    <p className="text-sm text-gray-500 mt-1">Quản lý hệ thống tài khoản của nhân viên</p>
+                    <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Quản lý nhân viên</h2>
+                    <p className="text-xs lg:text-sm text-gray-500 mt-1">Quản lý hệ thống tài khoản của nhân viên</p>
                 </div>
                 <button
                     onClick={() => { resetForm(); setShowModal(true); }}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm text-sm font-medium touch-target shrink-0"
                 >
-                    <Plus size={20} />
-                    Add User
+                    <Plus size={18} />
+                    <span>Thêm nhân viên</span>
                 </button>
             </div>
 
-            {/* User List */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {/* User List - Desktop Table */}
+            <div className="hidden lg:block bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
@@ -213,57 +214,113 @@ const Users = () => {
                 </table>
             </div>
 
+            {/* User List - Mobile Cards */}
+            <div className="lg:hidden space-y-3">
+                {users.length === 0 ? (
+                    <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <UsersIcon size={32} className="text-gray-400" />
+                        </div>
+                        <p className="text-gray-500 text-sm">Chưa có nhân viên nào</p>
+                    </div>
+                ) : (
+                    users.map((user) => (
+                        <div key={user.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 active:bg-gray-50 transition-colors">
+                            <div className="flex items-start gap-3">
+                                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-lg shrink-0">
+                                    {user.name.charAt(0)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-gray-900 truncate">{user.name}</p>
+                                            <p className="text-sm text-gray-500">@{user.username}</p>
+                                        </div>
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
+                                            }`}>
+                                            {user.role}
+                                        </span>
+                                    </div>
+                                    {user.position && (
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <span className="text-xs text-gray-500">Chức vụ:</span>
+                                            <span className="text-sm text-gray-700 font-medium">{user.position}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => openEditModal(user)} 
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors text-sm font-medium touch-target"
+                                        >
+                                            <Pencil size={16} />
+                                            <span>Chỉnh sửa</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteUser(user.id)} 
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 active:bg-red-200 transition-colors text-sm font-medium touch-target"
+                                        >
+                                            <Trash2 size={16} />
+                                            <span>Xóa</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
             {/* Create/Edit User Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold text-gray-900">{editingUser ? 'Edit User' : 'Create New User'}</h3>
-                            <button title="Đóng" onClick={resetForm} className="text-gray-400 hover:text-gray-600">
-                                <X size={24} />
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+                        <div className="flex justify-between items-center p-4 lg:p-6 border-b border-gray-200 shrink-0">
+                            <h3 className="text-lg lg:text-xl font-bold text-gray-900">{editingUser ? 'Chỉnh sửa nhân viên' : 'Thêm nhân viên mới'}</h3>
+                            <button title="Đóng" onClick={resetForm} className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors touch-target">
+                                <X size={20} />
                             </button>
                         </div>
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Họ và tên <span className="text-red-500">*</span></label>
                                 <input
                                     type="text"
                                     required
                                     placeholder="Nhập họ tên"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Tên đăng nhập <span className="text-red-500">*</span></label>
                                 <input
                                     type="text"
                                     required
                                     placeholder="Nhập tên đăng nhập"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     value={formData.username}
                                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    {editingUser ? 'Password (leave blank to keep current)' : 'Password'}
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    {editingUser ? 'Mật khẩu (để trống nếu không đổi)' : 'Mật khẩu'} {!editingUser && <span className="text-red-500">*</span>}
                                 </label>
                                 <input
                                     type="password"
                                     required={!editingUser}
                                     placeholder="Nhập mật khẩu"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     value={formData.password}
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Vai trò <span className="text-red-500">*</span></label>
                                 <select
                                     title="Chọn vai trò"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white"
                                     value={formData.role}
                                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                                 >
@@ -272,31 +329,32 @@ const Users = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Chức vụ</label>
                                 <input
                                     type="text"
                                     placeholder="Nhập chức vụ"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     value={formData.position}
                                     onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                                 />
                             </div>
-                            <div className="flex justify-end gap-3 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={resetForm}
-                                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
-                                >
-                                    {editingUser ? 'Update User' : 'Create User'}
-                                </button>
-                            </div>
                         </form>
+                        <div className="flex gap-3 p-4 lg:p-6 border-t border-gray-200 shrink-0">
+                            <button
+                                type="button"
+                                onClick={resetForm}
+                                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:bg-gray-100 rounded-lg transition-colors touch-target"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                type="submit"
+                                onClick={handleSubmit}
+                                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg transition-colors shadow-sm touch-target"
+                            >
+                                {editingUser ? 'Cập nhật' : 'Tạo mới'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

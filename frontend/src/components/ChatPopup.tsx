@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     MessageCircle, X, Search, Users, MessageSquare, Send, Smile, Paperclip,
-    Mic, MicOff, Minimize2, Maximize2, ArrowLeft, Play, Pause,
-    Volume2, FileText, Download, Eye, Plus, Check, Loader2
+    Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
+    Volume2, FileText, Download, Eye, Plus, Check, Loader2, Camera
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import api from '../config/api';
+import api, { API_URL } from '../config/api';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -27,6 +27,16 @@ interface ConversationMember {
     user: User;
 }
 
+interface Reaction {
+    id: number;
+    emoji: string;
+    userId: number;
+    user: {
+        id: number;
+        name: string;
+    };
+}
+
 interface Message {
     id: number;
     content: string | null;
@@ -34,7 +44,11 @@ interface Message {
     attachment: string | null;
     attachmentUrl: string | null;
     attachmentName?: string | null;
+    conversationId?: number;
+    senderId?: number;
     createdAt: string;
+    updatedAt?: string;
+    reactions?: Reaction[];
     sender: {
         id: number;
         name: string;
@@ -66,6 +80,7 @@ interface ChatWindow {
 
 // ==================== UTILITIES ====================
 const EMOJI_LIST = ['😀', '😂', '😍', '🥰', '😎', '🤔', '😢', '😡', '👍', '👎', '❤️', '🔥', '🎉', '👏', '🙏', '💪'];
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
 const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -128,12 +143,18 @@ const ChatPopup: React.FC = () => {
     
     // Input state
     const [messageInputs, setMessageInputs] = useState<Record<number, string>>({});
+    const [showReactionPicker, setShowReactionPicker] = useState<number | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null);
     const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
     
     // Typing state
     const [typingUsers, setTypingUsers] = useState<Record<number, { userName: string; userId: number }[]>>({});
     const typingTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+    const typingEmitTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+    
+    // Long press state for mobile
+    const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [longPressMessageId, setLongPressMessageId] = useState<number | null>(null);
     
     // Recording state
     const [isRecording, setIsRecording] = useState<number | null>(null);
@@ -183,6 +204,42 @@ const ChatPopup: React.FC = () => {
         }
     }, [isOpen]);
 
+    // Polling for active conversations to ensure realtime updates
+    useEffect(() => {
+        if (chatWindows.length === 0 && !mobileActiveChat) return;
+
+        // Poll every 3 seconds for new messages in active conversations
+        const pollMessages = async () => {
+            const activeConvIds = [
+                ...chatWindows.map(w => w.conversationId),
+                mobileActiveChat?.conversationId
+            ].filter(Boolean) as number[];
+
+            for (const convId of activeConvIds) {
+                try {
+                    const messages = await fetchMessages(convId);
+                    
+                    // Update chat windows
+                    setChatWindows(prev => prev.map(w =>
+                        w.conversationId === convId
+                            ? { ...w, messages }
+                            : w
+                    ));
+
+                    // Update mobile chat
+                    if (mobileActiveChat?.conversationId === convId) {
+                        setMobileActiveChat(prev => prev ? { ...prev, messages } : null);
+                    }
+                } catch (error) {
+                    // Silently ignore polling errors
+                }
+            }
+        };
+
+        const interval = setInterval(pollMessages, 3000);
+        return () => clearInterval(interval);
+    }, [chatWindows.length, mobileActiveChat?.conversationId]);
+
     useEffect(() => {
         if (searchMode === 'users' && searchQuery) {
             const timer = setTimeout(() => fetchSearchUsers(searchQuery), 300);
@@ -212,6 +269,21 @@ const ChatPopup: React.FC = () => {
             if (recordingIntervalRef.current) {
                 clearInterval(recordingIntervalRef.current);
             }
+            
+            // Cleanup long press timer
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+            }
+            
+            // Cleanup typing emit timeouts
+            Object.values(typingEmitTimeoutRef.current).forEach(timer => {
+                clearTimeout(timer);
+            });
+            
+            // Cleanup typing indicator timeouts
+            Object.values(typingTimeoutRef.current).forEach(timer => {
+                clearTimeout(timer);
+            });
         };
     }, []);
 
@@ -220,7 +292,12 @@ const ChatPopup: React.FC = () => {
         if (!socketRef.current || !connected) return;
 
         // Listen for new messages
-        socketRef.current.on('chat:new_message', (data: { conversationId: number; message: Message }) => {
+        const handleNewMessage = (data: { conversationId: number; message: Message }) => {
+            // Skip if this is our own message (already added via optimistic update or API response)
+            if (data.message.senderId === user?.id) {
+                return;
+            }
+            
             // Update chat windows
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === data.conversationId
@@ -228,17 +305,22 @@ const ChatPopup: React.FC = () => {
                     : w
             ));
 
-            // Update mobile chat
-            if (mobileActiveChat?.conversationId === data.conversationId) {
-                setMobileActiveChat(prev => prev ? { ...prev, messages: [...prev.messages, data.message] } : null);
-            }
+            // Update mobile chat - use functional update to avoid stale closure
+            setMobileActiveChat(prev => {
+                if (prev?.conversationId === data.conversationId) {
+                    return { ...prev, messages: [...prev.messages, data.message] };
+                }
+                return prev;
+            });
 
             // Refresh conversations list
             fetchConversations();
-        });
+        };
+        
+        socketRef.current.on('chat:new_message', handleNewMessage);
 
         // Listen for typing indicator
-        socketRef.current.on('chat:typing', (data: { conversationId: number; userName: string; userId: number }) => {
+        const handleTyping = (data: { conversationId: number; userName: string; userId: number }) => {
             if (data.userId === user?.id) return; // Ignore own typing
             
             setTypingUsers(prev => {
@@ -265,10 +347,12 @@ const ChatPopup: React.FC = () => {
                     };
                 });
             }, 3000);
-        });
+        };
+        
+        socketRef.current.on('chat:typing', handleTyping);
 
         // Listen for stop typing
-        socketRef.current.on('chat:stop_typing', (data: { conversationId: number; userId: number }) => {
+        const handleStopTyping = (data: { conversationId: number; userId: number }) => {
             setTypingUsers(prev => {
                 const current = prev[data.conversationId] || [];
                 return {
@@ -276,14 +360,98 @@ const ChatPopup: React.FC = () => {
                     [data.conversationId]: current.filter(u => u.userId !== data.userId)
                 };
             });
-        });
+        };
+        
+        socketRef.current.on('chat:stop_typing', handleStopTyping);
+
+        // Listen for reaction added
+        const handleReactionAdded = (data: { conversationId: number; messageId: number; reactions: Reaction[] }) => {
+            const updateMessages = (messages: Message[]) =>
+                messages.map(m => m.id === data.messageId ? { ...m, reactions: data.reactions } : m);
+
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === data.conversationId
+                    ? { ...w, messages: updateMessages(w.messages) }
+                    : w
+            ));
+
+            setMobileActiveChat(prev => {
+                if (prev?.conversationId === data.conversationId) {
+                    return { ...prev, messages: updateMessages(prev.messages) };
+                }
+                return prev;
+            });
+        };
+        
+        socketRef.current.on('chat:reaction_added', handleReactionAdded);
+
+        // Listen for reaction removed
+        const handleReactionRemoved = (data: { conversationId: number; messageId: number; reactions: Reaction[] }) => {
+            const updateMessages = (messages: Message[]) =>
+                messages.map(m => m.id === data.messageId ? { ...m, reactions: data.reactions } : m);
+
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === data.conversationId
+                    ? { ...w, messages: updateMessages(w.messages) }
+                    : w
+            ));
+
+            setMobileActiveChat(prev => {
+                if (prev?.conversationId === data.conversationId) {
+                    return { ...prev, messages: updateMessages(prev.messages) };
+                }
+                return prev;
+            });
+        };
+        
+        socketRef.current.on('chat:reaction_removed', handleReactionRemoved);
+
+        // Listen for new conversation (when someone creates a chat with you)
+        const handleNewConversation = (data: { conversation: Conversation }) => {
+            setConversations(prev => {
+                // Check if already exists
+                if (prev.some(c => c.id === data.conversation.id)) {
+                    return prev;
+                }
+                return [data.conversation, ...prev];
+            });
+        };
+        
+        socketRef.current.on('chat:new_conversation', handleNewConversation);
+
+        // Listen for conversation updated (name, avatar changes)
+        const handleConversationUpdated = (data: { conversation: Conversation }) => {
+            setConversations(prev => prev.map(c =>
+                c.id === data.conversation.id ? { ...c, ...data.conversation } : c
+            ));
+            
+            // Update active chat windows
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === data.conversation.id
+                    ? { ...w, conversation: { ...w.conversation, ...data.conversation } }
+                    : w
+            ));
+            
+            setMobileActiveChat(prev => {
+                if (prev?.conversationId === data.conversation.id) {
+                    return { ...prev, conversation: { ...prev.conversation, ...data.conversation } };
+                }
+                return prev;
+            });
+        };
+        
+        socketRef.current.on('chat:conversation_updated', handleConversationUpdated);
 
         return () => {
-            socketRef.current?.off('chat:new_message');
-            socketRef.current?.off('chat:typing');
-            socketRef.current?.off('chat:stop_typing');
+            socketRef.current?.off('chat:new_message', handleNewMessage);
+            socketRef.current?.off('chat:typing', handleTyping);
+            socketRef.current?.off('chat:stop_typing', handleStopTyping);
+            socketRef.current?.off('chat:reaction_added', handleReactionAdded);
+            socketRef.current?.off('chat:reaction_removed', handleReactionRemoved);
+            socketRef.current?.off('chat:new_conversation', handleNewConversation);
+            socketRef.current?.off('chat:conversation_updated', handleConversationUpdated);
         };
-    }, [connected, socketRef, user, mobileActiveChat]);
+    }, [connected, socketRef, user?.id]); // Removed mobileActiveChat from dependencies
 
     // ==================== API FUNCTIONS ====================
     const fetchConversations = async () => {
@@ -334,7 +502,9 @@ const ChatPopup: React.FC = () => {
         try {
             const response = await api.get(`/chat/conversations/${conversationId}/messages`);
             const data = response.data;
-            return Array.isArray(data) ? data : (data.messages || []);
+            const messages = Array.isArray(data) ? data : (data.messages || []);
+            console.log('Fetched messages:', messages); // Debug log
+            return messages;
         } catch (error) {
             console.error('Error fetching messages:', error);
             return [];
@@ -378,16 +548,43 @@ const ChatPopup: React.FC = () => {
         if (!groupName.trim() || selectedMembers.length === 0) return;
         
         try {
-            const response = await api.post('/chat/conversations', {
-                type: 'GROUP',
-                name: groupName,
-                memberIds: selectedMembers.map(m => m.id)
-            });
+            const description = (document.getElementById('group-description') as HTMLInputElement)?.value || '';
+            const avatarFile = (window as any)._groupAvatarFile as File | null;
+            
+            let response;
+            
+            if (avatarFile) {
+                // Send with FormData for avatar upload
+                const formData = new FormData();
+                formData.append('type', 'GROUP');
+                formData.append('name', groupName.trim());
+                formData.append('description', description);
+                formData.append('memberIds', JSON.stringify(selectedMembers.map(m => m.id)));
+                formData.append('avatar', avatarFile);
+                
+                response = await fetch(`${API_URL}/chat/conversations`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) throw new Error('Failed to create group');
+                response = { data: await response.json() };
+            } else {
+                response = await api.post('/chat/conversations', {
+                    type: 'GROUP',
+                    name: groupName.trim(),
+                    description,
+                    memberIds: selectedMembers.map(m => m.id)
+                });
+            }
             
             const newConv: Conversation = {
                 ...response.data,
                 displayName: groupName,
-                displayAvatar: null,
+                displayAvatar: response.data.avatarUrl || null,
                 unreadCount: 0
             };
             
@@ -396,8 +593,10 @@ const ChatPopup: React.FC = () => {
             setShowCreateGroup(false);
             setGroupName('');
             setSelectedMembers([]);
+            (window as any)._groupAvatarFile = null;
         } catch (error) {
             console.error('Error creating group:', error);
+            alert('Không thể tạo nhóm. Vui lòng thử lại.');
         }
     };
 
@@ -405,6 +604,11 @@ const ChatPopup: React.FC = () => {
         const existingWindow = chatWindows.find(w => w.conversationId === conversation.id);
         
         if (existingWindow) {
+            // Join room if not already joined
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('join_conversation', String(conversation.id));
+            }
+            
             if (isMobile) {
                 setMobileActiveChat(existingWindow);
                 setIsOpen(false);
@@ -444,6 +648,11 @@ const ChatPopup: React.FC = () => {
             setIsOpen(false);
         }
 
+        // Join conversation room for realtime updates
+        if (socketRef.current?.connected) {
+            socketRef.current.emit('join_conversation', String(conversation.id));
+        }
+
         // Mark as read
         try {
             await api.put(`/chat/conversations/${conversation.id}/read`);
@@ -456,6 +665,13 @@ const ChatPopup: React.FC = () => {
     };
 
     const closeWindow = (windowId: number) => {
+        const window = chatWindows.find(w => w.id === windowId);
+        
+        // Leave conversation room
+        if (window && socketRef.current?.connected) {
+            socketRef.current.emit('leave_conversation', String(window.conversationId));
+        }
+        
         setChatWindows(prev => prev.filter(w => w.id !== windowId));
         if (isMobile) setMobileActiveChat(null);
     };
@@ -476,19 +692,25 @@ const ChatPopup: React.FC = () => {
     const handleInputChange = (conversationId: number, value: string) => {
         setMessageInputs(prev => ({ ...prev, [conversationId]: value }));
         
-        // Emit typing indicator
-        if (socketRef.current?.connected && value.trim()) {
-            socketRef.current.emit('chat:typing', { 
-                conversationId, 
-                userName: user?.name || 'User',
-                userId: user?.id
-            });
-        } else if (socketRef.current?.connected && !value.trim()) {
-            socketRef.current.emit('chat:stop_typing', { 
-                conversationId,
-                userId: user?.id
-            });
+        // Debounce typing indicator emission to reduce WebSocket traffic
+        if (typingEmitTimeoutRef.current[conversationId]) {
+            clearTimeout(typingEmitTimeoutRef.current[conversationId]);
         }
+        
+        typingEmitTimeoutRef.current[conversationId] = setTimeout(() => {
+            if (socketRef.current?.connected && value.trim()) {
+                socketRef.current.emit('chat:typing', { 
+                    conversationId, 
+                    userName: user?.name || 'User',
+                    userId: user?.id
+                });
+            } else if (socketRef.current?.connected && !value.trim()) {
+                socketRef.current.emit('chat:stop_typing', { 
+                    conversationId,
+                    userId: user?.id
+                });
+            }
+        }, 300); // 300ms debounce
     };
 
     const sendMessage = async (conversationId: number, content: string) => {
@@ -502,28 +724,111 @@ const ChatPopup: React.FC = () => {
             });
         }
 
+        // Optimistic update - Add message immediately
+        const optimisticMessage: Message = {
+            id: Date.now(), // Temporary ID
+            content: content.trim(),
+            messageType: 'TEXT',
+            attachment: null,
+            attachmentUrl: null,
+            conversationId,
+            senderId: user?.id || 0,
+            sender: {
+                id: user?.id || 0,
+                name: user?.name || 'You',
+                avatar: undefined
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        // Update UI immediately
+        setChatWindows(prev => prev.map(w =>
+            w.conversationId === conversationId
+                ? { ...w, messages: [...w.messages, optimisticMessage] }
+                : w
+        ));
+
+        if (mobileActiveChat?.conversationId === conversationId) {
+            setMobileActiveChat(prev => prev ? { ...prev, messages: [...prev.messages, optimisticMessage] } : null);
+        }
+
+        // Clear input immediately
+        setMessageInputs(prev => ({ ...prev, [conversationId]: '' }));
+
         try {
+            console.log('Sending message to:', `/chat/conversations/${conversationId}/messages`);
+            console.log('Message payload:', { content: content.trim(), messageType: 'TEXT' });
+            
             const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
                 content: content.trim(),
                 messageType: 'TEXT'
             });
 
-            const newMessage = response.data;
+            console.log('Message sent successfully:', response.data);
+            const realMessage = response.data;
             
+            // Replace optimistic message with real one from server
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === conversationId
-                    ? { ...w, messages: [...w.messages, newMessage] }
+                    ? { ...w, messages: w.messages.map(m => m.id === optimisticMessage.id ? realMessage : m) }
                     : w
             ));
 
             if (mobileActiveChat?.conversationId === conversationId) {
-                setMobileActiveChat(prev => prev ? { ...prev, messages: [...prev.messages, newMessage] } : null);
+                setMobileActiveChat(prev => prev ? { 
+                    ...prev, 
+                    messages: prev.messages.map(m => m.id === optimisticMessage.id ? realMessage : m)
+                } : null);
             }
 
-            setMessageInputs(prev => ({ ...prev, [conversationId]: '' }));
             fetchConversations();
         } catch (error) {
             console.error('Error sending message:', error);
+            // Remove optimistic message on error
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === conversationId
+                    ? { ...w, messages: w.messages.filter(m => m.id !== optimisticMessage.id) }
+                    : w
+            ));
+
+            if (mobileActiveChat?.conversationId === conversationId) {
+                setMobileActiveChat(prev => prev ? { 
+                    ...prev, 
+                    messages: prev.messages.filter(m => m.id !== optimisticMessage.id)
+                } : null);
+            }
+            
+            alert('Không thể gửi tin nhắn. Vui lòng thử lại.');
+        }
+    };
+
+    // Add reaction to message
+    const addReaction = async (messageId: number, emoji: string) => {
+        try {
+            await api.post(`/chat/messages/${messageId}/reactions`, { emoji });
+            setShowReactionPicker(null);
+        } catch (error) {
+            console.error('Error adding reaction:', error);
+        }
+    };
+
+    // Remove reaction from message
+    const removeReaction = async (messageId: number, emoji: string) => {
+        try {
+            await api.delete(`/chat/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
+        } catch (error) {
+            console.error('Error removing reaction:', error);
+        }
+    };
+
+    // Toggle reaction (add if not exists, remove if exists)
+    const toggleReaction = async (msg: Message, emoji: string) => {
+        const existingReaction = msg.reactions?.find(r => r.emoji === emoji && r.userId === user?.id);
+        if (existingReaction) {
+            await removeReaction(msg.id, emoji);
+        } else {
+            await addReaction(msg.id, emoji);
         }
     };
 
@@ -539,15 +844,37 @@ const ChatPopup: React.FC = () => {
         try {
             setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
             
-            const response = await api.post(
-                `/chat/conversations/${conversationId}/messages`,
-                formData,
-                { headers: { 'Content-Type': 'multipart/form-data' } }
-            );
+            // Use XMLHttpRequest for upload progress tracking
+            const token = localStorage.getItem('token');
+            const response = await new Promise<any>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentCompleted = Math.round((e.loaded * 100) / e.total);
+                        setUploadProgress(prev => ({ ...prev, [conversationId]: percentCompleted }));
+                    }
+                });
+                
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(JSON.parse(xhr.responseText));
+                    } else {
+                        reject(new Error(`Upload failed: ${xhr.status}`));
+                    }
+                });
+                
+                xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+                xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+                
+                xhr.open('POST', `${API_URL}/chat/conversations/${conversationId}/messages/file`);
+                if (token) {
+                    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                }
+                xhr.send(formData);
+            });
             
-            setUploadProgress(prev => ({ ...prev, [conversationId]: 100 }));
-
-            const newMessage = response.data;
+            const newMessage = response;
             
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === conversationId
@@ -603,19 +930,25 @@ const ChatPopup: React.FC = () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 stream.getTracks().forEach(track => track.stop());
                 
-                // Upload voice message
+                // Upload voice message - use the correct endpoint with multer
                 const formData = new FormData();
-                formData.append('file', audioBlob, 'voice.webm');
-                formData.append('messageType', 'VOICE');
+                formData.append('audio', audioBlob, 'voice.webm');
 
                 try {
-                    const response = await api.post(
-                        `/chat/conversations/${conversationId}/messages`,
-                        formData,
-                        { headers: { 'Content-Type': 'multipart/form-data' } }
-                    );
+                    const token = localStorage.getItem('token');
+                    const response = await fetch(`${API_URL}/chat/conversations/${conversationId}/messages/voice`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to send voice message');
+                    }
 
-                    const newMessage = response.data;
+                    const newMessage = await response.json();
                     
                     setChatWindows(prev => prev.map(w =>
                         w.conversationId === conversationId
@@ -723,14 +1056,24 @@ const ChatPopup: React.FC = () => {
                 );
 
             case 'IMAGE':
-                return msg.attachmentUrl && (
+                const imageUrl = msg.attachmentUrl || msg.attachment;
+                return imageUrl ? (
                     <img
-                        src={msg.attachmentUrl}
+                        src={imageUrl}
                         alt="Image"
-                        className="max-w-full rounded-lg cursor-pointer hover:opacity-90"
-                        style={{ maxHeight: '200px' }}
-                        onClick={() => setImagePreview(msg.attachmentUrl)}
+                        className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                        style={{ maxHeight: '200px', maxWidth: '250px' }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setImagePreview(imageUrl);
+                        }}
+                        onError={(e) => {
+                            console.error('Image load error:', imageUrl);
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pjwvc3ZnPg==';
+                        }}
                     />
+                ) : (
+                    <p className="text-sm text-gray-500">Hình ảnh không khả dụng</p>
                 );
 
             case 'FILE':
@@ -856,20 +1199,98 @@ const ChatPopup: React.FC = () => {
                                 <>
                                     {window.messages.map(msg => {
                                         const isOwn = msg.sender.id === user?.id;
+                                        const groupedReactions = msg.reactions?.reduce((acc, r) => {
+                                            if (!acc[r.emoji]) acc[r.emoji] = [];
+                                            acc[r.emoji].push(r);
+                                            return acc;
+                                        }, {} as Record<string, Reaction[]>) || {};
+                                        
                                         return (
-                                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} animate-fadeIn`}>
-                                                <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
+                                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} animate-fadeIn group`}>
+                                                <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
                                                     {!isOwn && (
                                                         <p className="text-xs text-gray-500 mb-1 ml-3 font-medium">{msg.sender.name}</p>
                                                     )}
-                                                    <div className={`px-4 py-2.5 rounded-2xl shadow-sm transition-all hover:shadow-md ${
-                                                        isOwn 
-                                                            ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-sm' 
-                                                            : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
-                                                    }`}>
-                                                        {renderMessage(msg, isOwn)}
+                                                    <div className="relative">
+                                                        <div className={`px-4 py-2.5 rounded-2xl shadow-sm transition-all hover:shadow-md ${
+                                                            isOwn 
+                                                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-sm' 
+                                                                : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
+                                                        }`}>
+                                                            {renderMessage(msg, isOwn)}
+                                                        </div>
+                                                        
+                                                        {/* Quick Reaction Bar - Show on hover for desktop */}
+                                                        <div className={`absolute ${isOwn ? '-left-2 -translate-x-full' : '-right-2 translate-x-full'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200`}>
+                                                            <div className="bg-white rounded-full shadow-lg border border-gray-200 px-1.5 py-1 flex items-center gap-0.5">
+                                                                {REACTION_EMOJIS.slice(0, 3).map(emoji => (
+                                                                    <button
+                                                                        key={emoji}
+                                                                        onClick={() => toggleReaction(msg, emoji)}
+                                                                        className={`text-sm hover:scale-125 transition-transform p-1 rounded-full hover:bg-gray-100 ${
+                                                                            msg.reactions?.some(r => r.emoji === emoji && r.userId === user?.id) ? 'bg-blue-100' : ''
+                                                                        }`}
+                                                                        title={emoji}
+                                                                    >
+                                                                        {emoji}
+                                                                    </button>
+                                                                ))}
+                                                                <button
+                                                                    onClick={() => setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id)}
+                                                                    className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600"
+                                                                    title="Thêm cảm xúc"
+                                                                >
+                                                                    <Smile size={14} />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {/* Full Reaction Picker - Desktop */}
+                                                        {showReactionPicker === msg.id && (
+                                                            <>
+                                                                <div className="fixed inset-0 z-[9998]" onClick={() => setShowReactionPicker(null)} />
+                                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 bg-white rounded-full shadow-xl border border-gray-200 px-2 py-1 flex items-center gap-1 z-[9999] animate-slideDown`}>
+                                                                    {REACTION_EMOJIS.map(emoji => (
+                                                                        <button
+                                                                            key={emoji}
+                                                                            onClick={() => {
+                                                                                toggleReaction(msg, emoji);
+                                                                                setShowReactionPicker(null);
+                                                                            }}
+                                                                            className={`text-lg hover:scale-125 transition-transform p-1 rounded-full hover:bg-gray-100 ${
+                                                                                msg.reactions?.some(r => r.emoji === emoji && r.userId === user?.id) ? 'bg-blue-100' : ''
+                                                                            }`}
+                                                                        >
+                                                                            {emoji}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
-                                                    <p className={`text-xs mt-1 text-gray-400 ${isOwn ? 'text-right mr-2' : 'ml-3'}`}>
+                                                    
+                                                    {/* Display Reactions - Compact inline style */}
+                                                    {Object.keys(groupedReactions).length > 0 && (
+                                                        <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
+                                                            {Object.entries(groupedReactions).map(([emoji, reactions]) => (
+                                                                <button
+                                                                    key={emoji}
+                                                                    onClick={() => toggleReaction(msg, emoji)}
+                                                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-all ${
+                                                                        reactions.some(r => r.userId === user?.id) 
+                                                                            ? 'bg-blue-100 border border-blue-200' 
+                                                                            : 'bg-gray-100 border border-gray-200 hover:bg-gray-200'
+                                                                    }`}
+                                                                    title={reactions.map(r => r.user.name).join(', ')}
+                                                                >
+                                                                    <span className="text-sm">{emoji}</span>
+                                                                    {reactions.length > 1 && <span className="text-gray-600 text-[10px] font-medium">{reactions.length}</span>}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <p className={`text-xs mt-0.5 text-gray-400 ${isOwn ? 'text-right mr-2' : 'ml-3'}`}>
                                                         {formatMessageTime(msg.createdAt)}
                                                     </p>
                                                 </div>
@@ -881,14 +1302,14 @@ const ChatPopup: React.FC = () => {
                                     {typingUsers[conversationId] && typingUsers[conversationId].length > 0 && (
                                         <div className="flex justify-start animate-fadeIn">
                                             <div className="max-w-[75%] flex flex-col items-start">
-                                                <p className="text-xs text-gray-500 mb-1 ml-3 font-medium">
-                                                    {typingUsers[conversationId].map(u => u.userName).join(', ')}
+                                                <p className="text-xs text-blue-600 mb-1 ml-3 font-medium italic">
+                                                    {typingUsers[conversationId].map(u => u.userName).join(', ')} đang soạn tin nhắn...
                                                 </p>
-                                                <div className="px-4 py-2.5 rounded-2xl bg-gray-200 text-gray-800 rounded-bl-sm">
+                                                <div className="px-4 py-2.5 rounded-2xl bg-gray-100 text-gray-800 rounded-bl-sm border border-gray-200">
                                                     <div className="flex items-center gap-1">
-                                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                                     </div>
                                                 </div>
                                             </div>
@@ -940,8 +1361,33 @@ const ChatPopup: React.FC = () => {
                                             />
                                         ))}
                                     </div>
-                                    <button onClick={stopRecording} className="p-1.5 bg-red-100 hover:bg-red-200 rounded-full transition-colors shrink-0">
-                                        <MicOff size={16} className="text-red-600" />
+                                    {/* Nút hủy ghi âm */}
+                                    <button 
+                                        onClick={() => {
+                                            if (mediaRecorderRef.current) {
+                                                mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+                                                mediaRecorderRef.current = null;
+                                            }
+                                            if (recordingIntervalRef.current) {
+                                                clearInterval(recordingIntervalRef.current);
+                                            }
+                                            audioChunksRef.current = [];
+                                            setIsRecording(null);
+                                            setRecordingTime(0);
+                                            setAudioLevel(0);
+                                        }} 
+                                        className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors shrink-0"
+                                        title="Hủy"
+                                    >
+                                        <X size={16} className="text-gray-600" />
+                                    </button>
+                                    {/* Nút gửi tin nhắn thoại */}
+                                    <button 
+                                        onClick={stopRecording} 
+                                        className="p-1.5 bg-blue-500 hover:bg-blue-600 rounded-full transition-colors shrink-0"
+                                        title="Gửi tin nhắn thoại"
+                                    >
+                                        <Send size={16} className="text-white" />
                                     </button>
                                 </div>
                             ) : (
@@ -1003,7 +1449,7 @@ const ChatPopup: React.FC = () => {
                                     <button
                                         onClick={() => document.getElementById(`file-input-${conversationId}`)?.click()}
                                         className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
-                                        title="Đính kèm"
+                                        title="Đính kèm file/ảnh/video"
                                     >
                                         <Paperclip size={18} />
                                     </button>
@@ -1061,41 +1507,149 @@ const ChatPopup: React.FC = () => {
         const conversationId = mobileActiveChat.conversationId;
         const messageInput = messageInputs[conversationId] || '';
         const progress = uploadProgress[conversationId];
+        const isTyping = typingUsers[conversationId] && typingUsers[conversationId].length > 0;
 
         return (
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
-                {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white shrink-0">
-                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-white/20 rounded-lg">
+                {/* Header - Modern design with status */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white shrink-0 shadow-lg safe-area-top">
+                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-white/20 active:bg-white/30 rounded-lg transition-colors">
                         <ArrowLeft size={24} />
                     </button>
-                    <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center overflow-hidden">
-                        {mobileActiveChat.conversation.displayAvatar ? (
-                            <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
+                    <div className="relative">
+                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center overflow-hidden ring-2 ring-white/30">
+                            {mobileActiveChat.conversation.displayAvatar ? (
+                                <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="font-semibold text-white">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
+                            )}
+                        </div>
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-blue-600"></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <span className="font-semibold truncate block text-white">{mobileActiveChat.conversation.displayName}</span>
+                        {isTyping ? (
+                            <span className="text-xs text-blue-100 flex items-center gap-1">
+                                <span className="inline-flex gap-0.5">
+                                    <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                    <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                    <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                </span>
+                                đang soạn tin...
+                            </span>
                         ) : (
-                            <span className="font-medium">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
+                            <span className="text-xs text-blue-100">Đang hoạt động</span>
                         )}
                     </div>
-                    <span className="flex-1 font-medium truncate">{mobileActiveChat.conversation.displayName}</span>
-                    <button onClick={() => closeWindow(mobileActiveChat.id)} className="p-2 hover:bg-white/20 rounded-lg">
+                    <button onClick={() => closeWindow(mobileActiveChat.id)} className="p-2 hover:bg-white/20 active:bg-white/30 rounded-lg transition-colors">
                         <X size={24} />
                     </button>
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
                     {mobileActiveChat.messages.map(msg => {
                         const isOwn = msg.sender.id === user?.id;
+                        const groupedReactions = msg.reactions?.reduce((acc, r) => {
+                            if (!acc[r.emoji]) acc[r.emoji] = [];
+                            acc[r.emoji].push(r);
+                            return acc;
+                        }, {} as Record<string, Reaction[]>) || {};
+                        
                         return (
                             <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                                 <div className="max-w-[80%]">
                                     {!isOwn && <p className="text-xs text-gray-500 mb-1 ml-2">{msg.sender.name}</p>}
-                                    <div className={`px-3 py-2 rounded-2xl ${
-                                        isOwn ? 'bg-blue-500 text-white rounded-br-md' : 'bg-gray-200 text-gray-800 rounded-bl-md'
-                                    }`}>
-                                        {renderMessage(msg, isOwn)}
+                                    <div className="relative">
+                                        {/* Long press for reactions on mobile */}
+                                        <div 
+                                            className={`px-3 py-2 rounded-2xl transition-all select-none ${
+                                                isOwn ? 'bg-blue-500 text-white rounded-br-md' : 'bg-white text-gray-800 rounded-bl-md border border-gray-100 shadow-sm'
+                                            } ${longPressMessageId === msg.id ? 'scale-95 opacity-80' : ''}`}
+                                            onTouchStart={(e) => {
+                                                // Don't trigger long press if touching image or interactive element
+                                                const target = e.target as HTMLElement;
+                                                if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.tagName === 'A') {
+                                                    return;
+                                                }
+                                                // Start long press timer
+                                                longPressTimerRef.current = setTimeout(() => {
+                                                    setLongPressMessageId(msg.id);
+                                                    setShowReactionPicker(msg.id);
+                                                    // Vibrate if supported
+                                                    if (navigator.vibrate) {
+                                                        navigator.vibrate(50);
+                                                    }
+                                                }, 500);
+                                            }}
+                                            onTouchEnd={() => {
+                                                // Cancel long press
+                                                if (longPressTimerRef.current) {
+                                                    clearTimeout(longPressTimerRef.current);
+                                                    longPressTimerRef.current = null;
+                                                }
+                                                setLongPressMessageId(null);
+                                            }}
+                                            onTouchMove={() => {
+                                                // Cancel if moved
+                                                if (longPressTimerRef.current) {
+                                                    clearTimeout(longPressTimerRef.current);
+                                                    longPressTimerRef.current = null;
+                                                }
+                                                setLongPressMessageId(null);
+                                            }}
+                                        >
+                                            {renderMessage(msg, isOwn)}
+                                        </div>
+                                        
+                                        {/* Reaction Picker for Mobile - Show on long press */}
+                                        {showReactionPicker === msg.id && (
+                                            <>
+                                                <div className="fixed inset-0 z-[9998] bg-black/10" onClick={() => setShowReactionPicker(null)} />
+                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-14 bg-white rounded-full shadow-2xl border border-gray-200 px-3 py-2 flex items-center gap-2 z-[9999] animate-slideUp`}>
+                                                    {REACTION_EMOJIS.map((emoji, index) => (
+                                                        <button
+                                                            key={emoji}
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                toggleReaction(msg, emoji); 
+                                                                setShowReactionPicker(null);
+                                                            }}
+                                                            className={`text-2xl active:scale-150 transition-transform p-1.5 rounded-full active:bg-gray-100 ${
+                                                                msg.reactions?.some(r => r.emoji === emoji && r.userId === user?.id) ? 'bg-blue-100 scale-110' : ''
+                                                            }`}
+                                                            style={{ animationDelay: `${index * 50}ms` }}
+                                                        >
+                                                            {emoji}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
-                                    <p className={`text-xs mt-1 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
+                                    
+                                    {/* Display Reactions - Compact inline style */}
+                                    {Object.keys(groupedReactions).length > 0 && (
+                                        <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
+                                            {Object.entries(groupedReactions).map(([emoji, reactions]) => (
+                                                <button
+                                                    key={emoji}
+                                                    onClick={(e) => { e.stopPropagation(); toggleReaction(msg, emoji); }}
+                                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-all ${
+                                                        reactions.some(r => r.userId === user?.id) 
+                                                            ? 'bg-blue-100 border border-blue-200' 
+                                                            : 'bg-gray-100 border border-gray-200 hover:bg-gray-200'
+                                                    }`}
+                                                    title={reactions.map(r => r.user.name).join(', ')}
+                                                >
+                                                    <span className="text-sm">{emoji}</span>
+                                                    {reactions.length > 1 && <span className="text-gray-600 text-[10px] font-medium">{reactions.length}</span>}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    
+                                    <p className={`text-xs mt-0.5 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
                                         {formatMessageTime(msg.createdAt)}
                                     </p>
                                 </div>
@@ -1103,18 +1657,18 @@ const ChatPopup: React.FC = () => {
                         );
                     })}
                     
-                    {/* Typing indicator for mobile */}
+                    {/* Typing indicator for mobile - Improved */}
                     {typingUsers[conversationId] && typingUsers[conversationId].length > 0 && (
                         <div className="flex justify-start animate-fadeIn">
                             <div className="max-w-[80%]">
-                                <p className="text-xs text-gray-500 mb-1 ml-2">
-                                    {typingUsers[conversationId].map(u => u.userName).join(', ')}
+                                <p className="text-xs text-blue-600 mb-1 ml-2 italic font-medium">
+                                    {typingUsers[conversationId].map(u => u.userName).join(', ')} đang soạn tin nhắn...
                                 </p>
-                                <div className="px-3 py-2 rounded-2xl bg-gray-200 text-gray-800 rounded-bl-md">
+                                <div className="px-3 py-2 rounded-2xl bg-white text-gray-800 rounded-bl-md border border-gray-200 shadow-sm">
                                     <div className="flex items-center gap-1">
-                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                     </div>
                                 </div>
                             </div>
@@ -1136,29 +1690,80 @@ const ChatPopup: React.FC = () => {
                 )}
 
                 {/* Input */}
-                <div className="p-3 border-t bg-white shrink-0">
+                <div className="p-3 border-t bg-white shrink-0 safe-area-bottom">
                     {isRecording === conversationId ? (
-                        <div className="flex items-center gap-4 px-3 py-2">
-                            <div className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center">
+                        <div className="flex items-center gap-3 px-3 py-2">
+                            <div 
+                                className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center animate-pulse"
+                                style={{ transform: `scale(${1 + audioLevel * 0.2})` }}
+                            >
                                 <Mic size={24} className="text-white" />
                             </div>
                             <span className="text-lg font-medium text-red-600">{formatTime(recordingTime)}</span>
-                            <div className="flex-1" />
-                            <button onClick={stopRecording} className="p-3 bg-gray-200 rounded-full">
-                                <MicOff size={24} />
+                            <div className="flex-1 flex items-center justify-center gap-0.5">
+                                {Array.from({ length: 20 }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="w-1 bg-red-400 rounded-full transition-all"
+                                        style={{ height: `${Math.max(4, Math.random() * 20 * audioLevel)}px` }}
+                                    />
+                                ))}
+                            </div>
+                            {/* Nút hủy ghi âm */}
+                            <button 
+                                onClick={() => {
+                                    if (mediaRecorderRef.current) {
+                                        mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+                                        mediaRecorderRef.current = null;
+                                    }
+                                    if (recordingIntervalRef.current) {
+                                        clearInterval(recordingIntervalRef.current);
+                                    }
+                                    audioChunksRef.current = [];
+                                    setIsRecording(null);
+                                    setRecordingTime(0);
+                                    setAudioLevel(0);
+                                }} 
+                                className="p-3 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-full transition-colors"
+                                title="Hủy"
+                            >
+                                <X size={24} className="text-gray-600" />
+                            </button>
+                            {/* Nút gửi tin nhắn thoại */}
+                            <button 
+                                onClick={stopRecording} 
+                                className="p-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 rounded-full transition-colors"
+                                title="Gửi"
+                            >
+                                <Send size={24} className="text-white" />
                             </button>
                         </div>
                     ) : (
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setShowEmojiPicker(showEmojiPicker === conversationId ? null : conversationId)}
-                                className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
+                                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
                             >
-                                <Smile size={24} />
+                                <Smile size={20} />
                             </button>
                             <input
                                 type="file"
                                 id={`mobile-file-input-${conversationId}`}
+                                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        handleFileUpload(conversationId, file);
+                                        e.target.value = '';
+                                    }
+                                }}
+                                className="hidden"
+                            />
+                            <input
+                                type="file"
+                                id={`mobile-camera-input-${conversationId}`}
+                                accept="image/*"
+                                capture="environment"
                                 onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) {
@@ -1170,9 +1775,17 @@ const ChatPopup: React.FC = () => {
                             />
                             <button 
                                 onClick={() => document.getElementById(`mobile-file-input-${conversationId}`)?.click()} 
-                                className="p-2 hover:bg-gray-100 rounded-full text-gray-500"
+                                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                title="Đính kèm file/ảnh/video"
                             >
-                                <Paperclip size={24} />
+                                <Paperclip size={20} />
+                            </button>
+                            <button 
+                                onClick={() => document.getElementById(`mobile-camera-input-${conversationId}`)?.click()} 
+                                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                title="Chụp ảnh từ camera"
+                            >
+                                <Camera size={20} />
                             </button>
                             <input
                                 type="text"
@@ -1185,22 +1798,27 @@ const ChatPopup: React.FC = () => {
                                     }
                                 }}
                                 placeholder="Nhập tin nhắn..."
-                                className="flex-1 px-4 py-3 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="flex-1 px-3 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-w-0"
                             />
                             {/* Send Button - Always visible */}
                             <button
                                 onClick={() => sendMessage(conversationId, messageInput)}
                                 disabled={!messageInput.trim()}
-                                className={`p-3 rounded-full transition-colors ${
+                                className={`p-2.5 rounded-full transition-colors shrink-0 ${
                                     messageInput.trim() 
-                                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                                        : 'bg-gray-100 text-gray-400'
+                                        ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white' 
+                                        : 'bg-gray-200 text-gray-400'
                                 }`}
                             >
-                                <Send size={24} />
+                                <Send size={20} />
                             </button>
-                            <button onClick={() => startRecording(conversationId)} className="p-2 hover:bg-gray-100 rounded-full text-gray-500">
-                                <Mic size={24} />
+                            {/* Mic Button - Always visible */}
+                            <button 
+                                onClick={() => startRecording(conversationId)} 
+                                className="p-2.5 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                title="Ghi âm"
+                            >
+                                <Mic size={20} />
                             </button>
                         </div>
                     )}
@@ -1235,33 +1853,119 @@ const ChatPopup: React.FC = () => {
         if (!showCreateGroup) return null;
 
         return (
-            <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl w-full max-w-md max-h-[80vh] flex flex-col">
-                    <div className="flex items-center justify-between p-4 border-b">
-                        <h3 className="font-semibold text-lg">Tạo nhóm chat</h3>
-                        <button onClick={() => setShowCreateGroup(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl animate-scaleIn">
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-2xl">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                                <Users size={22} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-lg">Tạo nhóm mới</h3>
+                                <p className="text-xs text-blue-100">Thêm thành viên để bắt đầu</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setShowCreateGroup(false)} className="p-2 hover:bg-white/20 rounded-xl transition-colors">
                             <X size={20} />
                         </button>
                     </div>
                     
-                    <div className="p-4 space-y-4 overflow-y-auto flex-1">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Tên nhóm</label>
-                            <input
-                                type="text"
-                                value={groupName}
-                                onChange={(e) => setGroupName(e.target.value)}
-                                placeholder="Nhập tên nhóm..."
-                                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                    <div className="p-5 space-y-5 overflow-y-auto flex-1">
+                        {/* Avatar Upload & Info */}
+                        <div className="flex items-start gap-4">
+                            <div className="relative">
+                                <input
+                                    type="file"
+                                    id="group-avatar-input"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            // Store file for later upload
+                                            (window as any)._groupAvatarFile = file;
+                                            const url = URL.createObjectURL(file);
+                                            (document.getElementById('group-avatar-preview') as HTMLImageElement).src = url;
+                                            (document.getElementById('group-avatar-preview') as HTMLImageElement).classList.remove('hidden');
+                                            (document.getElementById('group-avatar-placeholder') as HTMLElement).classList.add('hidden');
+                                        }
+                                    }}
+                                />
+                                <label
+                                    htmlFor="group-avatar-input"
+                                    className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 border-2 border-dashed border-blue-300 flex items-center justify-center cursor-pointer hover:border-blue-400 hover:from-blue-50 hover:to-indigo-50 overflow-hidden transition-all relative group"
+                                >
+                                    <img id="group-avatar-preview" src="" alt="" className="w-full h-full object-cover hidden" />
+                                    <div id="group-avatar-placeholder" className="flex flex-col items-center text-blue-400 group-hover:text-blue-500 transition-colors">
+                                        <Camera size={28} />
+                                        <span className="text-xs mt-1 font-medium">Ảnh nhóm</span>
+                                    </div>
+                                </label>
+                            </div>
+                            <div className="flex-1 space-y-3">
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                        Tên nhóm <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={groupName}
+                                        onChange={(e) => setGroupName(e.target.value)}
+                                        placeholder="Nhập tên nhóm..."
+                                        className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-500 mb-1.5">Mô tả</label>
+                                    <input
+                                        type="text"
+                                        id="group-description"
+                                        placeholder="Mô tả về nhóm (tùy chọn)..."
+                                        className="w-full px-3.5 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+                                    />
+                                </div>
+                            </div>
                         </div>
                         
+                        {/* Members Selection */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Thành viên ({selectedMembers.length} đã chọn)
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Thêm thành viên <span className="text-red-500">*</span>
                             </label>
-                            <div className="max-h-48 overflow-y-auto border rounded-lg">
-                                {allUsers.map(u => (
+                            <div className="relative mb-3">
+                                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Tìm người dùng..."
+                                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+                                />
+                            </div>
+                            
+                            {/* Selected members chips */}
+                            {selectedMembers.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {selectedMembers.map(m => (
+                                        <span key={m.id} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                                            <span className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">
+                                                {m.name.charAt(0)}
+                                            </span>
+                                            {m.name}
+                                            <button onClick={() => setSelectedMembers(prev => prev.filter(p => p.id !== m.id))} className="hover:text-blue-900 ml-0.5">
+                                                <X size={14} />
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                            
+                            <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100">
+                                {allUsers.length === 0 ? (
+                                    <div className="p-4 text-center text-gray-500 text-sm">
+                                        <Loader2 size={20} className="animate-spin mx-auto mb-2 text-gray-400" />
+                                        Đang tải danh sách...
+                                    </div>
+                                ) : allUsers.map(u => (
                                     <div
                                         key={u.id}
                                         onClick={() => {
@@ -1271,32 +1975,60 @@ const ChatPopup: React.FC = () => {
                                                 setSelectedMembers(prev => [...prev, u]);
                                             }
                                         }}
-                                        className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
-                                            selectedMembers.some(m => m.id === u.id) ? 'bg-blue-50' : ''
+                                        className={`flex items-center gap-3 p-3 cursor-pointer transition-all ${
+                                            selectedMembers.some(m => m.id === u.id) 
+                                                ? 'bg-blue-50 border-l-4 border-l-blue-500' 
+                                                : 'hover:bg-gray-50 border-l-4 border-l-transparent'
                                         }`}
                                     >
-                                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center overflow-hidden shadow-sm">
                                             {u.avatarUrl || u.avatar ? (
-                                                <img src={u.avatarUrl || u.avatar} alt="" className="w-full h-full rounded-full object-cover" />
+                                                <img src={u.avatarUrl || u.avatar} alt="" className="w-full h-full object-cover" />
                                             ) : (
-                                                <span className="text-sm font-medium text-blue-600">{u.name.charAt(0)}</span>
+                                                <span className="text-sm font-semibold text-white">{u.name.charAt(0)}</span>
                                             )}
                                         </div>
-                                        <span className="flex-1">{u.name}</span>
-                                        {selectedMembers.some(m => m.id === u.id) && (
-                                            <Check size={18} className="text-blue-600" />
-                                        )}
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-medium text-gray-800 truncate">{u.name}</p>
+                                            <p className="text-xs text-gray-500 truncate">@{u.username}</p>
+                                        </div>
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                                            selectedMembers.some(m => m.id === u.id)
+                                                ? 'bg-blue-500 border-blue-500'
+                                                : 'border-gray-300'
+                                        }`}>
+                                            {selectedMembers.some(m => m.id === u.id) && (
+                                                <Check size={14} className="text-white" />
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
+                            
+                            {selectedMembers.length > 0 && (
+                                <p className="text-xs text-gray-500 mt-2 text-center">
+                                    Đã chọn {selectedMembers.length} thành viên
+                                </p>
+                            )}
                         </div>
                     </div>
                     
-                    <div className="p-4 border-t">
+                    <div className="p-4 border-t flex justify-end gap-2">
+                        <button
+                            onClick={() => {
+                                setShowCreateGroup(false);
+                                setGroupName('');
+                                setSelectedMembers([]);
+                                (window as any)._groupAvatarFile = null;
+                            }}
+                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+                        >
+                            Hủy bỏ
+                        </button>
                         <button
                             onClick={createGroupChat}
                             disabled={!groupName.trim() || selectedMembers.length === 0}
-                            className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium shadow-lg shadow-blue-500/25"
                         >
                             Tạo nhóm
                         </button>
@@ -1330,117 +2062,146 @@ const ChatPopup: React.FC = () => {
 
                 {/* Chat List Panel */}
                 {isOpen && (
-                    <div className={`absolute ${isMobile ? 'fixed inset-0 z-50' : 'top-full right-0 mt-2 w-96'} bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden flex flex-col max-h-[600px]`}>
-                        {/* Header */}
-                        <div className="p-4 border-b bg-white shrink-0">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="font-bold text-xl text-gray-800">Chat</h3>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => {
-                                            setShowCreateGroup(true);
-                                            fetchAllUsers();
-                                        }}
-                                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
-                                        title="Tạo nhóm"
-                                    >
-                                        <Plus size={20} />
-                                    </button>
-                                    {isMobile && (
-                                        <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600">
-                                            <X size={20} />
+                    <div className={`absolute ${isMobile ? 'fixed inset-0 z-50' : 'top-full right-0 mt-2 w-96'} bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${isMobile ? '' : 'max-h-[580px]'}`}>
+                        {/* Header - Modern gradient */}
+                        <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shrink-0">
+                            <div className="p-4 pb-3">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                                            <MessageCircle size={22} className="text-white" />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-lg">Tin nhắn</h3>
+                                            <p className="text-xs text-blue-100">{conversations.length} cuộc trò chuyện</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => {
+                                                setShowCreateGroup(true);
+                                                fetchAllUsers();
+                                            }}
+                                            className="p-2.5 hover:bg-white/20 rounded-xl transition-colors"
+                                            title="Tạo nhóm mới"
+                                        >
+                                            <Plus size={22} />
                                         </button>
-                                    )}
+                                        {isMobile && (
+                                            <button onClick={() => setIsOpen(false)} className="p-2.5 hover:bg-white/20 rounded-xl transition-colors">
+                                                <X size={22} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                            
-                            {/* Search */}
-                            <div className="relative">
-                                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Tìm kiếm mọi người..."
-                                    className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-gray-100 text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white border border-transparent focus:border-blue-500 transition-all"
-                                />
+                                
+                                {/* Search - Glass morphism style */}
+                                <div className="relative">
+                                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" />
+                                    <input
+                                        type="text"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        placeholder="Tìm kiếm cuộc trò chuyện..."
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/15 backdrop-blur-sm text-white placeholder-white/60 focus:outline-none focus:bg-white/25 border border-white/20 focus:border-white/40 transition-all"
+                                    />
+                                </div>
                             </div>
                         </div>
                         
-                        {/* Tabs */}
-                        <div className="flex border-b bg-white shrink-0">
+                        {/* Tabs - Modern pill style */}
+                        <div className="flex gap-1 p-2 bg-gray-50 shrink-0">
                             <button
                                 onClick={() => setSearchMode('conversations')}
-                                className={`flex-1 py-3 px-4 text-sm font-medium transition-all relative ${
+                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${
                                     searchMode === 'conversations' 
-                                        ? 'text-blue-600' 
-                                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                        ? 'bg-white text-blue-600 shadow-sm' 
+                                        : 'text-gray-600 hover:bg-gray-100'
                                 }`}
                             >
-                                <MessageSquare size={16} className="inline mr-2" />
-                                Trò chuyện gần đây
-                                {searchMode === 'conversations' && (
-                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
-                                )}
+                                <MessageSquare size={16} />
+                                Trò chuyện
                             </button>
                             <button
                                 onClick={() => setSearchMode('users')}
-                                className={`flex-1 py-3 px-4 text-sm font-medium transition-all relative ${
+                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${
                                     searchMode === 'users' 
-                                        ? 'text-blue-600' 
-                                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                        ? 'bg-white text-blue-600 shadow-sm' 
+                                        : 'text-gray-600 hover:bg-gray-100'
                                 }`}
                             >
-                                <Users size={16} className="inline mr-2" />
+                                <Users size={16} />
                                 Người dùng
-                                {searchMode === 'users' && (
-                                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
-                                )}
                             </button>
                         </div>
 
                         {/* Content */}
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="flex-1 overflow-y-auto bg-white">
                             {loading ? (
-                                <div className="flex items-center justify-center py-12">
-                                    <Loader2 size={28} className="animate-spin text-blue-600" />
+                                <div className="flex items-center justify-center py-16">
+                                    <div className="text-center">
+                                        <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-2" />
+                                        <p className="text-sm text-gray-500">Đang tải...</p>
+                                    </div>
                                 </div>
                             ) : searchMode === 'conversations' ? (
                                 filteredConversations.length === 0 ? (
-                                    <div className="text-center py-12 text-gray-500 px-4">
-                                        <MessageSquare size={48} className="mx-auto mb-3 opacity-30" />
-                                        <p className="text-sm font-medium">Chưa có trò chuyện nào</p>
-                                        <p className="text-xs mt-1 text-gray-400">Bắt đầu cuộc trò chuyện mới</p>
+                                    <div className="text-center py-16 px-6">
+                                        <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                                            <MessageSquare size={32} className="text-blue-400" />
+                                        </div>
+                                        <p className="text-base font-semibold text-gray-700 mb-1">Chưa có tin nhắn</p>
+                                        <p className="text-sm text-gray-400">Bắt đầu trò chuyện với ai đó ngay nào!</p>
+                                        <button 
+                                            onClick={() => setSearchMode('users')}
+                                            className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                        >
+                                            Tìm người dùng
+                                        </button>
                                     </div>
                                 ) : (
-                                    <div className="divide-y divide-gray-100">
+                                    <div className="py-1">
                                         {filteredConversations.map(conv => (
                                             <div
                                                 key={conv.id}
                                                 onClick={() => openConversation(conv)}
-                                                className="flex items-start gap-3 p-4 hover:bg-gray-50 cursor-pointer transition-colors group"
+                                                className={`flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer transition-all group ${
+                                                    conv.unreadCount > 0 ? 'bg-blue-50/50' : ''
+                                                }`}
                                             >
                                                 <div className="relative shrink-0">
-                                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden ring-2 ring-white">
+                                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-md ${
+                                                        conv.type === 'GROUP' 
+                                                            ? 'bg-gradient-to-br from-purple-500 to-indigo-600' 
+                                                            : 'bg-gradient-to-br from-blue-500 to-blue-600'
+                                                    }`}>
                                                         {conv.displayAvatar ? (
                                                             <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
+                                                        ) : conv.type === 'GROUP' ? (
+                                                            <Users size={22} className="text-white" />
                                                         ) : (
                                                             conv.displayName.charAt(0).toUpperCase()
                                                         )}
                                                     </div>
+                                                    {/* Online indicator */}
+                                                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
                                                     {conv.unreadCount > 0 && (
-                                                        <div className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5 ring-2 ring-white">
+                                                        <div className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5 shadow-lg animate-pulse">
                                                             {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
                                                         </div>
                                                     )}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="flex items-baseline justify-between mb-0.5">
-                                                        <p className="font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                                                    <div className="flex items-center justify-between mb-0.5">
+                                                        <p className={`font-semibold truncate transition-colors ${
+                                                            conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
+                                                        } group-hover:text-blue-600`}>
                                                             {conv.displayName}
                                                         </p>
                                                         {conv.lastMessage && (
-                                                            <span className="text-xs text-gray-400 ml-2 shrink-0">
+                                                            <span className={`text-xs shrink-0 ml-2 ${
+                                                                conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
+                                                            }`}>
                                                                 {formatMessageTime(conv.lastMessage.createdAt)}
                                                             </span>
                                                         )}
@@ -1452,16 +2213,19 @@ const ChatPopup: React.FC = () => {
                                                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                                                                 <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                                             </span>
-                                                            {typingUsers[conv.id][0].userName} đang nhập...
+                                                            đang soạn tin nhắn...
                                                         </p>
                                                     ) : conv.lastMessage ? (
-                                                        <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                                                        <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                                                            {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
                                                             {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
                                                              conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
                                                              conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
                                                              conv.lastMessage.content}
                                                         </p>
-                                                    ) : null}
+                                                    ) : (
+                                                        <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -1469,29 +2233,41 @@ const ChatPopup: React.FC = () => {
                                 )
                             ) : (
                                 searchUsers.length === 0 ? (
-                                    <div className="text-center py-12 text-gray-500 px-4">
-                                        <Users size={48} className="mx-auto mb-3 opacity-30" />
-                                        <p className="text-sm font-medium">{searchQuery ? 'Không tìm thấy người dùng' : 'Tìm kiếm người dùng'}</p>
-                                        <p className="text-xs mt-1 text-gray-400">Nhập tên để bắt đầu tìm kiếm</p>
+                                    <div className="text-center py-16 px-6">
+                                        <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
+                                            <Users size={32} className="text-purple-400" />
+                                        </div>
+                                        <p className="text-base font-semibold text-gray-700 mb-1">
+                                            {searchQuery ? 'Không tìm thấy người dùng' : 'Tìm kiếm người dùng'}
+                                        </p>
+                                        <p className="text-sm text-gray-400">
+                                            {searchQuery ? 'Thử tìm với từ khóa khác' : 'Nhập tên hoặc username để tìm'}
+                                        </p>
                                     </div>
                                 ) : (
-                                    <div className="divide-y divide-gray-100">
+                                    <div className="py-1">
                                         {searchUsers.map(u => (
                                             <div
                                                 key={u.id}
                                                 onClick={() => openChatWithUser(u)}
-                                                className="flex items-center gap-3 p-4 hover:bg-gray-50 cursor-pointer transition-colors group"
+                                                className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 cursor-pointer transition-all group"
                                             >
-                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-semibold text-lg shrink-0 overflow-hidden ring-2 ring-white">
-                                                    {u.avatarUrl || u.avatar ? (
-                                                        <img src={u.avatarUrl || u.avatar} alt="" className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        u.name.charAt(0).toUpperCase()
-                                                    )}
+                                                <div className="relative shrink-0">
+                                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-md">
+                                                        {u.avatarUrl || u.avatar ? (
+                                                            <img src={u.avatarUrl || u.avatar} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            u.name.charAt(0).toUpperCase()
+                                                        )}
+                                                    </div>
+                                                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <p className="font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">{u.name}</p>
+                                                    <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
                                                     <p className="text-sm text-gray-500 truncate">@{u.username}</p>
+                                                </div>
+                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <MessageCircle size={18} className="text-emerald-500" />
                                                 </div>
                                             </div>
                                         ))}

@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
+import { getIO } from '../index.js';
 
 // Lấy danh sách cuộc trò chuyện
 export const getConversations = async (req: AuthRequest, res: Response) => {
@@ -78,7 +79,17 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
 export const createConversation = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
-        const { name, type, memberIds, description } = req.body;
+        const { name, type, description } = req.body;
+        
+        // Parse memberIds - có thể là array hoặc JSON string (từ FormData)
+        let memberIds = req.body.memberIds;
+        if (typeof memberIds === 'string') {
+            try {
+                memberIds = JSON.parse(memberIds);
+            } catch (e) {
+                memberIds = [parseInt(memberIds)];
+            }
+        }
 
         // Validate
         if (!memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
@@ -147,6 +158,15 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
             }
         });
 
+        // Emit WebSocket event to all members for realtime update
+        const io = getIO();
+        const allMemberIds = [userId, ...memberIds];
+        allMemberIds.forEach((memberId: number) => {
+            io.to(`user:${memberId}`).emit('chat:new_conversation', {
+                conversation
+            });
+        });
+
         res.status(201).json(conversation);
     } catch (error) {
         console.error('Error creating conversation:', error);
@@ -211,7 +231,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        const messages = await prisma.chatMessage.findMany({
+        const messages = await (prisma.chatMessage as any).findMany({
             where: {
                 conversationId: Number(id),
                 ...(cursor ? { id: { lt: Number(cursor) } } : {})
@@ -219,6 +239,13 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             include: {
                 sender: {
                     select: { id: true, name: true, avatar: true }
+                },
+                reactions: {
+                    include: {
+                        user: {
+                            select: { id: true, name: true }
+                        }
+                    }
                 }
             },
             orderBy: { createdAt: 'desc' },
@@ -237,7 +264,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
         });
 
         // Thêm URL cho attachment
-        const messagesWithUrls = await Promise.all(messages.map(async (msg) => {
+        const messagesWithUrls = await Promise.all(messages.map(async (msg: any) => {
             let attachmentUrl = null;
             if (msg.attachment) {
                 try {
@@ -264,9 +291,17 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const { id } = req.params;
-        const { content } = req.body;
+        
+        // Handle undefined body - this can happen if body-parser middleware isn't applied correctly
+        if (!req.body) {
+            console.error('sendMessage - req.body is undefined! Content-Type:', req.headers['content-type']);
+            return res.status(400).json({ message: 'Request body is missing' });
+        }
+        
+        const content = req.body.content;
 
         if (!content?.trim()) {
+            console.log('sendMessage - Empty content. Body received:', req.body);
             return res.status(400).json({ message: 'Content is required' });
         }
 
@@ -302,6 +337,13 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         await prisma.conversation.update({
             where: { id: Number(id) },
             data: { updatedAt: new Date() }
+        });
+
+        // Emit WebSocket event for realtime update
+        const io = getIO();
+        io.to(`conversation:${id}`).emit('chat:new_message', {
+            conversationId: Number(id),
+            message
         });
 
         res.status(201).json(message);
@@ -374,7 +416,17 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
             data: { updatedAt: new Date() }
         });
 
-        res.status(201).json({ ...message, attachmentUrl });
+        // Prepare response with attachmentUrl
+        const responseMessage = { ...message, attachmentUrl };
+
+        // Emit WebSocket event for realtime update
+        const io = getIO();
+        io.to(`conversation:${id}`).emit('chat:new_message', {
+            conversationId: Number(id),
+            message: responseMessage
+        });
+
+        res.status(201).json(responseMessage);
     } catch (error) {
         console.error('Error sending file message:', error);
         res.status(500).json({ message: 'Server error' });
@@ -433,7 +485,17 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
             data: { updatedAt: new Date() }
         });
 
-        res.status(201).json({ ...message, attachmentUrl });
+        // Prepare response with attachmentUrl
+        const responseMessage = { ...message, attachmentUrl };
+
+        // Emit WebSocket event for realtime update
+        const io = getIO();
+        io.to(`conversation:${id}`).emit('chat:new_message', {
+            conversationId: Number(id),
+            message: responseMessage
+        });
+
+        res.status(201).json(responseMessage);
     } catch (error) {
         console.error('Error sending voice message:', error);
         res.status(500).json({ message: 'Server error' });
@@ -570,7 +632,27 @@ export const updateConversation = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        res.json(updated);
+        // Lấy avatar URL nếu có
+        let avatarUrl = null;
+        if (updated.avatar) {
+            try {
+                avatarUrl = await getPresignedUrl(updated.avatar);
+            } catch (e) {
+                console.error('Error getting avatar URL:', e);
+            }
+        }
+
+        const result = { ...updated, avatarUrl };
+
+        // Emit WebSocket event to all members for realtime update
+        const io = getIO();
+        updated.members.forEach((m) => {
+            io.to(`user:${m.userId}`).emit('chat:conversation_updated', {
+                conversation: result
+            });
+        });
+
+        res.json(result);
     } catch (error) {
         console.error('Error updating conversation:', error);
         res.status(500).json({ message: 'Server error' });
@@ -698,6 +780,162 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
         res.json(usersWithAvatars);
     } catch (error) {
         console.error('Error searching users:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Thêm reaction vào tin nhắn
+export const addReaction = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { messageId } = req.params;
+        const { emoji } = req.body;
+
+        if (!emoji) {
+            return res.status(400).json({ message: 'Emoji is required' });
+        }
+
+        // Kiểm tra message tồn tại
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) },
+            include: {
+                conversation: {
+                    include: {
+                        members: true
+                    }
+                }
+            }
+        });
+
+        if (!message) {
+            return res.status(404).json({ message: 'Message not found' });
+        }
+
+        // Kiểm tra quyền (user phải là member của conversation)
+        const isMember = message.conversation.members.some(m => m.userId === userId);
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // Thêm hoặc cập nhật reaction
+        const reaction = await (prisma as any).chatMessageReaction.upsert({
+            where: {
+                messageId_userId_emoji: {
+                    messageId: Number(messageId),
+                    userId,
+                    emoji
+                }
+            },
+            update: {},
+            create: {
+                messageId: Number(messageId),
+                userId,
+                emoji
+            },
+            include: {
+                user: {
+                    select: { id: true, name: true }
+                }
+            }
+        });
+
+        // Lấy tất cả reactions của message
+        const allReactions = await (prisma as any).chatMessageReaction.findMany({
+            where: { messageId: Number(messageId) },
+            include: {
+                user: {
+                    select: { id: true, name: true }
+                }
+            }
+        });
+
+        // Emit WebSocket event
+        const io = getIO();
+        io.to(`conversation:${message.conversationId}`).emit('chat:reaction_added', {
+            conversationId: message.conversationId,
+            messageId: Number(messageId),
+            reactions: allReactions
+        });
+
+        res.json({ reaction, allReactions });
+    } catch (error) {
+        console.error('Error adding reaction:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Xóa reaction khỏi tin nhắn
+export const removeReaction = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { messageId, emoji } = req.params;
+
+        if (!emoji) {
+            return res.status(400).json({ message: 'Emoji is required' });
+        }
+
+        // Kiểm tra message tồn tại
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) }
+        });
+
+        if (!message) {
+            return res.status(404).json({ message: 'Message not found' });
+        }
+
+        // Xóa reaction
+        await (prisma as any).chatMessageReaction.deleteMany({
+            where: {
+                messageId: Number(messageId),
+                userId,
+                emoji: decodeURIComponent(emoji)
+            }
+        });
+
+        // Lấy tất cả reactions còn lại
+        const allReactions = await (prisma as any).chatMessageReaction.findMany({
+            where: { messageId: Number(messageId) },
+            include: {
+                user: {
+                    select: { id: true, name: true }
+                }
+            }
+        });
+
+        // Emit WebSocket event
+        const io = getIO();
+        io.to(`conversation:${message.conversationId}`).emit('chat:reaction_removed', {
+            conversationId: message.conversationId,
+            messageId: Number(messageId),
+            reactions: allReactions
+        });
+
+        res.json({ allReactions });
+    } catch (error) {
+        console.error('Error removing reaction:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Đánh dấu conversation đã đọc
+export const markConversationAsRead = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { id } = req.params;
+
+        await prisma.conversationMember.update({
+            where: {
+                conversationId_userId: {
+                    conversationId: Number(id),
+                    userId
+                }
+            },
+            data: { lastRead: new Date() }
+        });
+
+        res.json({ message: 'Marked as read' });
+    } catch (error) {
+        console.error('Error marking as read:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };

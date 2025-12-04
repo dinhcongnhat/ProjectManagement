@@ -142,7 +142,23 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
                 });
             }
 
-            // Delete user's messages
+            // Transfer conversations ownership to current admin
+            await tx.conversation.updateMany({
+                where: { createdById: userId },
+                data: { createdById: req.user?.id || 1 }
+            });
+
+            // Remove user from conversation members
+            await tx.conversationMember.deleteMany({
+                where: { userId: userId }
+            });
+
+            // Delete user's chat messages (must delete because of FK constraint)
+            await tx.chatMessage.deleteMany({
+                where: { senderId: userId }
+            });
+
+            // Delete user's project messages
             await tx.message.deleteMany({
                 where: { senderId: userId }
             });
@@ -188,8 +204,22 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Avatar is now stored as base64, no need to get presigned URL
-        res.json({ ...user, avatarUrl: user.avatar });
+        // Get presigned URL for avatar if stored in MinIO
+        let avatarUrl = null;
+        if (user.avatar) {
+            // Check if it's a base64 string or MinIO path
+            if (user.avatar.startsWith('data:')) {
+                avatarUrl = user.avatar; // Already base64
+            } else {
+                try {
+                    avatarUrl = await getPresignedUrl(user.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+        }
+        
+        res.json({ ...user, avatarUrl });
     } catch (error) {
         console.error('Error getting profile:', error);
         res.status(500).json({ message: 'Server error' });
@@ -226,10 +256,14 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         // Lấy URL avatar nếu có
         let avatarUrl = null;
         if (user.avatar) {
-            try {
-                avatarUrl = await getPresignedUrl(user.avatar);
-            } catch (e) {
-                console.error('Error getting avatar URL:', e);
+            if (user.avatar.startsWith('data:')) {
+                avatarUrl = user.avatar;
+            } else {
+                try {
+                    avatarUrl = await getPresignedUrl(user.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
             }
         }
 
@@ -249,13 +283,27 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'No file uploaded' });
         }
 
-        // Convert file to base64 and save directly to database
-        const base64Avatar = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+        // Validate file type
+        if (!req.file.mimetype.startsWith('image/')) {
+            return res.status(400).json({ message: 'Only image files are allowed' });
+        }
 
-        // Update user avatar
+        // Validate file size (max 5MB)
+        if (req.file.size > 5 * 1024 * 1024) {
+            return res.status(400).json({ message: 'File size must be less than 5MB' });
+        }
+
+        // Upload to MinIO
+        const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
+        const fileName = `avatars/${userId}-${Date.now()}-${normalizedFilename}`;
+        const avatarPath = await uploadFile(fileName, req.file.buffer, {
+            'Content-Type': req.file.mimetype,
+        });
+
+        // Update user avatar path
         const user = await prisma.user.update({
             where: { id: userId },
-            data: { avatar: base64Avatar },
+            data: { avatar: avatarPath },
             select: {
                 id: true,
                 username: true,
@@ -269,10 +317,20 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        res.json({ ...user, avatarUrl: user.avatar });
+        // Get presigned URL for the avatar
+        let avatarUrl = null;
+        if (user.avatar) {
+            try {
+                avatarUrl = await getPresignedUrl(user.avatar);
+            } catch (e) {
+                console.error('Error getting avatar URL:', e);
+            }
+        }
+
+        res.json({ ...user, avatarUrl });
     } catch (error) {
         console.error('Error uploading avatar:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Không thể tải lên ảnh đại diện. Vui lòng thử lại.' });
     }
 };
 
@@ -339,10 +397,14 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
         // Lấy URL avatar nếu có
         let avatarUrl = null;
         if (user.avatar) {
-            try {
-                avatarUrl = await getPresignedUrl(user.avatar);
-            } catch (e) {
-                console.error('Error getting avatar URL:', e);
+            if (user.avatar.startsWith('data:')) {
+                avatarUrl = user.avatar;
+            } else {
+                try {
+                    avatarUrl = await getPresignedUrl(user.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
             }
         }
 
@@ -371,10 +433,14 @@ export const getAllUsersWithAvatar = async (req: AuthRequest, res: Response) => 
         const usersWithAvatarUrls = await Promise.all(users.map(async (user) => {
             let avatarUrl = null;
             if (user.avatar) {
-                try {
-                    avatarUrl = await getPresignedUrl(user.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
+                if (user.avatar.startsWith('data:')) {
+                    avatarUrl = user.avatar;
+                } else {
+                    try {
+                        avatarUrl = await getPresignedUrl(user.avatar);
+                    } catch (e) {
+                        console.error('Error getting avatar URL:', e);
+                    }
                 }
             }
             return { ...user, avatarUrl };

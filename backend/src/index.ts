@@ -76,8 +76,44 @@ app.use(cors({
     optionsSuccessStatus: 204
 }));
 
+// Ensure Content-Type for POST requests without it
+app.use((req, res, next) => {
+    if (req.method === 'POST' && !req.headers['content-type']) {
+        req.headers['content-type'] = 'application/json';
+    }
+    next();
+});
+
+// Body parsing middleware - must be before routes
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Ensure body is always an object for JSON requests
+app.use((req, res, next) => {
+    // Only for JSON content type
+    if (req.headers['content-type']?.includes('application/json')) {
+        if (req.body === undefined) {
+            req.body = {};
+        }
+    }
+    next();
+});
+
+// Debug middleware to check body parsing
+app.use('/api/chat', (req, res, next) => {
+    if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
+        console.log('=== Chat Message Request Debug ===');
+        console.log('Method:', req.method);
+        console.log('Path:', req.path);
+        console.log('Content-Type:', req.headers['content-type']);
+        console.log('Content-Length:', req.headers['content-length']);
+        console.log('Body:', req.body);
+        console.log('Body type:', typeof req.body);
+        console.log('Body keys:', req.body ? Object.keys(req.body) : 'N/A');
+        console.log('=================================');
+    }
+    next();
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -186,20 +222,20 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Chat typing indicator
-    socket.on('chat_typing', (data: { conversationId: number; userName: string }) => {
-        socket.to(`conversation:${data.conversationId}`).emit('chat_user_typing', {
+    // Chat typing indicator - Optimized for realtime
+    socket.on('chat:typing', (data: { conversationId: number; userName: string; userId?: number }) => {
+        socket.to(`conversation:${data.conversationId}`).emit('chat:typing', {
             conversationId: data.conversationId,
-            userId: socket.data.userId,
+            userId: data.userId || socket.data.userId,
             userName: data.userName
         });
     });
 
-    // Chat stop typing
-    socket.on('chat_stop_typing', (data: { conversationId: number }) => {
-        socket.to(`conversation:${data.conversationId}`).emit('chat_user_stop_typing', {
+    // Chat stop typing - Optimized for realtime
+    socket.on('chat:stop_typing', (data: { conversationId: number; userId?: number }) => {
+        socket.to(`conversation:${data.conversationId}`).emit('chat:stop_typing', {
             conversationId: data.conversationId,
-            userId: socket.data.userId
+            userId: data.userId || socket.data.userId
         });
     });
 
@@ -223,3 +259,6 @@ httpServer.listen(Number(port), host, () => {
     console.log(`Socket.io server ready`);
     console.log(`Access from LAN: http://<your-ip>:${port}`);
 });
+
+// Export io for use in controllers
+export const getIO = () => io;

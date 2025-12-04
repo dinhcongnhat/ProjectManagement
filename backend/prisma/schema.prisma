@@ -72,6 +72,7 @@ model User {
   conversations     ConversationMember[]
   chatMessages      ChatMessage[]       @relation("ChatMessageSender")
   createdConversations Conversation[]   @relation("ConversationCreator")
+  chatReactions     ChatMessageReaction[] @relation("UserReactions")
 }
 
 model Task {
@@ -206,4 +207,21 @@ model ChatMessage {
 
   senderId Int
   sender   User @relation("ChatMessageSender", fields: [senderId], references: [id])
+  
+  reactions ChatMessageReaction[]
+}
+
+// Reaction trên tin nhắn chat
+model ChatMessageReaction {
+  id        Int      @id @default(autoincrement())
+  emoji     String   // Emoji: 👍 ❤️ 😂 😮 😢 😡
+  createdAt DateTime @default(now())
+
+  messageId Int
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation("UserReactions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
 }

@@ -88,9 +88,11 @@ export default function UserProfile() {
             });
 
             setProfile(response.data);
-        } catch (error) {
+            alert('Cập nhật ảnh đại diện thành công!');
+        } catch (error: any) {
             console.error('Error uploading avatar:', error);
-            alert('Không thể tải lên ảnh đại diện');
+            const message = error.response?.data?.message || 'Không thể tải lên ảnh đại diện. Vui lòng thử lại.';
+            alert(message);
         } finally {
             setUploadingAvatar(false);
         }

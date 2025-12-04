@@ -331,24 +331,24 @@ const CreateProject = () => {
 
         return (
             <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Đính kèm</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Đính kèm</label>
                 <div
-                    className="border-2 border-dashed border-red-200 rounded-lg p-8 flex flex-col items-center justify-center gap-4 bg-white"
+                    className="border-2 border-dashed border-red-200 rounded-lg p-6 lg:p-8 flex flex-col items-center justify-center gap-3 lg:gap-4 bg-white"
                     onDragOver={handleDragOver}
                     onDrop={handleDrop}
                 >
-                    <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500">
-                        <CloudUpload size={32} />
+                    <div className="w-12 h-12 lg:w-16 lg:h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500">
+                        <CloudUpload size={24} className="lg:w-8 lg:h-8" />
                     </div>
-                    <p className="text-gray-600">Kéo thả file vào đây để tải lên hoặc</p>
-                    <div className="flex gap-4">
+                    <p className="text-gray-600 text-sm lg:text-base text-center px-4">Kéo thả file vào đây để tải lên hoặc</p>
+                    <div className="flex gap-3 lg:gap-4">
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 flex items-center gap-2 font-medium"
+                            className="px-4 py-2.5 bg-red-500 text-white rounded-md hover:bg-red-600 active:bg-red-700 flex items-center gap-2 font-medium text-sm touch-target transition-colors"
                         >
                             <CloudUpload size={18} />
-                            CHỌN TỪ MÁY
+                            <span>CHỌN TỪ MÁY</span>
                         </button>
                         <input
                             type="file"
@@ -359,10 +359,10 @@ const CreateProject = () => {
                         />
                     </div>
                     {selectedFile && (
-                        <div className="mt-2 flex items-center gap-2 text-sm text-gray-700 bg-gray-50 px-3 py-1 rounded-full">
-                            <span>{selectedFile.name}</span>
-                            <button type="button" onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-red-500" aria-label="Xóa tệp đã chọn">
-                                <X size={14} />
+                        <div className="mt-2 flex items-center gap-2 text-sm text-gray-700 bg-gray-50 px-3 py-2 rounded-lg w-full max-w-md">
+                            <span className="flex-1 truncate">{selectedFile.name}</span>
+                            <button type="button" onClick={() => setSelectedFile(null)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0" aria-label="Xóa tệp đã chọn">
+                                <X size={16} />
                             </button>
                         </div>
                     )}
@@ -372,23 +372,24 @@ const CreateProject = () => {
     };
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+        <div className="space-y-4 lg:space-y-6">
+            {/* Header */}
+            <div className="flex items-start sm:items-center justify-between gap-3">
+                <div className="flex items-start sm:items-center gap-2 lg:gap-3 flex-1 min-w-0">
                     {parentProject && (
                         <Link 
                             to={`/admin/projects/${parentProject.id}`}
-                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors"
+                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors touch-target shrink-0"
                         >
                             <ArrowLeft size={20} />
                         </Link>
                     )}
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900">
+                    <div className="flex-1 min-w-0">
+                        <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">
                             {parentProject ? 'Tạo dự án con' : 'Tạo dự án mới'}
                         </h2>
                         {parentProject && (
-                            <p className="text-sm text-gray-500 mt-1">
+                            <p className="text-xs lg:text-sm text-gray-500 mt-1 truncate">
                                 Dự án cha: <span className="font-medium text-blue-600">{parentProject.name}</span> ({parentProject.code})
                             </p>
                         )}
@@ -398,50 +399,51 @@ const CreateProject = () => {
 
             {/* Parent Project Info Banner */}
             {parentProject && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
-                    <div className="p-2 bg-blue-600 text-white rounded-lg">
-                        <FolderTree size={20} />
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 lg:p-4 flex items-center gap-3">
+                    <div className="p-2 bg-blue-600 text-white rounded-lg shrink-0">
+                        <FolderTree size={18} className="lg:w-5 lg:h-5" />
                     </div>
-                    <div>
-                        <p className="text-sm font-medium text-blue-800">Đang tạo dự án con cho:</p>
-                        <p className="text-blue-600 font-semibold">{parentProject.name}</p>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-xs lg:text-sm font-medium text-blue-800">Đang tạo dự án con cho:</p>
+                        <p className="text-blue-600 font-semibold text-sm lg:text-base truncate">{parentProject.name}</p>
                     </div>
                 </div>
             )}
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Form */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 lg:p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
                     {/* Basic Info */}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Thông tin chung</h3>
+                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 border-b pb-2">Thông tin chung</h3>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Mã dự án <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Mã dự án <span className="text-red-500">*</span></label>
                             <input
                                 type="text"
                                 name="code"
                                 value={formData.code}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                 placeholder="VD: DA001"
                             />
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Tên dự án <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Tên dự án <span className="text-red-500">*</span></label>
                             <input
                                 type="text"
                                 name="name"
                                 value={formData.name}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                 placeholder="Nhập tên dự án"
                             />
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-3 lg:gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày bắt đầu</label>
                                 <div className="relative">
                                     <input
                                         type="date"
@@ -449,13 +451,13 @@ const CreateProject = () => {
                                         title="Chọn ngày bắt đầu"
                                         value={formData.startDate}
                                         onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     />
-                                    <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={18} />
+                                    <Calendar className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={16} />
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày kết thúc</label>
                                 <div className="relative">
                                     <input
                                         type="date"
@@ -463,15 +465,15 @@ const CreateProject = () => {
                                         title="Chọn ngày kết thúc"
                                         value={formData.endDate}
                                         onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     />
-                                    <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={18} />
+                                    <Calendar className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={16} />
                                 </div>
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Thời hạn (ngày)</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Thời hạn (ngày)</label>
                             <input
                                 type="number"
                                 name="duration"
@@ -479,49 +481,49 @@ const CreateProject = () => {
                                 placeholder="Nhập số ngày"
                                 value={formData.duration}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                             />
                         </div>
                     </div>
 
                     {/* Additional Info */}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Chi tiết & Phân quyền</h3>
+                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 border-b pb-2">Chi tiết & Phân quyền</h3>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Nhóm dự án</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Nhóm dự án</label>
                             <input
                                 type="text"
                                 name="group"
                                 value={formData.group}
                                 onChange={handleChange}
                                 placeholder="Nhập nhóm dự án"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                             />
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Giá trị hợp đồng</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Giá trị hợp đồng</label>
                             <input
                                 type="text"
                                 name="value"
                                 value={formData.value}
                                 onChange={handleChange}
                                 placeholder="Nhập giá trị hợp đồng"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                             />
                         </div>
 
                         <ProgressMethodSelector />
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Quản trị dự án <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Quản trị dự án <span className="text-red-500">*</span></label>
                             <select
                                 name="managerId"
                                 title="Chọn quản trị dự án"
                                 value={formData.managerId}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white"
                             >
                                 <option value="">-- Chọn quản trị dự án --</option>
                                 {users.map(user => (
@@ -535,33 +537,33 @@ const CreateProject = () => {
 
                     </div>
 
-                    <div className="col-span-1 md:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả dự án</label>
+                    <div className="col-span-1 lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Mô tả dự án</label>
                         <textarea
                             name="description"
                             value={formData.description}
                             onChange={handleChange}
                             rows={4}
                             placeholder="Nhập mô tả dự án"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base resize-none"
                         ></textarea>
                     </div>
 
-                    <div className="col-span-1 md:col-span-2">
+                    <div className="col-span-1 lg:col-span-2">
                         <FileAttachment />
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-4 mt-8 pt-6 border-t border-gray-200">
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-gray-200">
                     <button
                         onClick={() => navigate('/admin/projects')}
-                        className="px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                        className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors touch-target"
                     >
                         Hủy bỏ
                     </button>
                     <button
                         onClick={handleSubmit}
-                        className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                        className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm touch-target"
                     >
                         Tạo dự án
                     </button>
