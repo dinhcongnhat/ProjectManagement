@@ -78,6 +78,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 progress: 0,
                 status: 'IN_PROGRESS',
                 managerId: Number(managerId),
+                createdById: req.user?.id, // Lưu admin đã tạo dự án
                 implementers: {
                     connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
@@ -99,11 +100,40 @@ export const createProject = async (req: AuthRequest, res: Response) => {
 
 export const getProjects = async (req: AuthRequest, res: Response) => {
     try {
+        const userId = req.user?.id;
+        const userRole = req.user?.role;
+
+        // Nếu là Admin, chỉ lấy dự án mà admin đó tạo ra, quản lý hoặc là người thực hiện/theo dõi
+        // Nếu là User, lấy dự án mà user là người thực hiện hoặc theo dõi
+        let whereClause: any = {};
+        
+        if (userRole === 'ADMIN') {
+            whereClause = {
+                OR: [
+                    { createdById: userId },
+                    { managerId: userId },
+                    { implementers: { some: { id: userId } } },
+                    { followers: { some: { id: userId } } },
+                ]
+            };
+        } else {
+            // User thường: chỉ thấy dự án liên quan đến mình
+            whereClause = {
+                OR: [
+                    { managerId: userId },
+                    { implementers: { some: { id: userId } } },
+                    { followers: { some: { id: userId } } },
+                ]
+            };
+        }
+
         const projects = await prisma.project.findMany({
+            where: whereClause,
             include: {
                 manager: { select: { id: true, name: true } },
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
+                createdBy: { select: { id: true, name: true } },
             },
             orderBy: { createdAt: 'desc' },
         });
@@ -219,7 +249,7 @@ export const downloadAttachment = async (req: AuthRequest, res: Response) => {
         // Handle path with prefix (e.g., onlyoffice/timestamp-filename)
         if (project.attachment.includes('/')) {
             const pathParts = project.attachment.split('/');
-            const fileName = pathParts[pathParts.length - 1];
+            const fileName = pathParts[pathParts.length - 1] || '';
             originalName = fileName.split('-').slice(1).join('-');
         }
         
@@ -262,10 +292,10 @@ export const updateProjectProgress = async (req: AuthRequest, res: Response) => 
             return res.status(400).json({ message: 'Progress must be between 0 and 100' });
         }
 
-        // Check current project status
+        // Check current project status and progress
         const currentProject = await prisma.project.findUnique({
             where: { id: Number(id) },
-            select: { status: true },
+            select: { status: true, progress: true },
         });
 
         if (!currentProject) {
@@ -300,14 +330,15 @@ export const updateProjectProgress = async (req: AuthRequest, res: Response) => 
 
         // Log activity
         if (req.user?.id) {
-            const progressChanged = currentProject.progress !== Number(progress);
+            const oldProgress = currentProject.progress ?? 0;
+            const progressChanged = oldProgress !== Number(progress);
             if (progressChanged || status !== currentProject.status) {
                 await createActivity(
                     Number(id),
                     req.user.id,
-                    `Cập nhật tiến độ từ ${currentProject.progress}% lên ${progress}%${status !== currentProject.status ? ` (${status === 'PENDING_APPROVAL' ? 'Chờ duyệt' : 'Đang thực hiện'})` : ''}`,
+                    `Cập nhật tiến độ từ ${oldProgress}% lên ${progress}%${status !== currentProject.status ? ` (${status === 'PENDING_APPROVAL' ? 'Chờ duyệt' : 'Đang thực hiện'})` : ''}`,
                     'progress',
-                    `${currentProject.progress}%`,
+                    `${oldProgress}%`,
                     `${progress}%`
                 );
             }

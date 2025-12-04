@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Send, Paperclip, File, Download, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, Eye, FileText } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Send, Paperclip, File, Download, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, Eye, FileText, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 
@@ -51,45 +51,86 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const [playingAudio, setPlayingAudio] = useState<number | null>(null);
     const [showOnlyOffice, setShowOnlyOffice] = useState<{messageId: number; fileName: string} | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const audioRef = useRef<HTMLAudioElement | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
-    // Fetch messages
-    const fetchMessages = async () => {
+    // Fetch messages with retry logic
+    const fetchMessages = useCallback(async (isManualRefresh = false) => {
+        // Cancel previous request if exists
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
+        if (isManualRefresh) {
+            setIsRefreshing(true);
+        }
+
         try {
             const token = localStorage.getItem('token');
             const response = await fetch(`${API_URL}/projects/${projectId}/messages`, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache',
+                },
+                signal: abortControllerRef.current.signal,
             });
             
-            if (!response.ok) throw new Error('Failed to fetch messages');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
             
             const data = await response.json();
             setMessages(data.messages || []);
             setError(null);
-        } catch (err) {
-            setError('Không thể tải tin nhắn');
+            setRetryCount(0);
+        } catch (err: any) {
+            if (err.name === 'AbortError') {
+                return; // Request was cancelled, don't update state
+            }
+            
             console.error('Error fetching messages:', err);
+            
+            // Retry logic for network errors
+            if (retryCount < 3 && !isManualRefresh) {
+                setRetryCount(prev => prev + 1);
+                setTimeout(() => fetchMessages(), 2000 * (retryCount + 1));
+            } else {
+                setError('Không thể tải tin nhắn. Vui lòng thử lại.');
+            }
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
+    }, [projectId, retryCount]);
+
+    // Manual refresh handler
+    const handleRefresh = () => {
+        setError(null);
+        fetchMessages(true);
     };
 
     useEffect(() => {
         fetchMessages();
         // Poll for new messages every 5 seconds
-        const interval = setInterval(fetchMessages, 5000);
-        return () => clearInterval(interval);
+        const interval = setInterval(() => fetchMessages(), 5000);
+        return () => {
+            clearInterval(interval);
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
     }, [projectId]);
 
     useEffect(() => {
@@ -449,13 +490,23 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: '500px', maxHeight: '800px' }}>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: '400px', maxHeight: '800px' }}>
             {/* Header */}
-            <div className="p-4 border-b border-gray-100 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                    <MessageSquare size={24} className="text-blue-500" />
-                    <h3 className="text-lg font-semibold text-gray-800">Thảo luận</h3>
-                    <span className="text-sm text-gray-500">({messages.length} tin nhắn)</span>
+            <div className="p-3 sm:p-4 border-b border-gray-100 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <MessageSquare size={20} className="text-blue-500 sm:w-6 sm:h-6" />
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-800">Thảo luận</h3>
+                        <span className="text-xs sm:text-sm text-gray-500">({messages.length})</span>
+                    </div>
+                    <button
+                        onClick={handleRefresh}
+                        disabled={isRefreshing}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50 touch-manipulation"
+                        title="Làm mới"
+                    >
+                        <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+                    </button>
                 </div>
             </div>
 
@@ -566,8 +617,8 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             )}
 
             {/* Input area */}
-            <div className="p-4 border-t border-gray-100 flex-shrink-0 bg-white">
-                <div className="flex items-end gap-2">
+            <div className="p-3 sm:p-4 border-t border-gray-100 flex-shrink-0 bg-white safe-area-bottom">
+                <div className="flex items-end gap-1 sm:gap-2">
                     {/* File attachment button */}
                     <input
                         ref={fileInputRef}
@@ -579,7 +630,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     />
                     <button
                         onClick={() => fileInputRef.current?.click()}
-                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                        className="p-2 text-gray-500 hover:bg-gray-100 active:bg-gray-200 rounded-lg touch-manipulation"
                         title="Đính kèm file"
                     >
                         <Paperclip size={20} />
@@ -588,7 +639,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     {/* Voice recording button */}
                     <button
                         onClick={isRecording ? stopRecording : startRecording}
-                        className={`p-2 rounded-lg ${isRecording ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                        className={`p-2 rounded-lg touch-manipulation ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-gray-500 hover:bg-gray-100 active:bg-gray-200'}`}
                         title={isRecording ? 'Dừng ghi âm' : 'Ghi âm'}
                     >
                         {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
@@ -606,9 +657,10 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                                 }
                             }}
                             placeholder="Nhập tin nhắn..."
-                            className="w-full px-4 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 sm:px-4 py-2 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                             rows={1}
                             disabled={sending || isRecording}
+                            style={{ fontSize: '16px' }} // Prevent iOS zoom on focus
                         />
                     </div>
                     
@@ -616,7 +668,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     <button
                         onClick={sendTextMessage}
                         disabled={sending || isRecording || (!newMessage.trim() && !selectedFile)}
-                        className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
                         title="Gửi tin nhắn"
                     >
                         {sending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}

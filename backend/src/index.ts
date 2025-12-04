@@ -13,18 +13,35 @@ const httpServer = createServer(app);
 const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost',
+    'http://localhost:5173',
     'https://jtsc.io.vn',
     'http://jtsc.io.vn',
     'https://www.jtsc.io.vn',
-    'http://www.jtsc.io.vn'
+    'http://www.jtsc.io.vn',
+    'https://ai.jtsc.io.vn',
+    'http://ai.jtsc.io.vn'
 ];
 
 const io = new Server(httpServer, {
     cors: {
-        origin: allowedOrigins,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-        credentials: true
-    }
+        origin: (origin, callback) => {
+            // Allow requests with no origin (like mobile apps, curl, postman)
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                // Allow all origins for mobile app compatibility
+                callback(null, true);
+            }
+        },
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        credentials: true,
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    },
+    // Connection settings for better mobile performance
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    transports: ['websocket', 'polling']
 });
 
 const port = process.env.PORT || 3001;
@@ -45,15 +62,21 @@ app.use(cors({
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            // Cho phép tất cả để debug - có thể thắt chặt sau
+            // Cho phép tất cả để hỗ trợ mobile app
             callback(null, true);
         }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cache-Control'],
+    exposedHeaders: ['Content-Disposition'],
+    credentials: true,
+    maxAge: 86400, // Cache preflight request for 24 hours
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
-app.use(express.json());
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

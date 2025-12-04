@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Clock, Loader2, ChevronDown, ChevronUp, Edit, TrendingUp, CheckCircle, AlertCircle, FileText } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Clock, Loader2, ChevronDown, ChevronUp, Edit, TrendingUp, CheckCircle, AlertCircle, FileText, RefreshCw } from 'lucide-react';
 
 interface Activity {
     id: number;
@@ -26,36 +26,77 @@ export const ActivityHistoryPanel = ({ projectId }: ActivityHistoryPanelProps) =
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState<Set<number>>(new Set());
+    const [retryCount, setRetryCount] = useState(0);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
-    // Fetch activities
-    const fetchActivities = useCallback(async () => {
+    // Fetch activities with retry logic
+    const fetchActivities = useCallback(async (isManualRefresh = false) => {
+        // Cancel previous request if exists
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+
+        if (isManualRefresh) {
+            setIsRefreshing(true);
+        }
+
         try {
             const token = localStorage.getItem('token');
             const response = await fetch(`${API_URL}/projects/${projectId}/activities`, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                    'Authorization': `Bearer ${token}`,
+                    'Cache-Control': 'no-cache',
+                },
+                signal: abortControllerRef.current.signal,
             });
             
-            if (!response.ok) throw new Error('Failed to fetch activities');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
             
             const data = await response.json();
             setActivities(data.activities || []);
             setError(null);
-        } catch (err) {
-            setError('Không thể tải lịch sử hoạt động');
+            setRetryCount(0);
+        } catch (err: any) {
+            if (err.name === 'AbortError') {
+                return; // Request was cancelled
+            }
+            
             console.error('Error fetching activities:', err);
+            
+            // Retry logic
+            if (retryCount < 3 && !isManualRefresh) {
+                setRetryCount(prev => prev + 1);
+                setTimeout(() => fetchActivities(), 2000 * (retryCount + 1));
+            } else {
+                setError('Không thể tải lịch sử hoạt động. Vui lòng thử lại.');
+            }
         } finally {
             setLoading(false);
+            setIsRefreshing(false);
         }
-    }, [projectId]);
+    }, [projectId, retryCount]);
+
+    // Manual refresh handler
+    const handleRefresh = () => {
+        setError(null);
+        fetchActivities(true);
+    };
 
     useEffect(() => {
         fetchActivities();
         // Refresh every 30 seconds
-        const interval = setInterval(fetchActivities, 30000);
-        return () => clearInterval(interval);
-    }, [fetchActivities]);
+        const interval = setInterval(() => fetchActivities(), 30000);
+        return () => {
+            clearInterval(interval);
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
+    }, [projectId]);
 
     // Toggle expand/collapse for activity details
     const toggleExpand = (id: number) => {
@@ -178,13 +219,23 @@ export const ActivityHistoryPanel = ({ projectId }: ActivityHistoryPanelProps) =
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: '400px', maxHeight: '600px' }}>
             {/* Header */}
-            <div className="p-4 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                    <Clock size={24} className="text-blue-500" />
-                    <h3 className="text-lg font-semibold text-gray-800">Lịch sử hoạt động</h3>
-                    <span className="text-sm text-gray-500">({activities.length} hoạt động)</span>
+            <div className="p-3 sm:p-4 border-b border-gray-100">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Clock size={20} className="text-blue-500 sm:w-6 sm:h-6" />
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-800">Lịch sử hoạt động</h3>
+                        <span className="text-xs sm:text-sm text-gray-500">({activities.length})</span>
+                    </div>
+                    <button
+                        onClick={handleRefresh}
+                        disabled={isRefreshing}
+                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg disabled:opacity-50 touch-manipulation"
+                        title="Làm mới"
+                    >
+                        <RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+                    </button>
                 </div>
             </div>
 
@@ -287,13 +338,13 @@ export const ActivityHistoryPanel = ({ projectId }: ActivityHistoryPanelProps) =
             </div>
 
             {/* Refresh button */}
-            <div className="p-4 border-t border-gray-100">
+            <div className="p-3 sm:p-4 border-t border-gray-100">
                 <button
-                    onClick={fetchActivities}
-                    disabled={loading}
-                    className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    onClick={handleRefresh}
+                    disabled={loading || isRefreshing}
+                    className="w-full py-2 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 touch-manipulation"
                 >
-                    {loading ? 'Đang tải...' : 'Làm mới'}
+                    {isRefreshing ? 'Đang tải...' : 'Làm mới'}
                 </button>
             </div>
         </div>

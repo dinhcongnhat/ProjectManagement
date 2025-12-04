@@ -15,6 +15,7 @@ export const createTask = async (req: AuthRequest, res: Response) => {
         const taskType = req.user!.role === 'ADMIN' ? (type || 'ASSIGNED') : 'PERSONAL';
         const assignedTo = taskType === 'PERSONAL' ? creatorId : assigneeId;
 
+        const now = new Date();
         const task = await prisma.task.create({
             data: {
                 title,
@@ -25,6 +26,7 @@ export const createTask = async (req: AuthRequest, res: Response) => {
                 endDate: endDate ? new Date(endDate) : null,
                 creatorId,
                 assigneeId: assignedTo,
+                createdAt: now, // Tự động cập nhật thời gian tạo
             },
         });
 
@@ -79,7 +81,7 @@ export const getTasks = async (req: AuthRequest, res: Response) => {
 export const updateTask = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { title, description, status, startDate, endDate } = req.body;
+        const { title, description, status, startDate, endDate, note } = req.body;
         const userId = req.user!.id;
         const role = req.user!.role;
 
@@ -112,6 +114,12 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
         };
         if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
         if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+        
+        // Xử lý ghi chú
+        if (note !== undefined) {
+            updateData.note = note;
+            updateData.lastNoteAt = new Date(); // Cập nhật thời gian ghi chú
+        }
 
         const updatedTask = await prisma.task.update({
             where: { id: Number(id) },

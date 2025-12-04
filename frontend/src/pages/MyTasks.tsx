@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X } from 'lucide-react';
+import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X, StickyNote, MessageSquare } from 'lucide-react';
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
@@ -13,8 +13,55 @@ interface Task {
     type: 'ASSIGNED' | 'PERSONAL';
     startDate: string | null;
     endDate: string | null;
+    note: string | null;
+    lastNoteAt: string | null;
+    createdAt: string;
+    updatedAt: string;
     project?: string; // Optional for now
 }
+
+// Note Tooltip Component
+const NoteButton = ({ task, onOpenNote, formatDateTime }: { 
+    task: Task; 
+    onOpenNote: (task: Task) => void;
+    formatDateTime: (date: string | null) => string;
+}) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+
+    return (
+        <div className="relative">
+            <button 
+                onClick={(e) => { e.stopPropagation(); onOpenNote(task); }}
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+                onPointerDown={(e) => e.stopPropagation()}
+                className={`p-1.5 rounded touch-target transition-colors ${task.note ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100'}`} 
+                title="Ghi chú"
+            >
+                <MessageSquare size={14} />
+            </button>
+            
+            {/* Tooltip popup khi hover */}
+            {showTooltip && task.note && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
+                    <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 max-w-xs shadow-lg">
+                        <div className="font-medium mb-1 text-amber-300">📝 Ghi chú:</div>
+                        <p className="whitespace-pre-wrap break-words">{task.note.length > 150 ? task.note.substring(0, 150) + '...' : task.note}</p>
+                        {task.lastNoteAt && (
+                            <p className="text-gray-400 text-[10px] mt-1 border-t border-gray-700 pt-1">
+                                Cập nhật: {formatDateTime(task.lastNoteAt)}
+                            </p>
+                        )}
+                        {/* Arrow */}
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
+                            <div className="border-8 border-transparent border-t-gray-900"></div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const DraggableTask = ({ task, children }: { task: Task, children: React.ReactNode }) => {
     const { attributes, listeners, setNodeRef, transform } = useDraggable({
@@ -47,6 +94,9 @@ const MyTasks = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [view, setView] = useState<'list' | 'kanban' | 'gantt'>('list');
     const [showModal, setShowModal] = useState(false);
+    const [showNoteModal, setShowNoteModal] = useState(false);
+    const [selectedTaskForNote, setSelectedTaskForNote] = useState<Task | null>(null);
+    const [noteContent, setNoteContent] = useState('');
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const { token } = useAuth();
     const [formData, setFormData] = useState({
@@ -78,6 +128,56 @@ const MyTasks = () => {
         setFormData({ title: '', description: '', startDate: '', endDate: '', type: 'PERSONAL' });
         setEditingTask(null);
         setShowModal(false);
+    };
+
+    // Open note modal
+    const openNoteModal = (task: Task) => {
+        setSelectedTaskForNote(task);
+        setNoteContent(task.note || '');
+        setShowNoteModal(true);
+    };
+
+    // Close note modal
+    const closeNoteModal = () => {
+        setSelectedTaskForNote(null);
+        setNoteContent('');
+        setShowNoteModal(false);
+    };
+
+    // Save note
+    const handleSaveNote = async () => {
+        if (!selectedTaskForNote) return;
+        
+        try {
+            const response = await fetch(`${API_URL}/tasks/${selectedTaskForNote.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ note: noteContent }),
+            });
+
+            if (response.ok) {
+                fetchTasks();
+                closeNoteModal();
+            }
+        } catch (error) {
+            console.error('Error saving note:', error);
+        }
+    };
+
+    // Format date time
+    const formatDateTime = (dateString: string | null) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleString('vi-VN', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     };
 
     const handleCreateOrUpdateTask = async (e: React.FormEvent) => {
@@ -225,42 +325,63 @@ const MyTasks = () => {
                     ) : (
                         <div className="divide-y divide-gray-100">
                             {tasks.map((task) => (
-                                <div key={task.id} className="p-3 lg:p-4 hover:bg-gray-50 active:bg-gray-100 flex items-start sm:items-center justify-between gap-3 group">
-                                    <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-                                        <input
-                                            type="checkbox"
-                                            checked={task.status === 'COMPLETED'}
-                                            onChange={() => updateStatus(task.id, task.status === 'COMPLETED' ? 'TODO' : 'COMPLETED')}
-                                            className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 mt-0.5 sm:mt-0 touch-target"
-                                            title="Đánh dấu hoàn thành"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                            <h4 className={`font-medium text-gray-900 text-sm lg:text-base truncate ${task.status === 'COMPLETED' ? 'line-through text-gray-500' : ''}`}>{task.title}</h4>
-                                            <p className="text-xs text-gray-500">{task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}</p>
+                                <div key={task.id} className="p-3 lg:p-4 hover:bg-gray-50 active:bg-gray-100 flex flex-col gap-2 group">
+                                    <div className="flex items-start sm:items-center justify-between gap-3">
+                                        <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                                            <input
+                                                type="checkbox"
+                                                checked={task.status === 'COMPLETED'}
+                                                onChange={() => updateStatus(task.id, task.status === 'COMPLETED' ? 'TODO' : 'COMPLETED')}
+                                                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 mt-0.5 sm:mt-0 touch-target"
+                                                title="Đánh dấu hoàn thành"
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                                <h4 className={`font-medium text-gray-900 text-sm lg:text-base truncate ${task.status === 'COMPLETED' ? 'line-through text-gray-500' : ''}`}>{task.title}</h4>
+                                                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mt-1">
+                                                    <span className={`px-1.5 py-0.5 rounded ${task.type === 'PERSONAL' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
+                                                        {task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}
+                                                    </span>
+                                                    <span>Tạo: {formatDateTime(task.createdAt)}</span>
+                                                    {task.note && (
+                                                        <span className="flex items-center gap-1 text-amber-600">
+                                                            <StickyNote size={12} />
+                                                            Có ghi chú
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 lg:gap-4 shrink-0">
+                                            <select
+                                                value={task.status}
+                                                onChange={(e) => updateStatus(task.id, e.target.value)}
+                                                className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 border-none focus:ring-0 max-w-20 lg:max-w-none"
+                                                title="Chọn trạng thái"
+                                            >
+                                                <option value="TODO">Todo</option>
+                                                <option value="IN_PROGRESS">In Progress</option>
+                                                <option value="COMPLETED">Completed</option>
+                                            </select>
+                                            <div className="flex gap-1">
+                                                <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
+                                                {task.type === 'PERSONAL' && (
+                                                    <>
+                                                        <button onClick={() => openEditModal(task)} className="p-2 text-gray-400 hover:text-blue-600 active:text-blue-700 touch-target" title="Chỉnh sửa">
+                                                            <Pencil size={16} />
+                                                        </button>
+                                                        <button onClick={() => handleDeleteTask(task.id)} className="p-2 text-gray-400 hover:text-red-600 active:text-red-700 touch-target" title="Xóa">
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-                                        <select
-                                            value={task.status}
-                                            onChange={(e) => updateStatus(task.id, e.target.value)}
-                                            className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 border-none focus:ring-0 max-w-20 lg:max-w-none"
-                                            title="Chọn trạng thái"
-                                        >
-                                            <option value="TODO">Todo</option>
-                                            <option value="IN_PROGRESS">In Progress</option>
-                                            <option value="COMPLETED">Completed</option>
-                                        </select>
-                                        {task.type === 'PERSONAL' && (
-                                            <div className="flex gap-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => openEditModal(task)} className="p-2 text-gray-400 hover:text-blue-600 active:text-blue-700 touch-target" title="Chỉnh sửa">
-                                                    <Pencil size={16} />
-                                                </button>
-                                                <button onClick={() => handleDeleteTask(task.id)} className="p-2 text-gray-400 hover:text-red-600 active:text-red-700 touch-target" title="Xóa">
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
+                                    {task.lastNoteAt && (
+                                        <div className="text-xs text-gray-400 ml-8">
+                                            Ghi chú lần cuối: {formatDateTime(task.lastNoteAt)}
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -273,32 +394,43 @@ const MyTasks = () => {
                     <div className="grid grid-cols-3 gap-6 h-[500px]">
                         {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
                             <DroppableColumn key={status} id={status}>
-                                <h3 className="font-bold text-gray-700 mb-2">{status}</h3>
+                                <h3 className="font-bold text-gray-700 mb-2">{status === 'TODO' ? 'Cần làm' : status === 'IN_PROGRESS' ? 'Đang làm' : 'Hoàn thành'}</h3>
                                 {tasks.filter(t => t.status === status).map(task => (
                                     <DraggableTask key={task.id} task={task}>
                                         <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 group relative cursor-move hover:shadow-md transition-shadow">
-                                            <h4 className="font-medium text-gray-900 pr-6">{task.title}</h4>
-                                            <p className="text-xs text-gray-500 mt-1">{task.type}</p>
+                                            <h4 className="font-medium text-gray-900 pr-16">{task.title}</h4>
+                                            <p className="text-xs text-gray-500 mt-1">{task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}</p>
 
-                                            {task.type === 'PERSONAL' && (
-                                                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={(e) => { e.stopPropagation(); openEditModal(task); }} className="p-1 text-gray-400 hover:text-blue-600" onPointerDown={(e) => e.stopPropagation()} title="Chỉnh sửa">
-                                                        <Pencil size={14} />
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-600" onPointerDown={(e) => e.stopPropagation()} title="Xóa">
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                            {/* Note indicator */}
+                                            {task.note && (
+                                                <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                                                    <StickyNote size={12} />
+                                                    <span className="truncate">Có ghi chú</span>
                                                 </div>
                                             )}
 
-                                            <div className="mt-3 flex justify-end">
-                                                {/* Status dropdown removed as drag and drop replaces it, or keep as alternative? Keeping it but maybe hidden or smaller? */}
-                                                {/* Let's keep it for accessibility or fallback, but drag is primary */}
+                                            {/* Action buttons */}
+                                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
+                                                {task.type === 'PERSONAL' && (
+                                                    <>
+                                                        <button onClick={(e) => { e.stopPropagation(); openEditModal(task); }} className="p-1 text-gray-400 hover:text-blue-600" onPointerDown={(e) => e.stopPropagation()} title="Chỉnh sửa">
+                                                            <Pencil size={14} />
+                                                        </button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-600" onPointerDown={(e) => e.stopPropagation()} title="Xóa">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            <div className="mt-3 flex justify-between items-center">
+                                                <span className="text-xs text-gray-400">{formatDateTime(task.createdAt).split(' ')[0]}</span>
                                                 <span className={`text-xs px-2 py-1 rounded-full ${task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
                                                     task.status === 'IN_PROGRESS' ? 'bg-orange-100 text-orange-600' :
                                                         'bg-green-100 text-green-600'
                                                     }`}>
-                                                    {task.status}
+                                                    {task.status === 'TODO' ? 'Todo' : task.status === 'IN_PROGRESS' ? 'Đang làm' : 'Xong'}
                                                 </span>
                                             </div>
                                         </div>
@@ -324,18 +456,26 @@ const MyTasks = () => {
                         </div>
                         {tasks.map(task => (
                             <div key={task.id} className="flex items-center py-2 border-b border-gray-50 group">
-                                <div className="w-1/4 pr-4 truncate font-medium flex justify-between items-center">
-                                    {task.title}
-                                    {task.type === 'PERSONAL' && (
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
-                                                <Pencil size={14} />
-                                            </button>
-                                            <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    )}
+                                <div className="w-1/4 pr-4 truncate font-medium flex justify-between items-center gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span className="truncate">{task.title}</span>
+                                        {task.note && (
+                                            <StickyNote size={12} className="text-amber-500 shrink-0" />
+                                        )}
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                        <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
+                                        {task.type === 'PERSONAL' && (
+                                            <>
+                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
+                                                    <Pencil size={14} />
+                                                </button>
+                                                <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="w-3/4 relative h-8 bg-gray-50 rounded">
                                     {task.startDate && task.endDate && (
@@ -425,6 +565,55 @@ const MyTasks = () => {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Note Modal */}
+            {showNoteModal && selectedTaskForNote && (
+                <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+                    <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto slide-up sm:fade-in">
+                        <div className="flex justify-between items-center p-4 lg:p-6 border-b border-gray-100 sticky top-0 bg-white">
+                            <div>
+                                <h3 className="text-lg lg:text-xl font-bold text-gray-900">Ghi chú</h3>
+                                <p className="text-sm text-gray-500 truncate">{selectedTaskForNote.title}</p>
+                            </div>
+                            <button onClick={closeNoteModal} className="p-2 text-gray-400 hover:text-gray-600 active:text-gray-700 touch-target" title="Đóng">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-4 lg:p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Nội dung ghi chú</label>
+                                <textarea
+                                    className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-h-32"
+                                    value={noteContent}
+                                    onChange={(e) => setNoteContent(e.target.value)}
+                                    placeholder="Nhập ghi chú của bạn..."
+                                    style={{ fontSize: '16px' }}
+                                />
+                            </div>
+                            {selectedTaskForNote.lastNoteAt && (
+                                <p className="text-xs text-gray-500">
+                                    Ghi chú lần cuối: {formatDateTime(selectedTaskForNote.lastNoteAt)}
+                                </p>
+                            )}
+                            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 pb-safe">
+                                <button
+                                    type="button"
+                                    onClick={closeNoteModal}
+                                    className="w-full sm:w-auto px-4 py-3 lg:py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 active:bg-gray-100 rounded-lg border border-gray-200 touch-target"
+                                >
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={handleSaveNote}
+                                    className="w-full sm:w-auto px-4 py-3 lg:py-2 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 rounded-lg touch-target"
+                                >
+                                    Lưu ghi chú
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

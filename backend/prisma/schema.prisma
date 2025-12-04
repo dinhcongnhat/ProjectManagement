@@ -52,6 +52,7 @@ model User {
   assignedTasks Task[] @relation("AssignedTasks")
 
   managedProjects     Project[] @relation("ProjectManager")
+  createdProjects     Project[] @relation("ProjectCreator")
   implementedProjects Project[] @relation("ProjectImplementers")
   followedProjects    Project[] @relation("ProjectFollowers")
   
@@ -67,6 +68,8 @@ model Task {
   type        TaskType   @default(ASSIGNED)
   startDate   DateTime?
   endDate     DateTime?
+  note        String?    // Ghi chú của người dùng
+  lastNoteAt  DateTime?  // Thời gian ghi chú cuối cùng
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -96,6 +99,9 @@ model Project {
 
   managerId Int
   manager   User @relation("ProjectManager", fields: [managerId], references: [id])
+
+  createdById Int?        // Admin đã tạo dự án
+  createdBy   User? @relation("ProjectCreator", fields: [createdById], references: [id])
 
   implementers User[] @relation("ProjectImplementers")
   followers    User[] @relation("ProjectFollowers")
