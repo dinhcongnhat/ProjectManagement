@@ -1,6 +1,6 @@
 
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X, MessageCircle, User } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,9 +17,7 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
         { icon: CheckSquare, label: 'Quản lý công việc', path: '/projects' },
         { icon: ListTodo, label: 'Công việc cá nhân', path: '/my-tasks' },
-        { icon: MessageCircle, label: 'Tin nhắn', path: '/chat' },
         { icon: GitGraph, label: 'Quy trình', path: '/workflow' },
-        { icon: User, label: 'Hồ sơ cá nhân', path: '/profile' },
     ];
 
     const handleLogout = () => {
@@ -55,9 +53,8 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
                 )}
             >
                 <div className="p-4 lg:p-6 flex items-center justify-between gap-3 border-b border-gray-100 safe-top">
-                    <div className="flex items-center gap-3">
-                        <img src="/Logo.png" alt="Logo" className="h-10 lg:h-12 w-auto" />
-                        <h1 className="text-xl lg:text-2xl font-bold text-blue-600">JTSC<span className="text-gray-800">Manager</span></h1>
+                    <div className="flex items-center gap-3 mt-2">
+                        <img src="/Logo.png" alt="Logo" className="h-14 lg:h-16 w-auto" />
                     </div>
                     {/* Close button for mobile */}
                     <button 

@@ -633,7 +633,35 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
         const { q } = req.query;
 
         if (!q) {
-            return res.json([]);
+            // Nếu không có query, trả về tất cả users (trừ chính mình)
+            const allUsers = await prisma.user.findMany({
+                where: {
+                    id: { not: userId }
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    username: true,
+                    avatar: true,
+                    position: true
+                },
+                take: 20
+            });
+
+            // Add avatar URLs
+            const usersWithAvatars = await Promise.all(allUsers.map(async (user) => {
+                let avatarUrl = null;
+                if (user.avatar) {
+                    try {
+                        avatarUrl = await getPresignedUrl(user.avatar);
+                    } catch (e) {
+                        console.error('Error getting avatar URL:', e);
+                    }
+                }
+                return { ...user, avatarUrl };
+            }));
+
+            return res.json(usersWithAvatars);
         }
 
         const users = await prisma.user.findMany({
@@ -654,7 +682,20 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
             take: 10
         });
 
-        res.json(users);
+        // Add avatar URLs
+        const usersWithAvatars = await Promise.all(users.map(async (user) => {
+            let avatarUrl = null;
+            if (user.avatar) {
+                try {
+                    avatarUrl = await getPresignedUrl(user.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+            return { ...user, avatarUrl };
+        }));
+
+        res.json(usersWithAvatars);
     } catch (error) {
         console.error('Error searching users:', error);
         res.status(500).json({ message: 'Server error' });

@@ -188,17 +188,8 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Lấy URL avatar nếu có
-        let avatarUrl = null;
-        if (user.avatar) {
-            try {
-                avatarUrl = await getPresignedUrl(user.avatar);
-            } catch (e) {
-                console.error('Error getting avatar URL:', e);
-            }
-        }
-
-        res.json({ ...user, avatarUrl });
+        // Avatar is now stored as base64, no need to get presigned URL
+        res.json({ ...user, avatarUrl: user.avatar });
     } catch (error) {
         console.error('Error getting profile:', error);
         res.status(500).json({ message: 'Server error' });
@@ -258,17 +249,13 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'No file uploaded' });
         }
 
-        // Upload avatar to MinIO
-        const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `avatars/${userId}-${Date.now()}-${normalizedFilename}`;
-        const avatarPath = await uploadFile(fileName, req.file.buffer, {
-            'Content-Type': req.file.mimetype,
-        });
+        // Convert file to base64 and save directly to database
+        const base64Avatar = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
 
         // Update user avatar
         const user = await prisma.user.update({
             where: { id: userId },
-            data: { avatar: avatarPath },
+            data: { avatar: base64Avatar },
             select: {
                 id: true,
                 username: true,
@@ -282,9 +269,7 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        const avatarUrl = await getPresignedUrl(avatarPath);
-
-        res.json({ ...user, avatarUrl });
+        res.json({ ...user, avatarUrl: user.avatar });
     } catch (error) {
         console.error('Error uploading avatar:', error);
         res.status(500).json({ message: 'Server error' });

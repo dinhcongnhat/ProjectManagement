@@ -49,9 +49,8 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
                 )}
             >
                 <div className="p-4 lg:p-6 flex items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 safe-top">
-                    <div className="flex items-center gap-3">
-                        <img src="/Logo.png" alt="Logo" className="h-8 lg:h-10 w-auto" />
-                        <h1 className="text-lg lg:text-xl font-bold tracking-tight text-gray-800">Admin<span className="text-blue-600">Portal</span></h1>
+                    <div className="flex items-center gap-3 mt-3">
+                        <img src="/Logo.png" alt="Logo" className="h-16 lg:h-18 w-auto" />
                     </div>
                     <button 
                         onClick={onClose}

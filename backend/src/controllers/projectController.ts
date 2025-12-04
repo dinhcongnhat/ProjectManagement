@@ -78,7 +78,6 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 progress: 0,
                 status: 'IN_PROGRESS',
                 managerId: Number(managerId),
-                createdById: req.user?.id, // Lưu admin đã tạo dự án
                 implementers: {
                     connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
@@ -102,6 +101,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
         const userRole = req.user?.role;
+        const { q } = req.query; // Search query
 
         // Nếu là Admin, chỉ lấy dự án mà admin đó tạo ra, quản lý hoặc là người thực hiện/theo dõi
         // Nếu là User, lấy dự án mà user là người thực hiện hoặc theo dõi
@@ -110,7 +110,6 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
         if (userRole === 'ADMIN') {
             whereClause = {
                 OR: [
-                    { createdById: userId },
                     { managerId: userId },
                     { implementers: { some: { id: userId } } },
                     { followers: { some: { id: userId } } },
@@ -127,13 +126,28 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
             };
         }
 
+        // Add search filter if query provided
+        if (q) {
+            whereClause = {
+                AND: [
+                    whereClause,
+                    {
+                        OR: [
+                            { name: { contains: String(q), mode: 'insensitive' } },
+                            { code: { contains: String(q), mode: 'insensitive' } },
+                            { description: { contains: String(q), mode: 'insensitive' } },
+                        ]
+                    }
+                ]
+            };
+        }
+
         const projects = await prisma.project.findMany({
             where: whereClause,
             include: {
                 manager: { select: { id: true, name: true } },
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
-                createdBy: { select: { id: true, name: true } },
             },
             orderBy: { createdAt: 'desc' },
         });
