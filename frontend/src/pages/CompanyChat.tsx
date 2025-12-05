@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import api from '../config/api';
+import api, { API_URL } from '../config/api';
 import {
     Send,
     Image,
@@ -15,6 +15,16 @@ import {
     ArrowLeft,
     User as UserCircle
 } from 'lucide-react';
+
+// Helper to resolve relative URLs to absolute URLs
+const resolveUrl = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+    }
+    const baseUrl = API_URL.replace(/\/api$/, '');
+    return `${baseUrl}${url}`;
+};
 
 interface User {
     id: number;
@@ -30,6 +40,7 @@ interface Conversation {
     name: string | null;
     type: 'PRIVATE' | 'GROUP';
     avatar: string | null;
+    avatarUrl?: string | null;
     displayName: string;
     displayAvatar: string | null;
     unreadCount: number;
@@ -375,9 +386,9 @@ export default function CompanyChat() {
                             >
                                 {/* Avatar */}
                                 <div className="relative flex-shrink-0">
-                                    {conv.displayAvatar ? (
+                                    {(conv.avatarUrl || conv.displayAvatar) ? (
                                         <img
-                                            src={conv.displayAvatar}
+                                            src={resolveUrl(conv.avatarUrl || conv.displayAvatar) || ''}
                                             alt={conv.displayName}
                                             className="w-12 h-12 rounded-full object-cover"
                                         />
@@ -440,9 +451,9 @@ export default function CompanyChat() {
                                 </button>
                             )}
                             
-                            {selectedConversation.displayAvatar ? (
+                            {(selectedConversation.avatarUrl || selectedConversation.displayAvatar) ? (
                                 <img
-                                    src={selectedConversation.displayAvatar}
+                                    src={resolveUrl(selectedConversation.avatarUrl || selectedConversation.displayAvatar) || ''}
                                     alt={selectedConversation.displayName}
                                     className="w-10 h-10 rounded-full object-cover"
                                 />
@@ -495,7 +506,7 @@ export default function CompanyChat() {
                                                 {!isMe && showAvatar && (
                                                     msg.sender.avatarUrl ? (
                                                         <img
-                                                            src={msg.sender.avatarUrl}
+                                                            src={resolveUrl(msg.sender.avatarUrl) || ''}
                                                             alt={msg.sender.name}
                                                             className="w-8 h-8 rounded-full object-cover"
                                                         />
@@ -531,17 +542,17 @@ export default function CompanyChat() {
                                                         {/* Image */}
                                                         {msg.messageType === 'IMAGE' && msg.attachmentUrl && (
                                                             <img
-                                                                src={msg.attachmentUrl}
+                                                                src={resolveUrl(msg.attachmentUrl) || ''}
                                                                 alt="Image"
                                                                 className="max-w-full rounded-lg cursor-pointer"
-                                                                onClick={() => window.open(msg.attachmentUrl!, '_blank')}
+                                                                onClick={() => window.open(resolveUrl(msg.attachmentUrl)!, '_blank')}
                                                             />
                                                         )}
                                                         
                                                         {/* File */}
                                                         {msg.messageType === 'FILE' && msg.attachmentUrl && (
                                                             <a
-                                                                href={msg.attachmentUrl}
+                                                                href={resolveUrl(msg.attachmentUrl) || ''}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className={`flex items-center gap-2 ${isMe ? 'text-white' : 'text-blue-500'}`}
@@ -554,7 +565,7 @@ export default function CompanyChat() {
                                                         {/* Voice */}
                                                         {msg.messageType === 'VOICE' && msg.attachmentUrl && (
                                                             <audio controls className="max-w-full">
-                                                                <source src={msg.attachmentUrl} type="audio/webm" />
+                                                                <source src={resolveUrl(msg.attachmentUrl) || ''} type="audio/webm" />
                                                             </audio>
                                                         )}
                                                     </div>
@@ -837,7 +848,7 @@ function CreateConversationModal({ onClose, onCreated }: CreateConversationModal
                                     >
                                         {u.avatarUrl ? (
                                             <img
-                                                src={u.avatarUrl}
+                                                src={resolveUrl(u.avatarUrl) || ''}
                                                 alt={u.name}
                                                 className="w-10 h-10 rounded-full object-cover"
                                             />

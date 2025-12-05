@@ -15,12 +15,14 @@ import UserWorkflow from './pages/UserWorkflow';
 import UserProfile from './pages/UserProfile';
 import Login from './pages/Login';
 import { AuthProvider } from './context/AuthContext';
+import { DialogProvider } from './components/ui/Dialog';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <DialogProvider>
+        <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
 
@@ -48,7 +50,8 @@ function App() {
             </Route>
           </Route>
         </Routes>
-      </BrowserRouter>
+        </BrowserRouter>
+      </DialogProvider>
     </AuthProvider>
   );
 }

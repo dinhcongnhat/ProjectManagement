@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import api from '../config/api';
+import api, { API_URL } from '../config/api';
+import { useDialog } from '../components/ui/Dialog';
 import { 
     User as UserIcon, 
     Camera, 
@@ -13,6 +14,18 @@ import {
     EyeOff
 } from 'lucide-react';
 import ImageCropper from '../components/ImageCropper';
+
+// Helper to resolve relative URLs to absolute URLs
+const resolveAvatarUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    // If already absolute URL, return as is
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+        return url;
+    }
+    // For relative URLs, prepend API_URL base (remove /api suffix if present)
+    const baseUrl = API_URL.replace(/\/api$/, '');
+    return `${baseUrl}${url}`;
+};
 
 interface UserProfileData {
     id: number;
@@ -29,6 +42,7 @@ interface UserProfileData {
 }
 
 export default function UserProfile() {
+    const { showError, showSuccess, showWarning } = useDialog();
     const [profile, setProfile] = useState<UserProfileData | null>(null);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
@@ -73,13 +87,13 @@ export default function UserProfile() {
 
         // Validate file type
         if (!file.type.startsWith('image/')) {
-            alert('Vui lòng chọn file hình ảnh');
+            showWarning('Vui lòng chọn file hình ảnh');
             return;
         }
 
         // Validate file size (max 5MB)
         if (file.size > 5 * 1024 * 1024) {
-            alert('Kích thước file tối đa là 5MB');
+            showWarning('Kích thước file tối đa là 5MB');
             return;
         }
 
@@ -103,11 +117,11 @@ export default function UserProfile() {
             const response = await api.post('/users/profile/avatar', formData);
 
             setProfile(response.data);
-            alert('Cập nhật ảnh đại diện thành công!');
+            showSuccess('Cập nhật ảnh đại diện thành công!');
         } catch (error: any) {
             console.error('Error uploading avatar:', error);
             const message = error.response?.data?.message || 'Không thể tải lên ảnh đại diện. Vui lòng thử lại.';
-            alert(message);
+            showError(message);
         } finally {
             setUploadingAvatar(false);
             setShowCropper(false);
@@ -128,7 +142,7 @@ export default function UserProfile() {
             setEditing(false);
         } catch (error) {
             console.error('Error updating profile:', error);
-            alert('Không thể cập nhật thông tin');
+            showError('Không thể cập nhật thông tin');
         }
     };
 
@@ -167,7 +181,7 @@ export default function UserProfile() {
                                 <div className="w-28 h-28 rounded-full border-4 border-white bg-white shadow-lg overflow-hidden">
                                     {profile?.avatarUrl ? (
                                         <img
-                                            src={profile.avatarUrl}
+                                            src={resolveAvatarUrl(profile.avatarUrl) || ''}
                                             alt={profile.name}
                                             className="w-full h-full object-cover"
                                         />
@@ -394,6 +408,7 @@ export default function UserProfile() {
 
 // Modal đổi mật khẩu
 function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+    const { showSuccess } = useDialog();
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -422,7 +437,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
                 currentPassword,
                 newPassword
             });
-            alert('Đổi mật khẩu thành công');
+            showSuccess('Đổi mật khẩu thành công');
             onClose();
         } catch (err: any) {
             setError(err.response?.data?.message || 'Không thể đổi mật khẩu');

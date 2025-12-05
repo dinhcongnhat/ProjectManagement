@@ -99,6 +99,109 @@ app.use((req, res, next) => {
     next();
 });
 
+// ==================== PUBLIC ROUTES (NO AUTH) ====================
+// These must be defined BEFORE any authenticated routes
+// Serve chat message attachments (images, files, audio)
+app.get('/api/chat/messages/:messageId/file', async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) }
+        });
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const stats = await getFileStats(message.attachment);
+        const fileStream = await getFileStream(message.attachment);
+
+        const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'application/octet-stream';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[serveMessageAttachment] Error:', error?.message);
+        res.status(404).json({ message: 'File not found' });
+    }
+});
+
+// Serve user avatars
+app.get('/api/users/:id/avatar', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await prisma.user.findUnique({
+            where: { id: Number(id) },
+            select: { avatar: true }
+        });
+
+        if (!user || !user.avatar) {
+            return res.status(404).json({ message: 'Avatar not found' });
+        }
+
+        // Check if base64 avatar
+        if (user.avatar.startsWith('data:image')) {
+            const matches = user.avatar.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+                const contentType = matches[1];
+                const base64Data = matches[2];
+                const buffer = Buffer.from(base64Data, 'base64');
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Content-Length', buffer.length);
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                return res.send(buffer);
+            }
+        }
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const stats = await getFileStats(user.avatar);
+        const fileStream = await getFileStream(user.avatar);
+
+        const contentType = stats.metaData?.['content-type'] || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[serveUserAvatar] Error:', error?.message);
+        res.status(404).json({ message: 'Avatar not found' });
+    }
+});
+
+// Serve conversation avatars
+app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const conversation = await prisma.conversation.findUnique({
+            where: { id: Number(id) },
+            select: { avatar: true }
+        });
+
+        if (!conversation || !conversation.avatar) {
+            return res.status(404).json({ message: 'Avatar not found' });
+        }
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const stats = await getFileStats(conversation.avatar);
+        const fileStream = await getFileStream(conversation.avatar);
+
+        const contentType = stats.metaData?.['content-type'] || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[serveConversationAvatar] Error:', error?.message);
+        res.status(404).json({ message: 'Avatar not found' });
+    }
+});
+// ==================== END PUBLIC ROUTES ====================
+
 // Debug middleware to check body parsing
 app.use('/api/chat', (req, res, next) => {
     if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {

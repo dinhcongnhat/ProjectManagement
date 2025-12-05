@@ -3,6 +3,7 @@ import { Calendar, X, ChevronDown, Check, CloudUpload, FolderTree, ArrowLeft } f
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useDialog } from '../../components/ui/Dialog';
 
 interface UserData {
     id: number;
@@ -21,6 +22,7 @@ const CreateProject = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const parentIdParam = searchParams.get('parentId');
+    const { showSuccess, showError } = useDialog();
     
     const [users, setUsers] = useState<UserData[]>([]);
     const [parentProject, setParentProject] = useState<ParentProject | null>(null);
@@ -156,7 +158,7 @@ const CreateProject = () => {
 
             if (response.ok) {
                 await response.json();
-                alert('Dự án đã được tạo thành công!');
+                showSuccess('Dự án đã được tạo thành công!');
                 // Navigate to parent project if creating sub-project, otherwise to projects list
                 if (parentIdParam) {
                     navigate(`/admin/projects/${parentIdParam}`);
@@ -165,11 +167,11 @@ const CreateProject = () => {
                 }
             } else {
                 const data = await response.json();
-                alert(`Lỗi: ${data.message}`);
+                showError(`Lỗi: ${data.message}`);
             }
         } catch (error) {
             console.error('Error creating project:', error);
-            alert('Có lỗi xảy ra khi tạo dự án');
+            showError('Có lỗi xảy ra khi tạo dự án');
         }
     };
 

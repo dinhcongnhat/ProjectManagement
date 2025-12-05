@@ -3,6 +3,7 @@ import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X } from 'lucide-rea
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
+import { useDialog } from '../../components/ui/Dialog';
 
 interface UserData {
     id: number;
@@ -60,6 +61,7 @@ const ProjectTasks = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [users, setUsers] = useState<UserData[]>([]);
     const { token } = useAuth();
+    const { showConfirm, showSuccess, showError } = useDialog();
 
     // Edit Modal State
     const [showEditModal, setShowEditModal] = useState(false);
@@ -111,7 +113,8 @@ const ProjectTasks = () => {
     }, [token]);
 
     const handleDelete = async (id: number) => {
-        if (!confirm('Bạn có chắc chắn muốn xóa dự án này?')) return;
+        const confirmed = await showConfirm('Bạn có chắc chắn muốn xóa dự án này?');
+        if (!confirmed) return;
         try {
             const response = await fetch(`${API_URL}/projects/${id}`, {
                 method: 'DELETE',
@@ -120,7 +123,7 @@ const ProjectTasks = () => {
             if (response.ok) {
                 fetchProjects();
             } else {
-                alert('Xóa dự án thất bại');
+                showError('Xóa dự án thất bại');
             }
         } catch (error) {
             console.error('Error deleting project:', error);
@@ -148,7 +151,20 @@ const ProjectTasks = () => {
 
     const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        setEditFormData(prev => ({ ...prev, [name]: value }));
+        setEditFormData(prev => {
+            const newData = { ...prev, [name]: value };
+            
+            // Auto-calculate duration when dates change
+            if ((name === 'startDate' || name === 'endDate') && newData.startDate && newData.endDate) {
+                const start = new Date(newData.startDate);
+                const end = new Date(newData.endDate);
+                const diffTime = Math.abs(end.getTime() - start.getTime());
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                newData.duration = diffDays.toString();
+            }
+            
+            return newData;
+        });
     };
 
     const handleMultiSelectChange = (name: 'implementerIds' | 'followerIds', userId: string) => {
@@ -177,9 +193,9 @@ const ProjectTasks = () => {
             if (response.ok) {
                 setShowEditModal(false);
                 fetchProjects();
-                alert('Cập nhật dự án thành công!');
+                showSuccess('Cập nhật dự án thành công!');
             } else {
-                alert('Cập nhật thất bại');
+                showError('Cập nhật thất bại');
             }
         } catch (error) {
             console.error('Error updating project:', error);
@@ -271,40 +287,76 @@ const ProjectTasks = () => {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Left Column - Basic Info */}
                             <div className="space-y-4">
                                 <h4 className="font-semibold border-b pb-2">Thông tin chung</h4>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Mã dự án</label>
-                                    <input type="text" name="code" value={editFormData.code} onChange={handleEditChange} placeholder="VD: DA001" className="w-full px-3 py-2 border rounded-lg" />
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Mã dự án <span className="text-red-500">*</span></label>
+                                    <input type="text" name="code" value={editFormData.code} onChange={handleEditChange} placeholder="VD: DA001" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tên dự án</label>
-                                    <input type="text" name="name" value={editFormData.name} onChange={handleEditChange} placeholder="Nhập tên dự án" className="w-full px-3 py-2 border rounded-lg" />
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tên dự án <span className="text-red-500">*</span></label>
+                                    <input type="text" name="name" value={editFormData.name} onChange={handleEditChange} placeholder="Nhập tên dự án" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu</label>
-                                        <input type="date" name="startDate" value={editFormData.startDate} onChange={handleEditChange} title="Ngày bắt đầu" className="w-full px-3 py-2 border rounded-lg" />
+                                        <input type="date" name="startDate" value={editFormData.startDate} onChange={handleEditChange} title="Ngày bắt đầu" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc</label>
-                                        <input type="date" name="endDate" value={editFormData.endDate} onChange={handleEditChange} title="Ngày kết thúc" className="w-full px-3 py-2 border rounded-lg" />
+                                        <input type="date" name="endDate" value={editFormData.endDate} onChange={handleEditChange} title="Ngày kết thúc" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                     </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Thời hạn (ngày)</label>
+                                    <input type="number" name="duration" value={editFormData.duration} onChange={handleEditChange} placeholder="Số ngày thực hiện" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Nhóm dự án</label>
+                                    <input type="text" name="group" value={editFormData.group} onChange={handleEditChange} placeholder="Nhập nhóm dự án" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Giá trị hợp đồng</label>
+                                    <input type="text" name="value" value={editFormData.value} onChange={handleEditChange} placeholder="Nhập giá trị hợp đồng" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                 </div>
                             </div>
 
+                            {/* Right Column - Details & Permissions */}
                             <div className="space-y-4">
-                                <h4 className="font-semibold border-b pb-2">Phân quyền</h4>
+                                <h4 className="font-semibold border-b pb-2">Chi tiết & Phân quyền</h4>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Quản trị dự án</label>
-                                    <select name="managerId" value={editFormData.managerId} onChange={handleEditChange} title="Quản trị dự án" className="w-full px-3 py-2 border rounded-lg">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Phương pháp tính tiến độ <span className="text-red-500">*</span></label>
+                                    <select name="progressMethod" value={editFormData.progressMethod} onChange={handleEditChange} title="Phương pháp tính tiến độ" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+                                        <option value="">-- Chọn phương pháp --</option>
+                                        <option value="Theo bình quân % tiến độ các công việc thuộc dự án">Theo bình quân % tiến độ các công việc</option>
+                                        <option value="Theo tỷ trọng ngày thực hiện">Theo tỷ trọng ngày thực hiện</option>
+                                        <option value="Theo tỷ trọng công việc">Theo tỷ trọng công việc</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Quản trị dự án <span className="text-red-500">*</span></label>
+                                    <select name="managerId" value={editFormData.managerId} onChange={handleEditChange} title="Quản trị dự án" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
                                         <option value="">-- Chọn quản trị --</option>
-                                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                        {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                                     </select>
                                 </div>
                                 <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={editFormData.implementerIds} users={users} onSelectionChange={handleMultiSelectChange} />
                                 <UserMultiSelect label="Người theo dõi" name="followerIds" selectedIds={editFormData.followerIds} users={users} onSelectionChange={handleMultiSelectChange} />
                             </div>
+                        </div>
+
+                        {/* Description - Full Width */}
+                        <div className="mt-6">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả dự án</label>
+                            <textarea 
+                                name="description" 
+                                value={editFormData.description} 
+                                onChange={handleEditChange} 
+                                rows={4} 
+                                placeholder="Nhập mô tả chi tiết về dự án..."
+                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                            ></textarea>
                         </div>
 
                         <div className="flex justify-end gap-4 mt-8 pt-6 border-t">

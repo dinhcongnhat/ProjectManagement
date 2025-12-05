@@ -7,6 +7,7 @@ import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../../components/OnlyOfficeViewer';
 import { getDisplayFilename } from '../../utils/filenameUtils';
+import { useDialog } from '../../components/ui/Dialog';
 
 // Office file extensions supported by OnlyOffice
 const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
@@ -58,6 +59,7 @@ const ProjectDetailsAdmin = () => {
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'discussion' | 'activity'>('info');
     const [showOnlyOffice, setShowOnlyOffice] = useState(false);
+    const { showConfirm, showSuccess, showError } = useDialog();
 
     const fetchProject = async () => {
         try {
@@ -90,7 +92,8 @@ const ProjectDetailsAdmin = () => {
     const handleApprove = async () => {
         if (!project) return;
 
-        if (!confirm('Bạn có chắc chắn muốn duyệt và hoàn thành dự án này?')) return;
+        const confirmed = await showConfirm('Bạn có chắc chắn muốn duyệt và hoàn thành dự án này?');
+        if (!confirmed) return;
 
         setApproving(true);
         try {
@@ -102,13 +105,13 @@ const ProjectDetailsAdmin = () => {
             if (response.ok) {
                 const updatedProject = await response.json();
                 setProject(updatedProject);
-                alert('Dự án đã được duyệt và chuyển sang trạng thái hoàn thành!');
+                showSuccess('Dự án đã được duyệt và chuyển sang trạng thái hoàn thành!');
             } else {
-                alert('Không thể duyệt dự án');
+                showError('Không thể duyệt dự án');
             }
         } catch (error) {
             console.error('Error approving project:', error);
-            alert('Có lỗi xảy ra khi duyệt dự án');
+            showError('Có lỗi xảy ra khi duyệt dự án');
         } finally {
             setApproving(false);
         }
@@ -558,7 +561,7 @@ const ProjectDetailsAdmin = () => {
                                         Dự án con ({project.children?.length || 0})
                                     </h2>
                                     <Link
-                                        to={`/admin/projects/create?parentId=${project.id}`}
+                                        to={`/admin/create-project?parentId=${project.id}`}
                                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
                                     >
                                         <Plus size={16} />

@@ -1,4 +1,4 @@
-import { checkMinioConnection, uploadFile } from './src/services/minioService';
+import { checkMinioConnection, uploadFile } from './src/services/minioService.js';
 import * as fs from 'fs';
 import * as path from 'path';
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle, FolderTree, ChevronRight, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
+import { useDialog } from '../components/ui/Dialog';
 
 interface SubProject {
     id: number;
@@ -35,6 +36,7 @@ const UserProjects = () => {
     const { token, user } = useAuth();
     const [updatingProgress, setUpdatingProgress] = useState<number | null>(null);
     const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+    const { showError } = useDialog();
 
     const toggleExpanded = (projectId: number) => {
         setExpandedProjects(prev => {
@@ -90,11 +92,11 @@ const UserProjects = () => {
                 const updatedProject = await response.json();
                 setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
             } else {
-                alert('Không thể cập nhật tiến độ');
+                showError('Không thể cập nhật tiến độ');
             }
         } catch (error) {
             console.error('Error updating progress:', error);
-            alert('Có lỗi xảy ra khi cập nhật tiến độ');
+            showError('Có lỗi xảy ra khi cập nhật tiến độ');
         } finally {
             setUpdatingProgress(null);
         }

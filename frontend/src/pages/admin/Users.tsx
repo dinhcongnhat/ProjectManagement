@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, X, Users as UsersIcon } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
+import { useDialog } from '../../components/ui/Dialog';
 
 interface UserData {
     id: number;
@@ -24,6 +25,7 @@ const Users = () => {
     const [showModal, setShowModal] = useState(false);
     const [editingUser, setEditingUser] = useState<UserData | null>(null);
     const { token } = useAuth();
+    const { showConfirm, showError } = useDialog();
 
     // Form state
     const [formData, setFormData] = useState<FormDataType>({
@@ -103,7 +105,7 @@ const Users = () => {
                     setUsers(usersData);
                 }
             } else {
-                alert('Failed to save user');
+                showError('Failed to save user');
             }
         } catch (error) {
             console.error('Error saving user:', error);
@@ -111,7 +113,8 @@ const Users = () => {
     };
 
     const handleDeleteUser = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this user?')) return;
+        const confirmed = await showConfirm('Are you sure you want to delete this user?');
+        if (!confirmed) return;
         try {
             const response = await fetch(`${API_URL}/users/${id}`, {
                 method: 'DELETE',
@@ -128,7 +131,7 @@ const Users = () => {
                     setUsers(usersData);
                 }
             } else {
-                alert('Failed to delete user');
+                showError('Failed to delete user');
             }
         } catch (error) {
             console.error('Error deleting user:', error);

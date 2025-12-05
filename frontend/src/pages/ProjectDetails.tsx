@@ -7,6 +7,7 @@ import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../components/OnlyOfficeViewer';
 import { API_URL } from '../config/api';
 import { getDisplayFilename } from '../utils/filenameUtils';
+import { useDialog } from '../components/ui/Dialog';
 
 // Office file extensions supported by OnlyOffice
 const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
@@ -58,6 +59,7 @@ const ProjectDetails = () => {
     const [activeTab, setActiveTab] = useState<'info' | 'discussion' | 'activity'>('info');
     const [showOnlyOffice, setShowOnlyOffice] = useState(false);
     const [approving, setApproving] = useState(false);
+    const { showConfirm, showSuccess, showError } = useDialog();
 
     const cleanupImageUrl = useCallback(() => {
         if (imageUrl) {
@@ -262,7 +264,8 @@ const ProjectDetails = () => {
                                                 {(project.manager?.id === user?.id || project.followers?.some(f => f.id === user?.id)) && (
                                                     <button
                                                         onClick={async () => {
-                                                            if (!confirm('Bạn có chắc chắn muốn duyệt và hoàn thành dự án này?')) return;
+                                                            const confirmed = await showConfirm('Bạn có chắc chắn muốn duyệt và hoàn thành dự án này?');
+                                                            if (!confirmed) return;
                                                             setApproving(true);
                                                             try {
                                                                 const response = await fetch(`${API_URL}/projects/${project.id}/approve`, {
@@ -272,14 +275,14 @@ const ProjectDetails = () => {
                                                                 if (response.ok) {
                                                                     const updatedProject = await response.json();
                                                                     setProject(updatedProject);
-                                                                    alert('Dự án đã được duyệt thành công!');
+                                                                    showSuccess('Dự án đã được duyệt thành công!');
                                                                 } else {
                                                                     const error = await response.json();
-                                                                    alert(error.message || 'Không thể duyệt dự án');
+                                                                    showError(error.message || 'Không thể duyệt dự án');
                                                                 }
                                                             } catch (error) {
                                                                 console.error('Error approving project:', error);
-                                                                alert('Có lỗi xảy ra khi duyệt dự án');
+                                                                showError('Có lỗi xảy ra khi duyệt dự án');
                                                             } finally {
                                                                 setApproving(false);
                                                             }

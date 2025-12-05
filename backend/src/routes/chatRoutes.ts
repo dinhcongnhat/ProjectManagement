@@ -19,14 +19,65 @@ import {
     markConversationAsRead,
     deleteMessage,
     deleteConversation,
-    serveMessageAttachment
+    serveMessageAttachment,
+    serveConversationAvatar
 } from '../controllers/chatController.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Debug route to check if routing is working
+router.get('/test', (req, res) => {
+    res.json({ message: 'Chat routes are working', timestamp: new Date().toISOString() });
+});
+
+// Debug route to check MinIO connection and list files
+router.get('/debug/minio', async (req, res) => {
+    try {
+        const { minioClient, bucketName } = await import('../config/minio.js');
+        
+        // Check if bucket exists
+        const bucketExists = await minioClient.bucketExists(bucketName);
+        
+        // List files in bucket (limit to first 50)
+        const objects: any[] = [];
+        const objectsStream = minioClient.listObjects(bucketName, '', true);
+        
+        await new Promise<void>((resolve, reject) => {
+            let count = 0;
+            objectsStream.on('data', (obj) => {
+                if (count < 50) {
+                    objects.push({
+                        name: obj.name,
+                        size: obj.size,
+                        lastModified: obj.lastModified
+                    });
+                    count++;
+                }
+            });
+            objectsStream.on('error', reject);
+            objectsStream.on('end', resolve);
+        });
+        
+        res.json({
+            status: 'connected',
+            bucketName,
+            bucketExists,
+            objectCount: objects.length,
+            objects
+        });
+    } catch (error: any) {
+        res.status(500).json({
+            status: 'error',
+            message: error?.message || 'Unknown error',
+            error: error
+        });
+    }
+});
+
 // Public routes - serve files without authentication (for img src, audio src)
 router.get('/messages/:messageId/file', serveMessageAttachment);
+router.get('/conversations/:id/avatar', serveConversationAvatar);
 
 // All other routes require authentication
 router.use(authenticateToken);

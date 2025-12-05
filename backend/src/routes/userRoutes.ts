@@ -10,12 +10,16 @@ import {
     uploadAvatar,
     changePassword,
     getUserById,
-    getAllUsersWithAvatar
+    getAllUsersWithAvatar,
+    serveUserAvatar
 } from '../controllers/userController.js';
 import { authenticateToken, isAdmin } from '../middleware/authMiddleware.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Public routes - serve avatar without authentication (for img src)
+router.get('/:id/avatar', serveUserAvatar);
 
 // Profile routes (authenticated user)
 router.get('/profile', authenticateToken, getProfile);

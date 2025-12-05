@@ -5,6 +5,7 @@ import {
     Volume2, FileText, Download, Eye, Plus, Check, Loader2, Camera, Trash2, MoreVertical
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useDialog } from './ui/Dialog';
 import api, { API_URL } from '../config/api';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -98,6 +99,7 @@ interface Conversation {
     unreadCount: number;
     displayName: string;
     displayAvatar: string | null;
+    avatarUrl: string | null;
     updatedAt: string;
 }
 
@@ -218,6 +220,7 @@ const resolveAttachmentUrl = (url: string | null): string | null => {
 const ChatPopup: React.FC = () => {
     const { user, token } = useAuth();
     const { socketRef, connected } = useWebSocket(token);
+    const { showConfirm, showError, showWarning } = useDialog();
     
     // Panel state
     const [isOpen, setIsOpen] = useState(false);
@@ -228,6 +231,7 @@ const ChatPopup: React.FC = () => {
     
     // Data state
     const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [pinnedConversations, setPinnedConversations] = useState<Set<number>>(new Set()); // Ghim conversations
     const [searchUsers, setSearchUsers] = useState<User[]>([]);
     const [chatWindows, setChatWindows] = useState<ChatWindow[]>([]);
     const [mobileActiveChat, setMobileActiveChat] = useState<ChatWindow | null>(null);
@@ -289,12 +293,31 @@ const ChatPopup: React.FC = () => {
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
     
-    // Filter conversations
-    const filteredConversations = conversations.filter(c =>
-        c.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // Filter and sort conversations (pinned first)
+    const filteredConversations = conversations
+        .filter(c => c.displayName?.toLowerCase().includes(searchQuery.toLowerCase()))
+        .sort((a, b) => {
+            const aPinned = pinnedConversations.has(a.id);
+            const bPinned = pinnedConversations.has(b.id);
+            if (aPinned && !bPinned) return -1;
+            if (!aPinned && bPinned) return 1;
+            return 0; // Keep original order for same pin status
+        });
 
     // ==================== EFFECTS ====================
+    // Load pinned conversations from localStorage
+    useEffect(() => {
+        const savedPinned = localStorage.getItem(`pinnedConversations_${user?.id}`);
+        if (savedPinned) {
+            try {
+                const pinned = JSON.parse(savedPinned);
+                setPinnedConversations(new Set(pinned));
+            } catch (e) {
+                console.error('Error loading pinned conversations:', e);
+            }
+        }
+    }, [user?.id]);
+
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 768);
         checkMobile();
@@ -308,10 +331,16 @@ const ChatPopup: React.FC = () => {
         }
     }, [isOpen]);
 
+    // Fetch users when switching to users mode or when searchQuery changes
     useEffect(() => {
-        if (searchMode === 'users' && searchQuery) {
-            const timer = setTimeout(() => fetchSearchUsers(searchQuery), 300);
-            return () => clearTimeout(timer);
+        if (searchMode === 'users') {
+            if (searchQuery) {
+                const timer = setTimeout(() => fetchSearchUsers(searchQuery), 300);
+                return () => clearTimeout(timer);
+            } else {
+                // Fetch all users when no search query
+                fetchAllUsersForSearch();
+            }
         }
     }, [searchQuery, searchMode]);
 
@@ -554,7 +583,8 @@ const ChatPopup: React.FC = () => {
             const data = response.data.map((conv: any) => ({
                 ...conv,
                 displayName: conv.displayName || conv.name || 'Unknown',
-                displayAvatar: conv.displayAvatar || null,
+                displayAvatar: conv.avatarUrl ? resolveAttachmentUrl(conv.avatarUrl) : null,
+                avatarUrl: conv.avatarUrl ? resolveAttachmentUrl(conv.avatarUrl) : null,
                 unreadCount: conv.unreadCount || 0
             }));
             setConversations(data);
@@ -580,6 +610,17 @@ const ChatPopup: React.FC = () => {
         }
     };
 
+    // Fetch all users for search panel (when no search query)
+    const fetchAllUsersForSearch = async () => {
+        try {
+            const response = await api.get('/users');
+            setSearchUsers(response.data.filter((u: User) => u.id !== user?.id));
+        } catch (error) {
+            console.error('Error fetching all users:', error);
+            setSearchUsers([]);
+        }
+    };
+
     const fetchAllUsers = async () => {
         try {
             const response = await api.get('/users');
@@ -587,6 +628,21 @@ const ChatPopup: React.FC = () => {
         } catch (error) {
             console.error('Error fetching users:', error);
         }
+    };
+
+    // Toggle pin conversation
+    const togglePinConversation = (conversationId: number) => {
+        setPinnedConversations(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(conversationId)) {
+                newSet.delete(conversationId);
+            } else {
+                newSet.add(conversationId);
+            }
+            // Save to localStorage
+            localStorage.setItem(`pinnedConversations_${user?.id}`, JSON.stringify([...newSet]));
+            return newSet;
+        });
     };
 
     const fetchMessages = async (conversationId: number): Promise<Message[]> => {
@@ -620,7 +676,8 @@ const ChatPopup: React.FC = () => {
                 const newConv: Conversation = {
                     ...response.data,
                     displayName: targetUser.name || targetUser.username,
-                    displayAvatar: targetUser.avatarUrl || targetUser.avatar || null,
+                    displayAvatar: resolveAttachmentUrl(targetUser.avatarUrl || null) || resolveAttachmentUrl(targetUser.avatar || null) || null,
+                    avatarUrl: resolveAttachmentUrl(response.data.avatarUrl) || null,
                     unreadCount: 0
                 };
                 
@@ -675,7 +732,8 @@ const ChatPopup: React.FC = () => {
             const newConv: Conversation = {
                 ...response.data,
                 displayName: groupName,
-                displayAvatar: response.data.avatarUrl || null,
+                displayAvatar: resolveAttachmentUrl(response.data.avatarUrl) || null,
+                avatarUrl: resolveAttachmentUrl(response.data.avatarUrl) || null,
                 unreadCount: 0
             };
             
@@ -687,7 +745,7 @@ const ChatPopup: React.FC = () => {
             (window as any)._groupAvatarFile = null;
         } catch (error) {
             console.error('Error creating group:', error);
-            alert('Không thể tạo nhóm. Vui lòng thử lại.');
+            showError('Không thể tạo nhóm. Vui lòng thử lại.');
         }
     };
 
@@ -769,9 +827,13 @@ const ChatPopup: React.FC = () => {
 
     // Delete entire conversation
     const deleteConversation = async (conversationId: number) => {
-        if (!confirm('Bạn có chắc muốn xóa cuộc hội thoại này? Tất cả tin nhắn sẽ bị xóa vĩnh viễn.')) {
-            return;
-        }
+        const confirmed = await showConfirm('Bạn có chắc muốn xóa cuộc hội thoại này? Tất cả tin nhắn sẽ bị xóa vĩnh viễn.', {
+            title: 'Xóa cuộc hội thoại',
+            confirmText: 'Xóa',
+            cancelText: 'Hủy'
+        });
+        
+        if (!confirmed) return;
         
         try {
             await api.delete(`/chat/conversations/${conversationId}`);
@@ -787,7 +849,7 @@ const ChatPopup: React.FC = () => {
             }
         } catch (error) {
             console.error('Error deleting conversation:', error);
-            alert('Không thể xóa cuộc hội thoại');
+            showError('Không thể xóa cuộc hội thoại');
         }
     };
 
@@ -1001,13 +1063,19 @@ const ChatPopup: React.FC = () => {
                 } : null);
             }
             
-            alert('Không thể gửi tin nhắn. Vui lòng thử lại.');
+            showError('Không thể gửi tin nhắn. Vui lòng thử lại.');
         }
     };
 
     // Delete message
     const deleteMessage = async (messageId: number, conversationId: number) => {
-        if (!confirm('Bạn có chắc muốn xóa tin nhắn này?')) return;
+        const confirmed = await showConfirm('Bạn có chắc muốn xóa tin nhắn này?', {
+            title: 'Xóa tin nhắn',
+            confirmText: 'Xóa',
+            cancelText: 'Hủy'
+        });
+        
+        if (!confirmed) return;
         
         try {
             await api.delete(`/chat/messages/${messageId}`);
@@ -1027,7 +1095,7 @@ const ChatPopup: React.FC = () => {
             }
         } catch (error) {
             console.error('Error deleting message:', error);
-            alert('Không thể xóa tin nhắn');
+            showError('Không thể xóa tin nhắn');
         }
     };
 
@@ -1117,7 +1185,7 @@ const ChatPopup: React.FC = () => {
             fetchConversations();
         } catch (error) {
             console.error('Error uploading file:', error);
-            alert('Không thể tải file lên. Vui lòng thử lại.');
+            showError('Không thể tải file lên. Vui lòng thử lại.');
         } finally {
             setUploadProgress(prev => {
                 const newProgress = { ...prev };
@@ -1131,7 +1199,7 @@ const ChatPopup: React.FC = () => {
     const startRecording = async (conversationId: number) => {
         try {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                alert('Trình duyệt không hỗ trợ ghi âm');
+                showWarning('Trình duyệt không hỗ trợ ghi âm');
                 return;
             }
             
@@ -1212,7 +1280,7 @@ const ChatPopup: React.FC = () => {
 
         } catch (error) {
             console.error('Error starting recording:', error);
-            alert('Không thể bắt đầu ghi âm. Vui lòng kiểm tra quyền truy cập microphone.');
+            showError('Không thể bắt đầu ghi âm. Vui lòng kiểm tra quyền truy cập microphone.');
         }
     };
 
@@ -1780,7 +1848,7 @@ const ChatPopup: React.FC = () => {
                                                         >
                                                             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
                                                                 {member.user.avatarUrl ? (
-                                                                    <img src={member.user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                                                    <img src={resolveAttachmentUrl(member.user.avatarUrl) || ''} alt="" className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
                                                                 )}
@@ -2209,7 +2277,7 @@ const ChatPopup: React.FC = () => {
                                                 >
                                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
                                                         {member.user.avatarUrl ? (
-                                                            <img src={member.user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                                            <img src={resolveAttachmentUrl(member.user.avatarUrl) || ''} alt="" className="w-full h-full object-cover" />
                                                         ) : (
                                                             <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
                                                         )}
@@ -2387,7 +2455,7 @@ const ChatPopup: React.FC = () => {
                                     >
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center overflow-hidden shadow-sm">
                                             {u.avatarUrl || u.avatar ? (
-                                                <img src={u.avatarUrl || u.avatar} alt="" className="w-full h-full object-cover" />
+                                                <img src={resolveAttachmentUrl(u.avatarUrl || u.avatar || null) || ''} alt="" className="w-full h-full object-cover" />
                                             ) : (
                                                 <span className="text-sm font-semibold text-white">{u.name.charAt(0)}</span>
                                             )}
@@ -2587,8 +2655,17 @@ const ChatPopup: React.FC = () => {
                                                 key={conv.id}
                                                 className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${
                                                     conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
-                                                }`}
+                                                } ${pinnedConversations.has(conv.id) ? 'bg-amber-50/50' : ''}`}
                                             >
+                                                {/* Pin indicator */}
+                                                {pinnedConversations.has(conv.id) && (
+                                                    <div className="absolute top-1 left-1">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
+                                                            <line x1="12" y1="17" x2="12" y2="22"/>
+                                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                                                        </svg>
+                                                    </div>
+                                                )}
                                                 <div className="flex-1 flex items-center gap-3" onClick={() => openConversation(conv)}>
                                                     <div className="relative shrink-0">
                                                         <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${
@@ -2670,16 +2747,15 @@ const ChatPopup: React.FC = () => {
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         setConversationMenuOpen(null);
-                                                                        // TODO: Implement pin conversation
-                                                                        alert('Chức năng ghim sẽ được phát triển');
+                                                                        togglePinConversation(conv.id);
                                                                     }}
                                                                     className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-sm"
                                                                 >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={pinnedConversations.has(conv.id) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                                         <line x1="12" y1="17" x2="12" y2="22"/>
                                                                         <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
                                                                     </svg>
-                                                                    Ghim cuộc trò chuyện
+                                                                    {pinnedConversations.has(conv.id) ? 'Bỏ ghim' : 'Ghim cuộc trò chuyện'}
                                                                 </button>
                                                                 <button
                                                                     onClick={(e) => {
@@ -2704,44 +2780,59 @@ const ChatPopup: React.FC = () => {
                                             <div className="py-3 text-center border-t border-gray-100">
                                                 <button
                                                     onClick={() => setSearchMode('users')}
-                                                    className="text-red-500 hover:text-red-600 font-medium text-sm"
+                                                    className="text-blue-500 hover:text-blue-600 font-medium text-sm"
                                                 >
-                                                    XEM TẤT CẢ
+                                                    TÌM NGƯỜI DÙNG KHÁC
                                                 </button>
                                             </div>
                                         )}
                                     </div>
                                 )
                             ) : (
-                                searchUsers.length === 0 ? (
-                                    <div className="text-center py-16 px-6">
-                                        <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
-                                            <Users size={32} className="text-purple-400" />
-                                        </div>
-                                        <p className="text-base font-semibold text-gray-700 mb-1">
-                                            {searchQuery ? 'Không tìm thấy người dùng' : 'Tìm kiếm người dùng'}
-                                        </p>
-                                        <p className="text-sm text-gray-400">
-                                            {searchQuery ? 'Thử tìm với từ khóa khác' : 'Nhập tên hoặc username để tìm'}
-                                        </p>
+                                <>
+                                    {/* Back to conversations button */}
+                                    <div className="px-4 py-2 border-b border-gray-100">
+                                        <button
+                                            onClick={() => {
+                                                setSearchMode('conversations');
+                                                setSearchQuery('');
+                                                setSearchUsers([]);
+                                            }}
+                                            className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                                        >
+                                            <ArrowLeft size={16} />
+                                            Quay lại trò chuyện gần đây
+                                        </button>
                                     </div>
-                                ) : (
-                                    <div className="py-1">
-                                        {searchUsers.map(u => (
-                                            <div
-                                                key={u.id}
-                                                onClick={() => openChatWithUser(u)}
-                                                className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 cursor-pointer transition-all group"
-                                            >
-                                                <div className="relative shrink-0">
-                                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-md">
-                                                        {u.avatarUrl || u.avatar ? (
-                                                            <img src={u.avatarUrl || u.avatar} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            u.name.charAt(0).toUpperCase()
-                                                        )}
-                                                    </div>
-                                                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                                    {searchUsers.length === 0 ? (
+                                        <div className="text-center py-16 px-6">
+                                            <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
+                                                <Users size={32} className="text-purple-400" />
+                                            </div>
+                                            <p className="text-base font-semibold text-gray-700 mb-1">
+                                                {loading ? 'Đang tải...' : (searchQuery ? 'Không tìm thấy người dùng' : 'Đang tải danh sách...')}
+                                            </p>
+                                            <p className="text-sm text-gray-400">
+                                                {searchQuery ? 'Thử tìm với từ khóa khác' : 'Vui lòng đợi trong giây lát'}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="py-1">
+                                            {searchUsers.map(u => (
+                                                <div
+                                                    key={u.id}
+                                                    onClick={() => openChatWithUser(u)}
+                                                    className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 cursor-pointer transition-all group"
+                                                >
+                                                    <div className="relative shrink-0">
+                                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-md">
+                                                            {u.avatarUrl || u.avatar ? (
+                                                                <img src={resolveAttachmentUrl(u.avatarUrl || u.avatar || null) || ''} alt="" className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                u.name.charAt(0).toUpperCase()
+                                                            )}
+                                                        </div>
+                                                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
@@ -2753,7 +2844,8 @@ const ChatPopup: React.FC = () => {
                                             </div>
                                         ))}
                                     </div>
-                                )
+                                    )}
+                                </>
                             )}
                         </div>
                     </div>

@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import bcrypt from 'bcryptjs';
@@ -204,19 +204,10 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Get presigned URL for avatar if stored in MinIO
+        // Get relative URL for avatar
         let avatarUrl = null;
         if (user.avatar) {
-            // Check if it's a base64 string or MinIO path
-            if (user.avatar.startsWith('data:')) {
-                avatarUrl = user.avatar; // Already base64
-            } else {
-                try {
-                    avatarUrl = await getPresignedUrl(user.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
-            }
+            avatarUrl = `/api/users/${user.id}/avatar`;
         }
         
         res.json({ ...user, avatarUrl });
@@ -253,18 +244,10 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Lấy URL avatar nếu có
+        // Lấy URL avatar - use relative URL
         let avatarUrl = null;
         if (user.avatar) {
-            if (user.avatar.startsWith('data:')) {
-                avatarUrl = user.avatar;
-            } else {
-                try {
-                    avatarUrl = await getPresignedUrl(user.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
-            }
+            avatarUrl = `/api/users/${user.id}/avatar`;
         }
 
         res.json({ ...user, avatarUrl });
@@ -329,15 +312,8 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
         });
         console.log('[uploadAvatar] User updated:', user.id);
 
-        // Get presigned URL for the avatar
-        let avatarUrl = null;
-        if (user.avatar) {
-            try {
-                avatarUrl = await getPresignedUrl(user.avatar);
-            } catch (e) {
-                console.error('[uploadAvatar] Error getting avatar URL:', e);
-            }
-        }
+        // Get relative URL for the avatar
+        const avatarUrl = `/api/users/${user.id}/avatar`;
 
         res.json({ ...user, avatarUrl });
     } catch (error) {
@@ -411,18 +387,10 @@ export const getUserById = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Lấy URL avatar nếu có
+        // Lấy URL avatar - use relative URL
         let avatarUrl = null;
         if (user.avatar) {
-            if (user.avatar.startsWith('data:')) {
-                avatarUrl = user.avatar;
-            } else {
-                try {
-                    avatarUrl = await getPresignedUrl(user.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
-            }
+            avatarUrl = `/api/users/${user.id}/avatar`;
         }
 
         res.json({ ...user, avatarUrl });
@@ -446,26 +414,79 @@ export const getAllUsersWithAvatar = async (req: AuthRequest, res: Response) => 
             }
         });
 
-        // Thêm URL avatar cho từng user
-        const usersWithAvatarUrls = await Promise.all(users.map(async (user) => {
+        // Thêm URL avatar cho từng user - use relative URL
+        const usersWithAvatarUrls = users.map((user) => {
             let avatarUrl = null;
             if (user.avatar) {
-                if (user.avatar.startsWith('data:')) {
-                    avatarUrl = user.avatar;
-                } else {
-                    try {
-                        avatarUrl = await getPresignedUrl(user.avatar);
-                    } catch (e) {
-                        console.error('Error getting avatar URL:', e);
-                    }
-                }
+                avatarUrl = `/api/users/${user.id}/avatar`;
             }
             return { ...user, avatarUrl };
-        }));
+        });
 
         res.json(usersWithAvatarUrls);
     } catch (error) {
         console.error('Error getting users:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Serve user avatar directly (for img src to work without mixed content issues)
+export const serveUserAvatar = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        console.log('[serveUserAvatar] Request for user:', id);
+        
+        const user = await prisma.user.findUnique({
+            where: { id: Number(id) },
+            select: { avatar: true }
+        });
+
+        if (!user || !user.avatar) {
+            console.log('[serveUserAvatar] Avatar not found for user:', id);
+            return res.status(404).json({ message: 'Avatar not found' });
+        }
+
+        // If avatar is base64 data URL, convert and send
+        if (user.avatar.startsWith('data:')) {
+            console.log('[serveUserAvatar] Serving base64 avatar');
+            const matches = user.avatar.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches && matches[1] && matches[2]) {
+                const contentType = matches[1];
+                const base64Data = matches[2];
+                const buffer = Buffer.from(base64Data, 'base64');
+                
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Content-Length', buffer.length);
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                return res.send(buffer);
+            }
+        }
+
+        console.log('[serveUserAvatar] Avatar path:', user.avatar);
+
+        // Otherwise, serve from MinIO
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        
+        try {
+            const stats = await getFileStats(user.avatar);
+            const fileStream = await getFileStream(user.avatar);
+
+            const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'image/jpeg';
+            
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', stats.size);
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+
+            fileStream.pipe(res);
+        } catch (minioError: any) {
+            console.error('[serveUserAvatar] MinIO error:', minioError?.message || minioError);
+            return res.status(404).json({ message: 'Avatar file not found in storage' });
+        }
+    } catch (error: any) {
+        console.error('[serveUserAvatar] Error:', error?.message || error);
+        res.status(500).json({ message: 'Failed to serve avatar' });
     }
 };

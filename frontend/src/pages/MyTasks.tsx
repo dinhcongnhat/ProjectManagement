@@ -4,6 +4,7 @@ import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
+import { useDialog } from '../components/ui/Dialog';
 
 interface Task {
     id: number;
@@ -99,6 +100,7 @@ const MyTasks = () => {
     const [noteContent, setNoteContent] = useState('');
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const { token } = useAuth();
+    const { showConfirm } = useDialog();
     const [formData, setFormData] = useState({
         title: '',
         description: '',
@@ -208,7 +210,8 @@ const MyTasks = () => {
     };
 
     const handleDeleteTask = async (id: number) => {
-        if (!confirm('Bạn có chắc chắn muốn xóa công việc này?')) return;
+        const confirmed = await showConfirm('Bạn có chắc chắn muốn xóa công việc này?');
+        if (!confirmed) return;
         try {
             await fetch(`${API_URL}/tasks/${id}`, {
                 method: 'DELETE',

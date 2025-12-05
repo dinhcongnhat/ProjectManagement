@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCw, Check } from 'lucide-react';
 
 interface ImageCropperProps {
@@ -13,14 +13,52 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     onCancel
 }) => {
     const [scale, setScale] = useState(1);
+    const [minScale, setMinScale] = useState(0.1);
     const [rotation, setRotation] = useState(0);
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [imageLoaded, setImageLoaded] = useState(false);
     
     const containerRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // Calculate initial scale to fit image in crop area
+    useEffect(() => {
+        if (imageLoaded && imageRef.current && containerRef.current) {
+            const img = imageRef.current;
+            const container = containerRef.current;
+            const containerRect = container.getBoundingClientRect();
+            
+            // Crop circle is 80% of container (40% radius * 2)
+            const cropDiameter = Math.min(containerRect.width, containerRect.height) * 0.8;
+            
+            // Calculate scale to fit the whole image inside the crop circle
+            const imgAspect = img.naturalWidth / img.naturalHeight;
+            let fitScale: number;
+            
+            if (imgAspect > 1) {
+                // Landscape image - fit by width
+                fitScale = cropDiameter / img.naturalWidth;
+            } else {
+                // Portrait image - fit by height
+                fitScale = cropDiameter / img.naturalHeight;
+            }
+            
+            // Set min scale to allow seeing the whole image (with some margin)
+            const calculatedMinScale = fitScale * 0.5;
+            setMinScale(Math.max(0.05, calculatedMinScale));
+            
+            // Set initial scale to show the whole image with a bit of margin
+            const initialScale = fitScale * 1.2;
+            setScale(Math.max(0.1, Math.min(1.5, initialScale)));
+        }
+    }, [imageLoaded]);
+
+    const handleImageLoad = () => {
+        setImageLoaded(true);
+    };
 
     const handleMouseDown = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -64,7 +102,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     const handleWheel = (e: React.WheelEvent) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        setScale(prev => Math.max(0.5, Math.min(3, prev + delta)));
+        setScale(prev => Math.max(minScale, Math.min(3, prev + delta)));
     };
 
     const handleCrop = () => {
@@ -184,6 +222,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                         transformOrigin: 'center'
                     }}
                     draggable={false}
+                    onLoad={handleImageLoad}
                 />
 
                 {/* Overlay with circle cutout */}
@@ -219,7 +258,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                 <div className="flex items-center justify-center gap-6">
                     {/* Zoom Out */}
                     <button
-                        onClick={() => setScale(prev => Math.max(0.5, prev - 0.1))}
+                        onClick={() => setScale(prev => Math.max(minScale, prev - 0.1))}
                         className="p-3 text-white hover:bg-white/20 rounded-full transition-colors"
                     >
                         <ZoomOut size={24} />
@@ -228,9 +267,9 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                     {/* Zoom Slider */}
                     <input
                         type="range"
-                        min="0.5"
+                        min={minScale}
                         max="3"
-                        step="0.1"
+                        step="0.05"
                         value={scale}
                         onChange={(e) => setScale(parseFloat(e.target.value))}
                         className="w-32 accent-blue-500"

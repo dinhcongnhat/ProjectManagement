@@ -1,8 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../config/api';
+import api, { API_URL } from '../config/api';
 import { User, Settings, LogOut } from 'lucide-react';
+
+// Helper to resolve relative URLs to absolute URLs
+const resolveAvatarUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    // If already absolute URL, return as is
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+        return url;
+    }
+    // For relative URLs, prepend API_URL base (remove /api suffix if present)
+    const baseUrl = API_URL.replace(/\/api$/, '');
+    return `${baseUrl}${url}`;
+};
 
 interface UserProfileData {
     id: number;
@@ -71,7 +83,7 @@ export default function UserProfilePopup() {
             >
                 {profile?.avatarUrl ? (
                     <img
-                        src={profile.avatarUrl}
+                        src={resolveAvatarUrl(profile.avatarUrl) || ''}
                         alt={profile.name}
                         className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
                     />
@@ -90,7 +102,7 @@ export default function UserProfilePopup() {
                         <div className="flex items-center gap-3">
                             {profile?.avatarUrl ? (
                                 <img
-                                    src={profile.avatarUrl}
+                                    src={resolveAvatarUrl(profile.avatarUrl) || ''}
                                     alt={profile.name}
                                     className="w-12 h-12 rounded-full object-cover"
                                 />

@@ -59,25 +59,25 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 displayAvatar = otherMember?.user.avatar || null;
             }
 
-            // Get presigned URL for avatar
+            // Use relative URL for avatar to avoid mixed content issues
             let avatarUrl = null;
             if (displayAvatar) {
-                try {
-                    avatarUrl = await getPresignedUrl(displayAvatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
+                // For private chat, use user avatar endpoint; for group, use conversation avatar endpoint
+                if (conv.type === 'PRIVATE') {
+                    const otherMember = conv.members.find(m => m.userId !== userId);
+                    if (otherMember?.user.avatar) {
+                        avatarUrl = `/api/users/${otherMember.userId}/avatar`;
+                    }
+                } else if (conv.avatar) {
+                    avatarUrl = `/api/chat/conversations/${conv.id}/avatar`;
                 }
             }
 
-            // Get presigned URLs for member avatars
-            const membersWithAvatars = await Promise.all(conv.members.map(async (m) => {
+            // Get relative URLs for member avatars
+            const membersWithAvatars = conv.members.map((m) => {
                 let memberAvatarUrl = null;
                 if (m.user.avatar) {
-                    try {
-                        memberAvatarUrl = await getPresignedUrl(m.user.avatar);
-                    } catch (e) {
-                        // Ignore error
-                    }
+                    memberAvatarUrl = `/api/users/${m.userId}/avatar`;
                 }
                 return {
                     ...m,
@@ -86,7 +86,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                         avatarUrl: memberAvatarUrl
                     }
                 };
-            }));
+            });
 
             return {
                 ...conv,
@@ -157,7 +157,7 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
         let avatarPath = null;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `projectmanagement/avatargroup/${Date.now()}-${normalizedFilename}`;
+            const fileName = `chat-avatars/${Date.now()}-${normalizedFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -193,25 +193,17 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
         const io = getIO();
         const allMemberIds = [userId, ...memberIds];
         
-        // Get avatar URL if uploaded
+        // Get avatar URL if uploaded - use relative URL
         let avatarUrl = null;
         if (avatarPath) {
-            try {
-                avatarUrl = await getPresignedUrl(avatarPath);
-            } catch (e) {
-                console.error('Error getting avatar URL:', e);
-            }
+            avatarUrl = `/api/chat/conversations/${conversation.id}/avatar`;
         }
 
-        // Get member avatar URLs
-        const membersWithAvatars = await Promise.all(conversation.members.map(async (m) => {
+        // Get member avatar URLs - use relative URLs
+        const membersWithAvatars = conversation.members.map((m) => {
             let memberAvatarUrl = null;
             if (m.user.avatar) {
-                try {
-                    memberAvatarUrl = await getPresignedUrl(m.user.avatar);
-                } catch (e) {
-                    // Ignore error
-                }
+                memberAvatarUrl = `/api/users/${m.userId}/avatar`;
             }
             return {
                 ...m,
@@ -220,7 +212,7 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
                     avatarUrl: memberAvatarUrl
                 }
             };
-        }));
+        });
 
         const responseConv = {
             ...conversation,
@@ -338,18 +330,10 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
                 attachmentUrl = `/api/chat/messages/${msg.id}/file`;
             }
             
-            // Add avatar URL for sender
+            // Add avatar URL for sender - use relative URL
             let senderAvatarUrl = null;
             if (msg.sender?.avatar) {
-                if (msg.sender.avatar.startsWith('data:')) {
-                    senderAvatarUrl = msg.sender.avatar;
-                } else {
-                    try {
-                        senderAvatarUrl = await getPresignedUrl(msg.sender.avatar);
-                    } catch (e) {
-                        console.error('Error getting avatar URL:', e);
-                    }
-                }
+                senderAvatarUrl = `/api/users/${msg.sender.id}/avatar`;
             }
             
             return { 
@@ -419,18 +403,10 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Add avatar URL for sender
+        // Add avatar URL for sender - use relative URL
         let senderAvatarUrl = null;
         if (message.sender?.avatar) {
-            if (message.sender.avatar.startsWith('data:')) {
-                senderAvatarUrl = message.sender.avatar;
-            } else {
-                try {
-                    senderAvatarUrl = await getPresignedUrl(message.sender.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
-            }
+            senderAvatarUrl = `/api/users/${message.sender.id}/avatar`;
         }
         const messageWithAvatar = {
             ...message,
@@ -484,7 +460,7 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
 
         // Upload file
         const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `projectmanagement/chatcongty/${id}/${userId}-${Date.now()}-${normalizedFilename}`;
+        const fileName = `chat/${id}/${userId}-${Date.now()}-${normalizedFilename}`;
         console.log('[sendFileMessage] Uploading file:', fileName);
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': req.file.mimetype,
@@ -516,18 +492,10 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
         // Lấy relative URL thay vì presigned URL để mobile có thể truy cập
         const attachmentUrl = `/api/chat/messages/${message.id}/file`;
 
-        // Add avatar URL for sender
+        // Add avatar URL for sender - use relative URL
         let senderAvatarUrl = null;
         if (message.sender?.avatar) {
-            if (message.sender.avatar.startsWith('data:')) {
-                senderAvatarUrl = message.sender.avatar;
-            } else {
-                try {
-                    senderAvatarUrl = await getPresignedUrl(message.sender.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
-            }
+            senderAvatarUrl = `/api/users/${message.sender.id}/avatar`;
         }
 
         // Cập nhật updatedAt của conversation
@@ -582,7 +550,7 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
         }
 
         // Upload audio
-        const fileName = `projectmanagement/chatcongty/${id}/${userId}-${Date.now()}-voice.webm`;
+        const fileName = `chat/${id}/${userId}-${Date.now()}-voice.webm`;
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': 'audio/webm',
         });
@@ -603,18 +571,10 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
 
         const attachmentUrl = `/api/chat/messages/${message.id}/file`;
 
-        // Add avatar URL for sender
+        // Add avatar URL for sender - use relative URL
         let senderAvatarUrl = null;
         if (message.sender?.avatar) {
-            if (message.sender.avatar.startsWith('data:')) {
-                senderAvatarUrl = message.sender.avatar;
-            } else {
-                try {
-                    senderAvatarUrl = await getPresignedUrl(message.sender.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
-            }
+            senderAvatarUrl = `/api/users/${message.sender.id}/avatar`;
         }
 
         // Cập nhật updatedAt của conversation
@@ -815,7 +775,7 @@ export const updateConversation = async (req: AuthRequest, res: Response) => {
         let avatarPath = undefined;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `projectmanagement/avatargroup/${Date.now()}-${normalizedFilename}`;
+            const fileName = `chat-avatars/${Date.now()}-${normalizedFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -839,14 +799,10 @@ export const updateConversation = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Lấy avatar URL nếu có
+        // Lấy avatar URL nếu có - use relative URL
         let avatarUrl = null;
         if (updated.avatar) {
-            try {
-                avatarUrl = await getPresignedUrl(updated.avatar);
-            } catch (e) {
-                console.error('Error getting avatar URL:', e);
-            }
+            avatarUrl = `/api/chat/conversations/${updated.id}/avatar`;
         }
 
         const result = { ...updated, avatarUrl };
@@ -937,18 +893,14 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
                 take: 20
             });
 
-            // Add avatar URLs
-            const usersWithAvatars = await Promise.all(allUsers.map(async (user) => {
+            // Add avatar URLs - use relative URLs
+            const usersWithAvatars = allUsers.map((user) => {
                 let avatarUrl = null;
                 if (user.avatar) {
-                    try {
-                        avatarUrl = await getPresignedUrl(user.avatar);
-                    } catch (e) {
-                        console.error('Error getting avatar URL:', e);
-                    }
+                    avatarUrl = `/api/users/${user.id}/avatar`;
                 }
                 return { ...user, avatarUrl };
-            }));
+            });
 
             return res.json(usersWithAvatars);
         }
@@ -971,18 +923,14 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
             take: 10
         });
 
-        // Add avatar URLs
-        const usersWithAvatars = await Promise.all(users.map(async (user) => {
+        // Add avatar URLs - use relative URLs
+        const usersWithAvatars = users.map((user) => {
             let avatarUrl = null;
             if (user.avatar) {
-                try {
-                    avatarUrl = await getPresignedUrl(user.avatar);
-                } catch (e) {
-                    console.error('Error getting avatar URL:', e);
-                }
+                avatarUrl = `/api/users/${user.id}/avatar`;
             }
             return { ...user, avatarUrl };
-        }));
+        });
 
         res.json(usersWithAvatars);
     } catch (error) {
@@ -1232,14 +1180,16 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
         const { getFileStream, getFileStats } = await import('../services/minioService.js');
         
         try {
+            console.log('[serveMessageAttachment] Getting file stats...');
             const stats = await getFileStats(message.attachment);
-            console.log('[serveMessageAttachment] File stats:', stats);
+            console.log('[serveMessageAttachment] File stats:', JSON.stringify(stats, null, 2));
             
+            console.log('[serveMessageAttachment] Getting file stream...');
             const fileStream = await getFileStream(message.attachment);
 
             // Set appropriate content type - check both cases
-            const contentType = stats.metaData['content-type'] || stats.metaData['Content-Type'] || 'application/octet-stream';
-            console.log('[serveMessageAttachment] Content-Type:', contentType);
+            const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'application/octet-stream';
+            console.log('[serveMessageAttachment] Content-Type:', contentType, 'Size:', stats.size);
             
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Length', stats.size);
@@ -1254,12 +1204,55 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
             res.setHeader('Access-Control-Allow-Origin', '*');
 
             fileStream.pipe(res);
-        } catch (minioError) {
-            console.error('[serveMessageAttachment] MinIO error:', minioError);
-            return res.status(404).json({ message: 'File not found in storage' });
+        } catch (minioError: any) {
+            console.error('[serveMessageAttachment] MinIO error:', minioError?.message || minioError);
+            console.error('[serveMessageAttachment] MinIO error code:', minioError?.code);
+            return res.status(404).json({ message: 'File not found in storage', error: minioError?.message });
         }
-    } catch (error) {
-        console.error('[serveMessageAttachment] Error:', error);
+    } catch (error: any) {
+        console.error('[serveMessageAttachment] Error:', error?.message || error);
         res.status(500).json({ message: 'Failed to serve attachment' });
+    }
+};
+
+// Serve conversation avatar directly (for group chats)
+export const serveConversationAvatar = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        console.log('[serveConversationAvatar] Request for conversation:', id);
+        
+        const conversation = await prisma.conversation.findUnique({
+            where: { id: Number(id) }
+        });
+
+        if (!conversation || !conversation.avatar) {
+            console.log('[serveConversationAvatar] Avatar not found for conversation:', id);
+            return res.status(404).json({ message: 'Avatar not found' });
+        }
+
+        console.log('[serveConversationAvatar] Avatar path:', conversation.avatar);
+
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        
+        try {
+            const stats = await getFileStats(conversation.avatar);
+            const fileStream = await getFileStream(conversation.avatar);
+
+            const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'image/jpeg';
+            
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', stats.size);
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+
+            fileStream.pipe(res);
+        } catch (minioError: any) {
+            console.error('[serveConversationAvatar] MinIO error:', minioError?.message || minioError);
+            return res.status(404).json({ message: 'Avatar file not found in storage' });
+        }
+    } catch (error: any) {
+        console.error('[serveConversationAvatar] Error:', error?.message || error);
+        res.status(500).json({ message: 'Failed to serve avatar' });
     }
 };
