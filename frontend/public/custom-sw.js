@@ -1,7 +1,7 @@
 // Custom Service Worker for PWA Real-time Support
-// Version: 1.0.1
+// Version: 1.0.2
 
-const CACHE_NAME = 'pwa-cache-v2';
+const CACHE_NAME = 'pwa-cache-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -119,7 +119,7 @@ self.addEventListener('message', (event) => {
   }
   
   if (event.data && event.data.type === 'GET_VERSION') {
-    event.ports[0].postMessage({ version: '1.0.1' });
+    event.ports[0].postMessage({ version: '1.0.2' });
   }
 });
 
@@ -192,16 +192,18 @@ self.addEventListener('notificationclick', (event) => {
   }
   
   // Determine target URL based on notification type
-  if (data.url) {
-    targetUrl = data.url;
-  } else if (data.type === 'chat' && data.conversationId) {
-    targetUrl = `/?openChat=${data.conversationId}`; // Will be handled by App to open chat
+  if (data.type === 'chat' && data.conversationId) {
+    targetUrl = `/?openChat=${data.conversationId}`;
+  } else if (data.type === 'mention' && data.conversationId) {
+    targetUrl = `/?openChat=${data.conversationId}`;
   } else if (data.type === 'project' && data.projectId) {
     targetUrl = `/projects/${data.projectId}`;
   } else if (data.type === 'discussion' && data.projectId) {
-    targetUrl = `/projects/${data.projectId}`;
-  } else if (data.type === 'task') {
-    targetUrl = '/my-tasks';
+    targetUrl = `/projects/${data.projectId}?tab=discussion`;
+  } else if (data.type === 'task' && data.taskId) {
+    targetUrl = `/my-tasks?taskId=${data.taskId}`;
+  } else if (data.url && data.url !== '/') {
+    targetUrl = data.url;
   }
   
   console.log('[SW] Target URL:', targetUrl);

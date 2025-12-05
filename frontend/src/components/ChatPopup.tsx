@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     MessageCircle, X, Search, Users, MessageSquare, Send, Smile, Paperclip,
     Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
-    Volume2, FileText, Download, Plus, Check, Loader2, Camera, Trash2, MoreVertical
+    Volume2, FileText, Download, Plus, Check, CheckCheck, Loader2, Camera, Trash2, MoreVertical,
+    ZoomIn, ZoomOut, RotateCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from './ui/Dialog';
@@ -52,6 +53,8 @@ interface User {
     avatar?: string;
     avatarUrl?: string;
     email?: string;
+    isOnline?: boolean;
+    lastActive?: string;
 }
 
 interface ConversationMember {
@@ -84,6 +87,7 @@ interface Message {
     createdAt: string;
     updatedAt?: string;
     reactions?: Reaction[];
+    isRead?: boolean;
     sender: {
         id: number;
         name: string;
@@ -112,6 +116,7 @@ interface ChatWindow {
     isMaximized: boolean;
     messages: Message[];
     unread: number;
+    readBy?: Record<number, string>; // userId -> readAt timestamp
 }
 
 // ==================== UTILITIES ====================
@@ -203,6 +208,421 @@ const getFileIconColor = (filename: string): string => {
         default: 'bg-gray-500'
     };
     return colors[ext] || colors.default;
+};
+
+// Optimized Image component with loading state and retry
+const ChatImage: React.FC<{
+    src: string;
+    alt?: string;
+    onClick?: () => void;
+    isOwn?: boolean;
+}> = ({ src, alt = 'Image', onClick, isOwn }) => {
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+    const [retryCount, setRetryCount] = useState(0);
+    const imgRef = useRef<HTMLImageElement>(null);
+    
+    // Preload image
+    useEffect(() => {
+        setLoading(true);
+        setError(false);
+        
+        const img = new Image();
+        img.onload = () => {
+            setLoading(false);
+            setError(false);
+        };
+        img.onerror = () => {
+            // Retry up to 3 times with delay
+            if (retryCount < 3) {
+                setTimeout(() => {
+                    setRetryCount(prev => prev + 1);
+                }, 1000 * (retryCount + 1)); // Exponential backoff
+            } else {
+                setLoading(false);
+                setError(true);
+            }
+        };
+        img.src = src;
+        
+        return () => {
+            img.onload = null;
+            img.onerror = null;
+        };
+    }, [src, retryCount]);
+    
+    if (loading) {
+        return (
+            <div 
+                className={`flex items-center justify-center rounded-lg ${isOwn ? 'bg-white/10' : 'bg-gray-100'}`}
+                style={{ width: '200px', height: '150px' }}
+            >
+                <div className="flex flex-col items-center gap-2">
+                    <Loader2 className={`animate-spin ${isOwn ? 'text-white/70' : 'text-blue-500'}`} size={24} />
+                    <span className={`text-xs ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>Đang tải...</span>
+                </div>
+            </div>
+        );
+    }
+    
+    if (error) {
+        return (
+            <div 
+                className={`flex items-center justify-center rounded-lg cursor-pointer ${isOwn ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
+                style={{ width: '200px', height: '150px' }}
+                onClick={onClick}
+            >
+                <div className="flex flex-col items-center gap-2">
+                    <Camera className={isOwn ? 'text-white/50' : 'text-gray-400'} size={24} />
+                    <span className={`text-xs ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>Nhấn để xem</span>
+                </div>
+            </div>
+        );
+    }
+    
+    return (
+        <img
+            ref={imgRef}
+            src={src}
+            alt={alt}
+            className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+            style={{ maxHeight: '200px', maxWidth: '250px' }}
+            onClick={onClick}
+            loading="lazy"
+        />
+    );
+};
+
+// Image Viewer with zoom, pan, rotate functionality
+const ImageViewer: React.FC<{
+    src: string;
+    onClose: () => void;
+}> = ({ src, onClose }) => {
+    const [scale, setScale] = useState(1);
+    const [rotation, setRotation] = useState(0);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const containerRef = useRef<HTMLDivElement>(null);
+    
+    const MIN_SCALE = 0.5;
+    const MAX_SCALE = 5;
+    const ZOOM_STEP = 0.25;
+    
+    const handleZoomIn = () => {
+        setScale(prev => Math.min(prev + ZOOM_STEP, MAX_SCALE));
+    };
+    
+    const handleZoomOut = () => {
+        setScale(prev => Math.max(prev - ZOOM_STEP, MIN_SCALE));
+    };
+    
+    const handleRotate = () => {
+        setRotation(prev => (prev + 90) % 360);
+    };
+    
+    const handleReset = () => {
+        setScale(1);
+        setRotation(0);
+        setPosition({ x: 0, y: 0 });
+    };
+    
+    // Mouse wheel zoom
+    const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+        setScale(prev => Math.max(MIN_SCALE, Math.min(prev + delta, MAX_SCALE)));
+    };
+    
+    // Touch pinch zoom
+    const lastTouchDistance = useRef<number | null>(null);
+    
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (e.touches.length === 2) {
+            const distance = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            lastTouchDistance.current = distance;
+        } else if (e.touches.length === 1 && scale > 1) {
+            setIsDragging(true);
+            setDragStart({
+                x: e.touches[0].clientX - position.x,
+                y: e.touches[0].clientY - position.y
+            });
+        }
+    };
+    
+    const handleTouchMove = (e: React.TouchEvent) => {
+        if (e.touches.length === 2 && lastTouchDistance.current !== null) {
+            e.preventDefault();
+            const distance = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            const delta = (distance - lastTouchDistance.current) / 100;
+            setScale(prev => Math.max(MIN_SCALE, Math.min(prev + delta, MAX_SCALE)));
+            lastTouchDistance.current = distance;
+        } else if (e.touches.length === 1 && isDragging && scale > 1) {
+            setPosition({
+                x: e.touches[0].clientX - dragStart.x,
+                y: e.touches[0].clientY - dragStart.y
+            });
+        }
+    };
+    
+    const handleTouchEnd = () => {
+        lastTouchDistance.current = null;
+        setIsDragging(false);
+    };
+    
+    // Mouse drag for panning
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (scale > 1) {
+            setIsDragging(true);
+            setDragStart({
+                x: e.clientX - position.x,
+                y: e.clientY - position.y
+            });
+        }
+    };
+    
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (isDragging && scale > 1) {
+            setPosition({
+                x: e.clientX - dragStart.x,
+                y: e.clientY - dragStart.y
+            });
+        }
+    };
+    
+    const handleMouseUp = () => {
+        setIsDragging(false);
+    };
+    
+    // Double click to zoom
+    const handleDoubleClick = () => {
+        if (scale > 1) {
+            handleReset();
+        } else {
+            setScale(2);
+        }
+    };
+    
+    // Handle background click to close
+    const handleBackgroundClick = (e: React.MouseEvent) => {
+        if (e.target === containerRef.current) {
+            onClose();
+        }
+    };
+    
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            switch (e.key) {
+                case 'Escape':
+                    onClose();
+                    break;
+                case '+':
+                case '=':
+                    handleZoomIn();
+                    break;
+                case '-':
+                    handleZoomOut();
+                    break;
+                case 'r':
+                case 'R':
+                    handleRotate();
+                    break;
+                case '0':
+                    handleReset();
+                    break;
+            }
+        };
+        
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+    
+    return (
+        <div
+            ref={containerRef}
+            className="fixed inset-0 bg-black/95 z-[100] flex flex-col"
+            onClick={handleBackgroundClick}
+        >
+            {/* Top Controls */}
+            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent z-10">
+                <div className="flex items-center gap-2 text-white/80 text-sm">
+                    <span>{Math.round(scale * 100)}%</span>
+                </div>
+                <button 
+                    onClick={onClose}
+                    className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                >
+                    <X size={24} />
+                </button>
+            </div>
+            
+            {/* Image Container */}
+            <div 
+                className="flex-1 flex items-center justify-center overflow-hidden"
+                onWheel={handleWheel}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                onDoubleClick={handleDoubleClick}
+                style={{ cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in' }}
+            >
+                <img 
+                    src={src} 
+                    alt="Preview" 
+                    className="max-w-none select-none"
+                    style={{
+                        transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
+                        transition: isDragging ? 'none' : 'transform 0.2s ease-out',
+                        maxHeight: '90vh',
+                        maxWidth: '90vw',
+                    }}
+                    draggable={false}
+                />
+            </div>
+            
+            {/* Bottom Controls */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 flex justify-center items-center gap-2 bg-gradient-to-t from-black/50 to-transparent">
+                <div className="flex items-center gap-1 bg-black/50 rounded-full p-1">
+                    <button
+                        onClick={handleZoomOut}
+                        disabled={scale <= MIN_SCALE}
+                        className="p-3 hover:bg-white/20 rounded-full text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Thu nhỏ (-)"
+                    >
+                        <ZoomOut size={20} />
+                    </button>
+                    <button
+                        onClick={handleReset}
+                        className="px-3 py-2 hover:bg-white/20 rounded-full text-white text-sm transition-colors min-w-[60px]"
+                        title="Đặt lại (0)"
+                    >
+                        {Math.round(scale * 100)}%
+                    </button>
+                    <button
+                        onClick={handleZoomIn}
+                        disabled={scale >= MAX_SCALE}
+                        className="p-3 hover:bg-white/20 rounded-full text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Phóng to (+)"
+                    >
+                        <ZoomIn size={20} />
+                    </button>
+                    <div className="w-px h-6 bg-white/30 mx-1" />
+                    <button
+                        onClick={handleRotate}
+                        className="p-3 hover:bg-white/20 rounded-full text-white transition-colors"
+                        title="Xoay (R)"
+                    >
+                        <RotateCw size={20} />
+                    </button>
+                </div>
+            </div>
+            
+            {/* Help text */}
+            <div className="absolute bottom-20 left-0 right-0 text-center text-white/50 text-xs">
+                Cuộn chuột để zoom • Kéo để di chuyển • Double-click để phóng to/thu nhỏ • ESC để đóng
+            </div>
+        </div>
+    );
+};
+
+// Image compression utility - resize and compress images before upload
+const compressImage = (file: File, maxWidth: number = 1200, maxHeight: number = 1200, quality: number = 0.8): Promise<File> => {
+    return new Promise((resolve, reject) => {
+        // Skip compression for non-image files or GIFs (to preserve animation)
+        if (!file.type.startsWith('image/') || file.type === 'image/gif') {
+            resolve(file);
+            return;
+        }
+
+        const img = new Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        img.onload = () => {
+            let { width, height } = img;
+
+            // Calculate new dimensions while maintaining aspect ratio
+            if (width > maxWidth || height > maxHeight) {
+                const ratio = Math.min(maxWidth / width, maxHeight / height);
+                width = Math.round(width * ratio);
+                height = Math.round(height * ratio);
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            // Use better image smoothing for quality
+            if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, width, height);
+            }
+
+            // Convert to blob with compression
+            canvas.toBlob(
+                (blob) => {
+                    if (blob) {
+                        // Create new file with same name but compressed
+                        const compressedFile = new File([blob], file.name, {
+                            type: 'image/jpeg',
+                            lastModified: Date.now(),
+                        });
+                        
+                        console.log(`Image compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB (${Math.round((1 - compressedFile.size / file.size) * 100)}% reduction)`);
+                        resolve(compressedFile);
+                    } else {
+                        resolve(file); // Fallback to original if compression fails
+                    }
+                },
+                'image/jpeg',
+                quality
+            );
+        };
+
+        img.onerror = () => {
+            console.error('Error loading image for compression');
+            resolve(file); // Fallback to original on error
+        };
+
+        // Load image from file
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            img.src = e.target?.result as string;
+        };
+        reader.onerror = () => reject(new Error('Error reading file'));
+        reader.readAsDataURL(file);
+    });
+};
+
+// Format last active time
+const formatLastActive = (lastActive: string | undefined, isOnline: boolean | undefined): string => {
+    if (isOnline) return 'Đang hoạt động';
+    if (!lastActive) return 'Không xác định';
+    
+    const now = new Date();
+    const last = new Date(lastActive);
+    const diffMs = now.getTime() - last.getTime();
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffMinutes < 1) return 'Vừa mới truy cập';
+    if (diffMinutes < 60) return `Truy cập ${diffMinutes} phút trước`;
+    if (diffHours < 24) return `Truy cập ${diffHours} giờ trước`;
+    if (diffDays === 1) return 'Truy cập hôm qua';
+    if (diffDays < 7) return `Truy cập ${diffDays} ngày trước`;
+    return `Truy cập ${last.toLocaleDateString('vi-VN')}`;
 };
 
 // ==================== MAIN COMPONENT ====================
@@ -319,6 +739,71 @@ const ChatPopup: React.FC = () => {
         }
     }, [isOpen]);
 
+    // Listen for notification click to open specific conversation
+    useEffect(() => {
+        const handleOpenChatFromNotification = async (event: Event) => {
+            const customEvent = event as CustomEvent<{ conversationId: number }>;
+            const { conversationId } = customEvent.detail;
+            console.log('[Chat] Opening conversation from notification:', conversationId);
+            
+            // Fetch conversations if not loaded
+            if (conversations.length === 0) {
+                await fetchConversations();
+            }
+            
+            // Find the conversation
+            const conversation = conversations.find(c => c.id === conversationId);
+            if (conversation) {
+                openConversation(conversation);
+            } else {
+                // Try to fetch this specific conversation
+                try {
+                    const response = await api.get(`/chat/conversations/${conversationId}`);
+                    const conv: Conversation = {
+                        ...response.data,
+                        displayName: response.data.displayName || response.data.name || 'Unknown',
+                        displayAvatar: response.data.avatarUrl ? resolveAttachmentUrl(response.data.avatarUrl) : null,
+                        avatarUrl: response.data.avatarUrl ? resolveAttachmentUrl(response.data.avatarUrl) : null,
+                        unreadCount: response.data.unreadCount || 0
+                    };
+                    setConversations(prev => [conv, ...prev.filter(c => c.id !== conversationId)]);
+                    openConversation(conv);
+                } catch (error) {
+                    console.error('[Chat] Error fetching conversation from notification:', error);
+                }
+            }
+        };
+
+        window.addEventListener('openChatFromNotification', handleOpenChatFromNotification);
+        return () => {
+            window.removeEventListener('openChatFromNotification', handleOpenChatFromNotification);
+        };
+    }, [conversations]);
+
+    // Check URL for openChat param (from notification click when app was closed)
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const openChatId = urlParams.get('openChat');
+        
+        if (openChatId) {
+            const conversationId = parseInt(openChatId, 10);
+            if (!isNaN(conversationId)) {
+                console.log('[Chat] Opening conversation from URL param:', conversationId);
+                
+                // Remove the query param from URL without reload
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, '', newUrl);
+                
+                // Dispatch event to open chat (will be handled by the other useEffect)
+                setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('openChatFromNotification', {
+                        detail: { conversationId }
+                    }));
+                }, 500); // Small delay to ensure conversations are loaded
+            }
+        }
+    }, []); // Run once on mount
+
     // Fetch users when switching to users mode or when searchQuery changes
     useEffect(() => {
         if (searchMode === 'users') {
@@ -384,6 +869,11 @@ const ChatPopup: React.FC = () => {
                 return;
             }
             
+            // Check if user is currently viewing this conversation
+            const isViewingConversation = 
+                mobileActiveChat?.conversationId === data.conversationId ||
+                chatWindows.some(w => w.conversationId === data.conversationId && !w.isMinimized);
+            
             // Update chat windows
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === data.conversationId
@@ -399,8 +889,19 @@ const ChatPopup: React.FC = () => {
                 return prev;
             });
 
-            // Refresh conversations list
-            fetchConversations();
+            // If viewing this conversation, mark as read immediately
+            if (isViewingConversation) {
+                api.put(`/chat/conversations/${data.conversationId}/read`).catch(console.error);
+                setConversations(prev => prev.map(c =>
+                    c.id === data.conversationId ? { ...c, unreadCount: 0 } : c
+                ));
+                if (socketRef.current?.connected) {
+                    socketRef.current.emit('mark_read', String(data.conversationId));
+                }
+            } else {
+                // Refresh conversations list to update unread count
+                fetchConversations();
+            }
         };
         
         socketRef.current.on('chat:new_message', handleNewMessage);
@@ -560,6 +1061,58 @@ const ChatPopup: React.FC = () => {
             socketRef.current?.off('chat:message_deleted', handleMessageDeleted);
         };
     }, [connected, socketRef, user?.id]); // Removed mobileActiveChat from dependencies
+
+    // Listen for user online/offline status
+    useEffect(() => {
+        if (!connected || !socketRef.current) return;
+
+        // Map to track online users
+        const handleUserOnline = (data: { userId: number }) => {
+            setConversations(prev => prev.map(conv => ({
+                ...conv,
+                members: conv.members.map(m => 
+                    m.userId === data.userId 
+                        ? { ...m, user: { ...m.user, isOnline: true } }
+                        : m
+                )
+            })));
+        };
+
+        const handleUserOffline = (data: { userId: number; lastActive: string }) => {
+            setConversations(prev => prev.map(conv => ({
+                ...conv,
+                members: conv.members.map(m => 
+                    m.userId === data.userId 
+                        ? { ...m, user: { ...m.user, isOnline: false, lastActive: data.lastActive } }
+                        : m
+                )
+            })));
+        };
+
+        // Handle read receipts
+        const handleConversationRead = (data: { conversationId: number; userId: number; readAt: string }) => {
+            // Mark messages as read by that user
+            setChatWindows(prev => prev.map(w => {
+                if (w.conversationId === data.conversationId) {
+                    return {
+                        ...w,
+                        readBy: { ...(w.readBy || {}), [data.userId]: data.readAt }
+                    };
+                }
+                return w;
+            }));
+        };
+
+        socketRef.current.on('user:online', handleUserOnline);
+        socketRef.current.on('user:offline', handleUserOffline);
+        socketRef.current.on('conversation_read', handleConversationRead);
+
+        return () => {
+            socketRef.current?.off('user:online', handleUserOnline);
+            socketRef.current?.off('user:offline', handleUserOffline);
+            socketRef.current?.off('conversation_read', handleConversationRead);
+        };
+    }, [connected, socketRef]);
 
     // ==================== API FUNCTIONS ====================
     const fetchConversations = async () => {
@@ -756,6 +1309,22 @@ const ChatPopup: React.FC = () => {
                 // Đóng popup khi mở conversation
                 setIsOpen(false);
             }
+            
+            // Scroll to bottom after opening
+            setTimeout(scrollToBottom, 150);
+            
+            // Mark as read even for existing window
+            try {
+                await api.put(`/chat/conversations/${conversation.id}/read`);
+                setConversations(prev => prev.map(c =>
+                    c.id === conversation.id ? { ...c, unreadCount: 0 } : c
+                ));
+                if (socketRef.current?.connected) {
+                    socketRef.current.emit('mark_read', String(conversation.id));
+                }
+            } catch (error) {
+                console.error('Error marking as read:', error);
+            }
             return;
         }
 
@@ -784,6 +1353,9 @@ const ChatPopup: React.FC = () => {
             // Đóng popup khi mở conversation mới
             setIsOpen(false);
         }
+        
+        // Scroll to bottom after setting messages
+        setTimeout(scrollToBottom, 150);
 
         // Join conversation room for realtime updates
         if (socketRef.current?.connected) {
@@ -796,6 +1368,10 @@ const ChatPopup: React.FC = () => {
             setConversations(prev => prev.map(c =>
                 c.id === conversation.id ? { ...c, unreadCount: 0 } : c
             ));
+            // Emit read receipt to other users
+            if (socketRef.current?.connected) {
+                socketRef.current.emit('mark_read', String(conversation.id));
+            }
         } catch (error) {
             console.error('Error marking as read:', error);
         }
@@ -897,7 +1473,9 @@ const ChatPopup: React.FC = () => {
         const currentInput = messageInputs[conversationId] || '';
         const beforeMention = currentInput.substring(0, mentionStartPos);
         const afterMention = currentInput.substring(mentionStartPos + mentionQuery.length + 1); // +1 for @
-        const newValue = `${beforeMention}@${userName} ${afterMention}`;
+        // Use bracket format for names with spaces: @[Tên Đầy Đủ]
+        const formattedMention = userName.includes(' ') ? `@[${userName}]` : `@${userName}`;
+        const newValue = `${beforeMention}${formattedMention} ${afterMention}`;
         
         setMessageInputs(prev => ({ ...prev, [conversationId]: newValue }));
         setShowMentionPopup(null);
@@ -929,8 +1507,10 @@ const ChatPopup: React.FC = () => {
     const renderMessageWithMentions = (content: string | null): React.ReactNode => {
         if (!content) return null;
         
-        // Pattern to find @username mentions
-        const mentionPattern = /@(\S+)/g;
+        // Pattern to find @[Full Name] or @username mentions
+        // First pattern: @[Name With Spaces] - names in brackets
+        // Second pattern: @username - single word without spaces
+        const mentionPattern = /@\[([^\]]+)\]|@(\S+)/g;
         const parts: React.ReactNode[] = [];
         let lastIndex = 0;
         let match;
@@ -941,14 +1521,17 @@ const ChatPopup: React.FC = () => {
                 parts.push(content.substring(lastIndex, match.index));
             }
             
+            // match[1] is for @[Name] format, match[2] is for @username format
+            const mentionName = match[1] || match[2];
+            
             // Add highlighted mention
             parts.push(
                 <span 
                     key={match.index} 
                     className="bg-blue-100 text-blue-700 px-1 rounded font-medium cursor-pointer hover:bg-blue-200"
-                    title={`Tag: ${match[1]}`}
+                    title={`Tag: ${mentionName}`}
                 >
-                    @{match[1]}
+                    @{mentionName}
                 </span>
             );
             
@@ -1138,14 +1721,28 @@ const ChatPopup: React.FC = () => {
     const handleFileUpload = async (conversationId: number, file: File) => {
         if (!file) return;
         
-        const formData = new FormData();
-        formData.append('file', file);
-        
         const isImage = file.type.startsWith('image/');
+        
+        // Compress image before upload if it's an image
+        let fileToUpload = file;
+        if (isImage) {
+            try {
+                setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
+                fileToUpload = await compressImage(file, 1200, 1200, 0.8);
+            } catch (error) {
+                console.error('Error compressing image:', error);
+                // Continue with original file if compression fails
+            }
+        }
+        
+        const formData = new FormData();
+        formData.append('file', fileToUpload);
         formData.append('messageType', isImage ? 'IMAGE' : 'FILE');
 
         try {
-            setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
+            if (!isImage) {
+                setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
+            }
             
             // Use XMLHttpRequest for upload progress tracking
             const token = localStorage.getItem('token');
@@ -1363,19 +1960,11 @@ const ChatPopup: React.FC = () => {
             case 'IMAGE':
                 const imageUrl = resolvedAttachmentUrl || msg.attachment;
                 return imageUrl ? (
-                    <img
+                    <ChatImage
                         src={imageUrl}
                         alt="Image"
-                        className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                        style={{ maxHeight: '200px', maxWidth: '250px' }}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            setImagePreview(imageUrl);
-                        }}
-                        onError={(e) => {
-                            console.error('Image load error:', imageUrl);
-                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pjwvc3ZnPg==';
-                        }}
+                        isOwn={isOwn}
+                        onClick={() => setImagePreview(imageUrl)}
                     />
                 ) : (
                     <p className="text-sm text-gray-500">Hình ảnh không khả dụng</p>
@@ -1451,6 +2040,17 @@ const ChatPopup: React.FC = () => {
         const messageInput = messageInputs[conversationId] || '';
         const progress = uploadProgress[conversationId];
 
+        // Get other user's online status for private chat
+        const getOtherUserStatus = () => {
+            if (window.conversation.type !== 'PRIVATE') return { isOnline: false, lastActive: undefined };
+            const otherMember = window.conversation.members.find(m => m.userId !== user?.id);
+            return {
+                isOnline: otherMember?.user?.isOnline || false,
+                lastActive: otherMember?.user?.lastActive
+            };
+        };
+        const otherStatus = getOtherUserStatus();
+
         const baseRight = 100 + index * 340;
         const windowStyle: React.CSSProperties = window.isMaximized
             ? { position: 'fixed', bottom: 20, right: baseRight, width: 500, height: 600, zIndex: 50 }
@@ -1476,13 +2076,15 @@ const ChatPopup: React.FC = () => {
                                     <span className="text-white text-sm font-semibold">{window.conversation.displayName.charAt(0).toUpperCase()}</span>
                                 )}
                             </div>
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${otherStatus.isOnline ? 'bg-green-500' : 'bg-gray-400'} rounded-full border-2 border-white`}></div>
                         </div>
                         <div className="min-w-0 flex-1">
                             <span className="font-semibold text-gray-800 text-sm truncate block">{window.conversation.displayName}</span>
                             <div className="flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                                <span className="text-xs text-gray-500">Đang hoạt động</span>
+                                {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
+                                <span className={`text-xs ${otherStatus.isOnline ? 'text-green-600' : 'text-gray-500'}`}>
+                                    {formatLastActive(otherStatus.lastActive, otherStatus.isOnline)}
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -1688,6 +2290,39 @@ const ChatPopup: React.FC = () => {
                                     )}
                                 </>
                             )}
+                            
+                            {/* Read receipt indicator - show if last message is mine and read by others */}
+                            {(() => {
+                                const myLastMsg = [...window.messages].reverse().find(m => m.sender.id === user?.id);
+                                const otherMembers = window.conversation.members.filter((m: ConversationMember) => m.user.id !== user?.id);
+                                const hasOtherMembersRead = window.readBy && Object.keys(window.readBy).some(
+                                    uid => parseInt(uid) !== user?.id && 
+                                    myLastMsg && 
+                                    new Date(window.readBy![parseInt(uid)]) >= new Date(myLastMsg.createdAt)
+                                );
+                                
+                                if (myLastMsg && otherMembers.length > 0) {
+                                    return (
+                                        <div className="flex justify-end px-4 py-1">
+                                            <div className="flex items-center gap-1 text-xs text-gray-400">
+                                                {hasOtherMembersRead ? (
+                                                    <>
+                                                        <CheckCheck size={14} className="text-blue-500" />
+                                                        <span className="text-blue-500">Đã xem</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Check size={14} />
+                                                        <span>Đã gửi</span>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+                            
                             <div ref={messagesEndRef} />
                         </div>
 
@@ -1918,6 +2553,17 @@ const ChatPopup: React.FC = () => {
         const progress = uploadProgress[conversationId];
         const isTyping = typingUsers[conversationId] && typingUsers[conversationId].length > 0;
 
+        // Get other user's online status for private chat
+        const getOtherUserStatus = () => {
+            if (mobileActiveChat.conversation.type !== 'PRIVATE') return { isOnline: false, lastActive: undefined };
+            const otherMember = mobileActiveChat.conversation.members.find(m => m.userId !== user?.id);
+            return {
+                isOnline: otherMember?.user?.isOnline || false,
+                lastActive: otherMember?.user?.lastActive
+            };
+        };
+        const otherStatus = getOtherUserStatus();
+
         return (
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
                 {/* Header - Clean White Design */}
@@ -1936,7 +2582,7 @@ const ChatPopup: React.FC = () => {
                                 <span className="font-semibold text-white text-sm">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
                             )}
                         </div>
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${otherStatus.isOnline ? 'bg-green-500' : 'bg-gray-400'} rounded-full border-2 border-white`}></div>
                     </div>
                     <div className="flex-1 min-w-0">
                         <span className="font-semibold text-gray-800 truncate block">{mobileActiveChat.conversation.displayName}</span>
@@ -1945,8 +2591,10 @@ const ChatPopup: React.FC = () => {
                                 <span className="text-xs text-blue-500 font-medium">đang soạn tin...</span>
                             ) : (
                                 <>
-                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                                    <span className="text-xs text-gray-500">Đang hoạt động</span>
+                                    {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
+                                    <span className={`text-xs ${otherStatus.isOnline ? 'text-green-600' : 'text-gray-500'}`}>
+                                        {formatLastActive(otherStatus.lastActive, otherStatus.isOnline)}
+                                    </span>
                                 </>
                             )}
                         </div>
@@ -2139,6 +2787,40 @@ const ChatPopup: React.FC = () => {
                             </div>
                         </div>
                     )}
+                    
+                    {/* Read receipt indicator - mobile version */}
+                    {(() => {
+                        const win = chatWindows.find(w => w.conversationId === conversationId);
+                        const myLastMsg = [...mobileActiveChat.messages].reverse().find(m => m.sender.id === user?.id);
+                        const otherMembers = mobileActiveChat.conversation.members.filter((m: ConversationMember) => m.user.id !== user?.id);
+                        const hasOtherMembersRead = win?.readBy && Object.keys(win.readBy).some(
+                            uid => parseInt(uid) !== user?.id && 
+                            myLastMsg && 
+                            new Date(win.readBy![parseInt(uid)]) >= new Date(myLastMsg.createdAt)
+                        );
+                        
+                        if (myLastMsg && otherMembers.length > 0) {
+                            return (
+                                <div className="flex justify-end px-4 py-1">
+                                    <div className="flex items-center gap-1 text-xs text-gray-400">
+                                        {hasOtherMembersRead ? (
+                                            <>
+                                                <CheckCheck size={14} className="text-blue-500" />
+                                                <span className="text-blue-500">Đã xem</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Check size={14} />
+                                                <span>Đã gửi</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }
+                        return null;
+                    })()}
+                    
                     <div ref={messagesEndRef} />
                 </div>
 
@@ -2870,17 +3552,12 @@ const ChatPopup: React.FC = () => {
             {/* Create Group Modal */}
             {renderCreateGroupModal()}
 
-            {/* Image Preview Modal */}
+            {/* Image Preview Modal with Zoom */}
             {imagePreview && (
-                <div
-                    className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4"
-                    onClick={() => setImagePreview(null)}
-                >
-                    <button className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white">
-                        <X size={24} />
-                    </button>
-                    <img src={imagePreview} alt="Preview" className="max-w-full max-h-full object-contain" />
-                </div>
+                <ImageViewer 
+                    src={imagePreview} 
+                    onClose={() => setImagePreview(null)} 
+                />
             )}
 
             {/* OnlyOffice Viewer */}

@@ -269,8 +269,19 @@ io.use((socket, next) => {
 });
 
 // Socket.io connection handling
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.data.userId}`);
+    
+    // Update user online status
+    try {
+        await prisma.user.update({
+            where: { id: socket.data.userId },
+            data: { isOnline: true, lastActive: new Date() }
+        });
+        io.emit('user:online', { userId: socket.data.userId });
+    } catch (err) {
+        console.error('Error updating online status:', err);
+    }
     
     // Join user's personal room for notifications
     socket.join(`user:${socket.data.userId}`);
@@ -377,17 +388,58 @@ io.on('connection', (socket) => {
     });
 
     // Mark conversation as read
-    socket.on('mark_read', (conversationId: string) => {
-        // Notify other members that this user has read the messages
-        socket.to(`conversation:${conversationId}`).emit('conversation_read', {
-            conversationId,
+    socket.on('mark_read', async (conversationId: string) => {
+        try {
+            // Update lastRead in database
+            await prisma.conversationMember.update({
+                where: {
+                    conversationId_userId: {
+                        conversationId: Number(conversationId),
+                        userId: socket.data.userId
+                    }
+                },
+                data: { lastRead: new Date() }
+            });
+            
+            // Notify other members that this user has read the messages
+            socket.to(`conversation:${conversationId}`).emit('conversation_read', {
+                conversationId: Number(conversationId),
+                userId: socket.data.userId,
+                readAt: new Date().toISOString()
+            });
+        } catch (err) {
+            console.error('Error marking conversation as read:', err);
+        }
+    });
+
+    // Message delivered acknowledgment
+    socket.on('message_delivered', (data: { messageId: number; conversationId: number }) => {
+        socket.to(`conversation:${data.conversationId}`).emit('message_delivered', {
+            messageId: data.messageId,
+            conversationId: data.conversationId,
             userId: socket.data.userId
         });
     });
 
     // Disconnect
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log(`User disconnected: ${socket.data.userId}`);
+        
+        // Update user offline status
+        try {
+            await prisma.user.update({
+                where: { id: socket.data.userId },
+                data: { isOnline: false, lastActive: new Date() }
+            });
+        } catch (err) {
+            console.error('Error updating offline status:', err);
+        }
+        
+        // Broadcast offline status
+        io.emit('user:offline', { 
+            userId: socket.data.userId, 
+            lastActive: new Date().toISOString() 
+        });
     });
 });
 

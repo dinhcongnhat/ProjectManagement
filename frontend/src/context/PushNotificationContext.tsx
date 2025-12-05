@@ -169,10 +169,32 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
             console.log('[Push] Message from SW:', event.data);
             
             if (event.data?.type === 'NOTIFICATION_CLICK') {
-                // Handle notification click navigation
                 const data = event.data.data;
-                if (data.url) {
-                    window.location.href = data.url;
+                const targetUrl = event.data.targetUrl;
+                
+                // Handle different notification types
+                if (data.type === 'chat' && data.conversationId) {
+                    // Dispatch custom event to open chat
+                    window.dispatchEvent(new CustomEvent('openChatFromNotification', {
+                        detail: { conversationId: data.conversationId }
+                    }));
+                } else if (data.type === 'mention' && data.conversationId) {
+                    // Mention in chat - open chat
+                    window.dispatchEvent(new CustomEvent('openChatFromNotification', {
+                        detail: { conversationId: data.conversationId }
+                    }));
+                } else if (data.type === 'discussion' && data.projectId) {
+                    // Discussion in project - navigate to project
+                    window.location.href = `/projects/${data.projectId}`;
+                } else if (data.type === 'project' && data.projectId) {
+                    // Project notification - navigate to project
+                    window.location.href = `/projects/${data.projectId}`;
+                } else if (data.type === 'task' && data.taskId) {
+                    // Task notification - navigate to task
+                    window.location.href = `/my-tasks`;
+                } else if (targetUrl && targetUrl !== '/') {
+                    // Fallback to URL if provided
+                    window.location.href = targetUrl;
                 }
             }
         };

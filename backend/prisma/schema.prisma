@@ -54,6 +54,8 @@ model User {
   bio       String?  // Mô tả ngắn về bản thân
   phone     String?  // Số điện thoại
   email     String?  // Email
+  lastActive DateTime @default(now()) // Thời gian hoạt động cuối
+  isOnline   Boolean  @default(false)  // Trạng thái online
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

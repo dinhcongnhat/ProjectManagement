@@ -5,6 +5,24 @@ import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../ser
 import { getIO } from '../index.js';
 import { notifyNewChatMessage, notifyMention } from '../services/pushNotificationService.js';
 
+// ==================== ENCRYPTION UTILITIES ====================
+const ENCRYPTION_KEY = 'JTSC_CHAT_2025';
+
+// Decrypt message from frontend encryption
+const decryptMessage = (encrypted: string): string => {
+    if (!encrypted) return encrypted;
+    try {
+        const decoded = atob(encrypted);
+        let result = '';
+        for (let i = 0; i < decoded.length; i++) {
+            result += String.fromCharCode(decoded.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length));
+        }
+        return decodeURIComponent(escape(atob(result)));
+    } catch {
+        return encrypted; // Return original if decryption fails
+    }
+};
+
 // Lấy danh sách cuộc trò chuyện
 export const getConversations = async (req: AuthRequest, res: Response) => {
     try {
@@ -21,7 +39,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 members: {
                     include: {
                         user: {
-                            select: { id: true, name: true, avatar: true, position: true }
+                            select: { id: true, name: true, avatar: true, position: true, isOnline: true, lastActive: true }
                         }
                     }
                 },
@@ -61,19 +79,28 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
         const lastReadMap = new Map(memberLastReads.map(m => [m.conversationId, m.lastRead]));
 
         // Get unread counts in batch - single query for all conversations
-        const unreadCounts = await prisma.$queryRaw<Array<{ conversationId: number; count: bigint }>>`
-            SELECT "conversationId", COUNT(*) as count
-            FROM "ChatMessage"
-            WHERE "conversationId" IN (${conversations.length > 0 ? prisma.$queryRaw`${conversations.map(c => c.id).join(',')}` : prisma.$queryRaw`0`})
-            AND "senderId" != ${userId}
-            AND "createdAt" > (
-                SELECT COALESCE("lastRead", '1970-01-01'::timestamp)
-                FROM "ConversationMember"
-                WHERE "conversationId" = "ChatMessage"."conversationId"
-                AND "userId" = ${userId}
-            )
-            GROUP BY "conversationId"
-        `.catch(() => []);
+        const conversationIds = conversations.map(c => c.id);
+        let unreadCounts: Array<{ conversationId: number; count: bigint }> = [];
+        
+        if (conversationIds.length > 0) {
+            unreadCounts = await prisma.$queryRawUnsafe<Array<{ conversationId: number; count: bigint }>>(
+                `SELECT "conversationId", COUNT(*) as count
+                FROM "ChatMessage"
+                WHERE "conversationId" IN (${conversationIds.join(',')})
+                AND "senderId" != $1
+                AND "createdAt" > (
+                    SELECT COALESCE("lastRead", '1970-01-01'::timestamp)
+                    FROM "ConversationMember"
+                    WHERE "conversationId" = "ChatMessage"."conversationId"
+                    AND "userId" = $1
+                )
+                GROUP BY "conversationId"`,
+                userId
+            ).catch((err) => {
+                console.error('Error getting unread counts:', err);
+                return [];
+            });
+        }
         
         const unreadMap = new Map((unreadCounts as any[]).map(u => [u.conversationId, Number(u.count)]));
 
@@ -281,7 +308,7 @@ export const getConversationById = async (req: AuthRequest, res: Response) => {
                 members: {
                     include: {
                         user: {
-                            select: { id: true, name: true, avatar: true, position: true }
+                            select: { id: true, name: true, avatar: true, position: true, isOnline: true, lastActive: true }
                         }
                     }
                 },
@@ -473,9 +500,12 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                 const displayName = conversation.type === 'GROUP' 
                     ? (conversation.name || 'Nhóm chat')
                     : message.sender.name;
-                const messagePreview = content.trim().length > 50 
-                    ? content.trim().substring(0, 50) + '...' 
-                    : content.trim();
+                
+                // Decrypt message for push notification preview
+                const decryptedContent = decryptMessage(content.trim());
+                const messagePreview = decryptedContent.length > 50 
+                    ? decryptedContent.substring(0, 50) + '...' 
+                    : decryptedContent;
                 
                 await notifyNewChatMessage(
                     memberIds,
@@ -490,7 +520,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                 // Check for mentions and send separate notifications
                 const mentionPattern = /@(\S+)/g;
                 let match;
-                while ((match = mentionPattern.exec(content)) !== null) {
+                while ((match = mentionPattern.exec(decryptedContent)) !== null) {
                     const mentionedName = match[1];
                     if (mentionedName) {
                         // Find user by name
