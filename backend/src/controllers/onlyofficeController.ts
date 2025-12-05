@@ -394,12 +394,14 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
         // Get file extension
         const ext = originalName.split('.').pop()?.toLowerCase() || '';
         
-        // Determine document type
-        let documentType: 'word' | 'cell' | 'slide' = 'word';
+        // Determine document type (pdf is its own type in OnlyOffice)
+        let documentType: 'word' | 'cell' | 'slide' | 'pdf' = 'word';
         if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
             documentType = 'cell';
         } else if (['ppt', 'pptx', 'odp'].includes(ext)) {
             documentType = 'slide';
+        } else if (ext === 'pdf') {
+            documentType = 'pdf';
         }
 
         // Use backend proxy URL for file access
@@ -515,6 +517,8 @@ export const downloadDiscussionFileForOnlyOffice = async (req: Request, res: Res
                 'odp': 'application/vnd.oasis.opendocument.presentation',
                 'csv': 'text/csv',
                 'rtf': 'application/rtf',
+                'pdf': 'application/pdf',
+                'txt': 'text/plain',
             };
             res.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
         }
@@ -557,7 +561,8 @@ export const checkDiscussionOnlyOfficeSupport = async (req: AuthRequest, res: Re
         const supportedExtensions = [
             'doc', 'docx', 'odt', 'rtf', 'txt',
             'xls', 'xlsx', 'ods', 'csv',
-            'ppt', 'pptx', 'odp'
+            'ppt', 'pptx', 'odp',
+            'pdf' // Added PDF support
         ];
 
         const isSupported = supportedExtensions.includes(ext);
@@ -569,6 +574,246 @@ export const checkDiscussionOnlyOfficeSupport = async (req: AuthRequest, res: Re
         });
     } catch (error) {
         console.error('Error checking discussion OnlyOffice support:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ============== CHAT MESSAGE ONLYOFFICE SUPPORT ==============
+
+// Check if chat message attachment is supported by OnlyOffice
+export const checkChatOnlyOfficeSupport = async (req: AuthRequest, res: Response) => {
+    try {
+        const messageId = req.params.messageId;
+        
+        if (!messageId) {
+            return res.status(400).json({ message: 'Message ID is required' });
+        }
+
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: parseInt(messageId) },
+            select: { id: true, attachment: true }
+        });
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Message or attachment not found' });
+        }
+
+        const ext = message.attachment.split('.').pop()?.toLowerCase() || '';
+        const supportedExtensions = [
+            'doc', 'docx', 'odt', 'rtf', 'txt',
+            'xls', 'xlsx', 'ods', 'csv',
+            'ppt', 'pptx', 'odp',
+            'pdf'
+        ];
+
+        const isSupported = supportedExtensions.includes(ext);
+
+        res.json({
+            supported: isSupported,
+            extension: ext,
+            mode: 'view'
+        });
+    } catch (error) {
+        console.error('Error checking chat OnlyOffice support:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Get OnlyOffice config for chat message attachment (view only)
+export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
+    try {
+        const messageId = req.params.messageId;
+        const user = req.user;
+        
+        if (!messageId) {
+            return res.status(400).json({ message: 'Message ID is required' });
+        }
+
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: parseInt(messageId) },
+            select: { 
+                id: true, 
+                attachment: true,
+                conversationId: true
+            }
+        });
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Message or attachment not found' });
+        }
+
+        // Verify user is participant of this conversation
+        const participant = await prisma.conversationMember.findFirst({
+            where: {
+                conversationId: message.conversationId,
+                userId: user.id
+            }
+        });
+
+        if (!participant) {
+            return res.status(403).json({ message: 'Not authorized to view this file' });
+        }
+
+        // Extract original filename
+        let originalName = message.attachment.split('-').slice(1).join('-');
+        if (message.attachment.includes('/')) {
+            const pathParts = message.attachment.split('/');
+            const fileName = pathParts[pathParts.length - 1] || '';
+            originalName = fileName.split('-').slice(1).join('-');
+        }
+        
+        try {
+            originalName = decodeURIComponent(originalName);
+        } catch {
+            // If decoding fails, use as is
+        }
+
+        // Get file extension
+        const ext = originalName.split('.').pop()?.toLowerCase() || '';
+        
+        // Determine document type
+        let documentType: 'word' | 'cell' | 'slide' | 'pdf' = 'word';
+        if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
+            documentType = 'cell';
+        } else if (['ppt', 'pptx', 'odp'].includes(ext)) {
+            documentType = 'slide';
+        } else if (ext === 'pdf') {
+            documentType = 'pdf';
+        }
+
+        // Use backend proxy URL for file access
+        const fileUrl = `${BACKEND_URL}/api/onlyoffice/chat/download/${messageId}`;
+
+        const config = {
+            document: {
+                fileType: ext,
+                key: `chat_${messageId}_${Date.now()}`,
+                title: originalName,
+                url: fileUrl,
+            },
+            documentType: documentType,
+            editorConfig: {
+                mode: 'view',
+                lang: 'en',
+                user: {
+                    id: user.id.toString(),
+                    name: 'User',
+                },
+                customization: {
+                    chat: false,
+                    comments: false,
+                    compactHeader: false,
+                    compactToolbar: false,
+                    feedback: false,
+                    forcesave: false,
+                    help: false,
+                    hideRightMenu: true,
+                    toolbarNoTabs: false,
+                    logo: {
+                        image: '',
+                        visible: false
+                    }
+                },
+            },
+        };
+
+        // Sign the config with JWT
+        const token = jwt.sign(config, ONLYOFFICE_JWT_SECRET);
+        const signedConfig = { ...config, token };
+
+        res.json({
+            config: signedConfig,
+            onlyofficeUrl: ONLYOFFICE_URL,
+        });
+    } catch (error) {
+        console.error('Error generating chat OnlyOffice config:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Download chat attachment for OnlyOffice (no auth - OnlyOffice needs direct access)
+export const downloadChatFileForOnlyOffice = async (req: Request, res: Response) => {
+    try {
+        const messageId = req.params.messageId;
+        
+        if (!messageId) {
+            return res.status(400).json({ message: 'Message ID is required' });
+        }
+
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: parseInt(messageId) },
+            select: { id: true, attachment: true }
+        });
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Message or attachment not found' });
+        }
+        
+        const fileStream = await getFileStream(message.attachment);
+        const fileStats = await getFileStats(message.attachment);
+
+        // Extract original filename
+        let originalName = message.attachment.split('-').slice(1).join('-');
+        if (message.attachment.includes('/')) {
+            const pathParts = message.attachment.split('/');
+            const fileName = pathParts[pathParts.length - 1] || '';
+            originalName = fileName.split('-').slice(1).join('-');
+        }
+        
+        try {
+            originalName = decodeURIComponent(originalName);
+        } catch {
+            // If decoding fails, use as is
+        }
+
+        // Encode filename for Content-Disposition header
+        const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
+        const asciiFilename = originalName
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\w\s.-]/g, '_')
+            .replace(/\s+/g, '_');
+
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
+        
+        if (fileStats.metaData && fileStats.metaData['content-type']) {
+            res.setHeader('Content-Type', fileStats.metaData['content-type']);
+        } else {
+            const ext = originalName.split('.').pop()?.toLowerCase();
+            const mimeTypes: Record<string, string> = {
+                'doc': 'application/msword',
+                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'xls': 'application/vnd.ms-excel',
+                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'ppt': 'application/vnd.ms-powerpoint',
+                'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'odt': 'application/vnd.oasis.opendocument.text',
+                'ods': 'application/vnd.oasis.opendocument.spreadsheet',
+                'odp': 'application/vnd.oasis.opendocument.presentation',
+                'csv': 'text/csv',
+                'rtf': 'application/rtf',
+                'pdf': 'application/pdf',
+                'txt': 'text/plain',
+            };
+            res.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
+        }
+
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+
+        // Allow CORS for OnlyOffice server
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error('Error downloading chat file for OnlyOffice:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };

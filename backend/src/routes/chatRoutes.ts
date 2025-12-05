@@ -18,13 +18,17 @@ import {
     removeReaction,
     markConversationAsRead,
     deleteMessage,
-    deleteConversation
+    deleteConversation,
+    serveMessageAttachment
 } from '../controllers/chatController.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// All routes require authentication
+// Public routes - serve files without authentication (for img src, audio src)
+router.get('/messages/:messageId/file', serveMessageAttachment);
+
+// All other routes require authentication
 router.use(authenticateToken);
 
 // Conversations

@@ -7,7 +7,10 @@ import {
     downloadFileForOnlyOffice,
     getDiscussionOnlyOfficeConfig,
     downloadDiscussionFileForOnlyOffice,
-    checkDiscussionOnlyOfficeSupport
+    checkDiscussionOnlyOfficeSupport,
+    checkChatOnlyOfficeSupport,
+    getChatOnlyOfficeConfig,
+    downloadChatFileForOnlyOffice
 } from '../controllers/onlyofficeController.js';
 
 const router = express.Router();
@@ -33,5 +36,15 @@ router.get('/discussion/check/:messageId', authenticateToken, checkDiscussionOnl
 
 // Download discussion file for OnlyOffice server (no auth required - OnlyOffice server calls this)
 router.get('/discussion/download/:messageId', downloadDiscussionFileForOnlyOffice);
+
+// Chat message attachment endpoints (view only)
+// Check if chat attachment can be opened with OnlyOffice
+router.get('/chat/check/:messageId', authenticateToken, checkChatOnlyOfficeSupport);
+
+// Get OnlyOffice config for chat message attachment
+router.get('/chat/config/:messageId', authenticateToken, getChatOnlyOfficeConfig);
+
+// Download chat file for OnlyOffice server (no auth required - OnlyOffice server calls this)
+router.get('/chat/download/:messageId', downloadChatFileForOnlyOffice);
 
 export default router;

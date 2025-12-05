@@ -1,4 +1,4 @@
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
@@ -28,7 +28,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                     take: 1,
                     include: {
                         sender: {
-                            select: { id: true, name: true }
+                            select: { id: true, name: true, avatar: true }
                         }
                     }
                 },
@@ -59,10 +59,41 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 displayAvatar = otherMember?.user.avatar || null;
             }
 
+            // Get presigned URL for avatar
+            let avatarUrl = null;
+            if (displayAvatar) {
+                try {
+                    avatarUrl = await getPresignedUrl(displayAvatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+
+            // Get presigned URLs for member avatars
+            const membersWithAvatars = await Promise.all(conv.members.map(async (m) => {
+                let memberAvatarUrl = null;
+                if (m.user.avatar) {
+                    try {
+                        memberAvatarUrl = await getPresignedUrl(m.user.avatar);
+                    } catch (e) {
+                        // Ignore error
+                    }
+                }
+                return {
+                    ...m,
+                    user: {
+                        ...m.user,
+                        avatarUrl: memberAvatarUrl
+                    }
+                };
+            }));
+
             return {
                 ...conv,
+                members: membersWithAvatars,
                 displayName,
                 displayAvatar,
+                avatarUrl, // Presigned URL
                 unreadCount,
                 lastMessage: conv.messages[0] || null
             };
@@ -126,7 +157,7 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
         let avatarPath = null;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `chat-avatars/${Date.now()}-${normalizedFilename}`;
+            const fileName = `projectmanagement/avatargroup/${Date.now()}-${normalizedFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -161,13 +192,49 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
         // Emit WebSocket event to all members for realtime update
         const io = getIO();
         const allMemberIds = [userId, ...memberIds];
+        
+        // Get avatar URL if uploaded
+        let avatarUrl = null;
+        if (avatarPath) {
+            try {
+                avatarUrl = await getPresignedUrl(avatarPath);
+            } catch (e) {
+                console.error('Error getting avatar URL:', e);
+            }
+        }
+
+        // Get member avatar URLs
+        const membersWithAvatars = await Promise.all(conversation.members.map(async (m) => {
+            let memberAvatarUrl = null;
+            if (m.user.avatar) {
+                try {
+                    memberAvatarUrl = await getPresignedUrl(m.user.avatar);
+                } catch (e) {
+                    // Ignore error
+                }
+            }
+            return {
+                ...m,
+                user: {
+                    ...m.user,
+                    avatarUrl: memberAvatarUrl
+                }
+            };
+        }));
+
+        const responseConv = {
+            ...conversation,
+            members: membersWithAvatars,
+            avatarUrl
+        };
+
         allMemberIds.forEach((memberId: number) => {
             io.to(`user:${memberId}`).emit('chat:new_conversation', {
-                conversation
+                conversation: responseConv
             });
         });
 
-        res.status(201).json(conversation);
+        res.status(201).json(responseConv);
     } catch (error) {
         console.error('Error creating conversation:', error);
         res.status(500).json({ message: 'Server error' });
@@ -263,17 +330,36 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             data: { lastRead: new Date() }
         });
 
-        // Thêm URL cho attachment
+        // Thêm URL cho attachment và avatar - sử dụng relative URL để mobile có thể truy cập
         const messagesWithUrls = await Promise.all(messages.map(async (msg: any) => {
             let attachmentUrl = null;
             if (msg.attachment) {
-                try {
-                    attachmentUrl = await getPresignedUrl(msg.attachment);
-                } catch (e) {
-                    console.error('Error getting presigned URL:', e);
+                // Use relative URL - frontend will prepend the correct base URL
+                attachmentUrl = `/api/chat/messages/${msg.id}/file`;
+            }
+            
+            // Add avatar URL for sender
+            let senderAvatarUrl = null;
+            if (msg.sender?.avatar) {
+                if (msg.sender.avatar.startsWith('data:')) {
+                    senderAvatarUrl = msg.sender.avatar;
+                } else {
+                    try {
+                        senderAvatarUrl = await getPresignedUrl(msg.sender.avatar);
+                    } catch (e) {
+                        console.error('Error getting avatar URL:', e);
+                    }
                 }
             }
-            return { ...msg, attachmentUrl };
+            
+            return { 
+                ...msg, 
+                attachmentUrl,
+                sender: {
+                    ...msg.sender,
+                    avatar: senderAvatarUrl
+                }
+            };
         }));
 
         res.json({
@@ -333,6 +419,24 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             }
         });
 
+        // Add avatar URL for sender
+        let senderAvatarUrl = null;
+        if (message.sender?.avatar) {
+            if (message.sender.avatar.startsWith('data:')) {
+                senderAvatarUrl = message.sender.avatar;
+            } else {
+                try {
+                    senderAvatarUrl = await getPresignedUrl(message.sender.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+        }
+        const messageWithAvatar = {
+            ...message,
+            sender: { ...message.sender, avatar: senderAvatarUrl }
+        };
+
         // Cập nhật updatedAt của conversation
         await prisma.conversation.update({
             where: { id: Number(id) },
@@ -343,10 +447,10 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         const io = getIO();
         io.to(`conversation:${id}`).emit('chat:new_message', {
             conversationId: Number(id),
-            message
+            message: messageWithAvatar
         });
 
-        res.status(201).json(message);
+        res.status(201).json(messageWithAvatar);
     } catch (error) {
         console.error('Error sending message:', error);
         res.status(500).json({ message: 'Server error' });
@@ -380,10 +484,12 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
 
         // Upload file
         const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `chat/${id}/${userId}-${Date.now()}-${normalizedFilename}`;
+        const fileName = `projectmanagement/chatcongty/${id}/${userId}-${Date.now()}-${normalizedFilename}`;
+        console.log('[sendFileMessage] Uploading file:', fileName);
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': req.file.mimetype,
         });
+        console.log('[sendFileMessage] File uploaded, path:', filePath);
 
         // Xác định loại message
         const isImage = req.file.mimetype.startsWith('image/');
@@ -407,8 +513,22 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Lấy presigned URL
-        const attachmentUrl = await getPresignedUrl(filePath);
+        // Lấy relative URL thay vì presigned URL để mobile có thể truy cập
+        const attachmentUrl = `/api/chat/messages/${message.id}/file`;
+
+        // Add avatar URL for sender
+        let senderAvatarUrl = null;
+        if (message.sender?.avatar) {
+            if (message.sender.avatar.startsWith('data:')) {
+                senderAvatarUrl = message.sender.avatar;
+            } else {
+                try {
+                    senderAvatarUrl = await getPresignedUrl(message.sender.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+        }
 
         // Cập nhật updatedAt của conversation
         await prisma.conversation.update({
@@ -416,8 +536,12 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
             data: { updatedAt: new Date() }
         });
 
-        // Prepare response with attachmentUrl
-        const responseMessage = { ...message, attachmentUrl };
+        // Prepare response with attachmentUrl and avatar
+        const responseMessage = { 
+            ...message, 
+            attachmentUrl,
+            sender: { ...message.sender, avatar: senderAvatarUrl }
+        };
 
         // Emit WebSocket event for realtime update
         const io = getIO();
@@ -458,7 +582,7 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
         }
 
         // Upload audio
-        const fileName = `chat/${id}/${userId}-${Date.now()}-voice.webm`;
+        const fileName = `projectmanagement/chatcongty/${id}/${userId}-${Date.now()}-voice.webm`;
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': 'audio/webm',
         });
@@ -477,7 +601,21 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        const attachmentUrl = await getPresignedUrl(filePath);
+        const attachmentUrl = `/api/chat/messages/${message.id}/file`;
+
+        // Add avatar URL for sender
+        let senderAvatarUrl = null;
+        if (message.sender?.avatar) {
+            if (message.sender.avatar.startsWith('data:')) {
+                senderAvatarUrl = message.sender.avatar;
+            } else {
+                try {
+                    senderAvatarUrl = await getPresignedUrl(message.sender.avatar);
+                } catch (e) {
+                    console.error('Error getting avatar URL:', e);
+                }
+            }
+        }
 
         // Cập nhật updatedAt của conversation
         await prisma.conversation.update({
@@ -485,8 +623,12 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
             data: { updatedAt: new Date() }
         });
 
-        // Prepare response with attachmentUrl
-        const responseMessage = { ...message, attachmentUrl };
+        // Prepare response with attachmentUrl and avatar
+        const responseMessage = { 
+            ...message, 
+            attachmentUrl,
+            sender: { ...message.sender, avatar: senderAvatarUrl }
+        };
 
         // Emit WebSocket event for realtime update
         const io = getIO();
@@ -673,7 +815,7 @@ export const updateConversation = async (req: AuthRequest, res: Response) => {
         let avatarPath = undefined;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `chat-avatars/${Date.now()}-${normalizedFilename}`;
+            const fileName = `projectmanagement/avatargroup/${Date.now()}-${normalizedFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -1061,5 +1203,63 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error deleting message:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Serve attachment file directly (for images, audio, and files)
+// This route is public (no auth required) for img src, audio src to work
+export const serveMessageAttachment = async (req: Request, res: Response) => {
+    try {
+        const { messageId } = req.params;
+        console.log('[serveMessageAttachment] Request for messageId:', messageId);
+        
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) }
+        });
+
+        if (!message) {
+            console.log('[serveMessageAttachment] Message not found:', messageId);
+            return res.status(404).json({ message: 'Message not found' });
+        }
+        
+        if (!message.attachment) {
+            console.log('[serveMessageAttachment] Message has no attachment:', messageId);
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        console.log('[serveMessageAttachment] Attachment path:', message.attachment);
+
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        
+        try {
+            const stats = await getFileStats(message.attachment);
+            console.log('[serveMessageAttachment] File stats:', stats);
+            
+            const fileStream = await getFileStream(message.attachment);
+
+            // Set appropriate content type - check both cases
+            const contentType = stats.metaData['content-type'] || stats.metaData['Content-Type'] || 'application/octet-stream';
+            console.log('[serveMessageAttachment] Content-Type:', contentType);
+            
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', stats.size);
+            
+            // For images and audio, allow caching and inline display
+            if (contentType.startsWith('image/') || contentType.startsWith('audio/')) {
+                res.setHeader('Cache-Control', 'public, max-age=31536000');
+                res.setHeader('Content-Disposition', 'inline');
+            }
+            
+            // Allow CORS for cross-origin image loading
+            res.setHeader('Access-Control-Allow-Origin', '*');
+
+            fileStream.pipe(res);
+        } catch (minioError) {
+            console.error('[serveMessageAttachment] MinIO error:', minioError);
+            return res.status(404).json({ message: 'File not found in storage' });
+        }
+    } catch (error) {
+        console.error('[serveMessageAttachment] Error:', error);
+        res.status(500).json({ message: 'Failed to serve attachment' });
     }
 };

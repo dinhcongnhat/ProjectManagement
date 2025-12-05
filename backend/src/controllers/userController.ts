@@ -278,10 +278,18 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 export const uploadAvatar = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
+        console.log('[uploadAvatar] Starting upload for user:', userId);
 
         if (!req.file) {
+            console.log('[uploadAvatar] No file in request');
             return res.status(400).json({ message: 'No file uploaded' });
         }
+
+        console.log('[uploadAvatar] File info:', {
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size
+        });
 
         // Validate file type
         if (!req.file.mimetype.startsWith('image/')) {
@@ -296,9 +304,12 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
         // Upload to MinIO
         const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
         const fileName = `avatars/${userId}-${Date.now()}-${normalizedFilename}`;
+        console.log('[uploadAvatar] Uploading to MinIO:', fileName);
+        
         const avatarPath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': req.file.mimetype,
         });
+        console.log('[uploadAvatar] Upload successful:', avatarPath);
 
         // Update user avatar path
         const user = await prisma.user.update({
@@ -316,6 +327,7 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
                 email: true
             }
         });
+        console.log('[uploadAvatar] User updated:', user.id);
 
         // Get presigned URL for the avatar
         let avatarUrl = null;
@@ -323,13 +335,13 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             try {
                 avatarUrl = await getPresignedUrl(user.avatar);
             } catch (e) {
-                console.error('Error getting avatar URL:', e);
+                console.error('[uploadAvatar] Error getting avatar URL:', e);
             }
         }
 
         res.json({ ...user, avatarUrl });
     } catch (error) {
-        console.error('Error uploading avatar:', error);
+        console.error('[uploadAvatar] Error:', error);
         res.status(500).json({ message: 'Không thể tải lên ảnh đại diện. Vui lòng thử lại.' });
     }
 };
@@ -377,6 +389,11 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
 export const getUserById = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+
+        // Validate id
+        if (!id || isNaN(Number(id))) {
+            return res.status(400).json({ message: 'Invalid user ID' });
+        }
 
         const user = await prisma.user.findUnique({
             where: { id: Number(id) },

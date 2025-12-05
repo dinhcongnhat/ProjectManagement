@@ -40,26 +40,17 @@ export const createTask = async (req: AuthRequest, res: Response) => {
 export const getTasks = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
-        const role = req.user!.role;
 
-        let whereClause: any = {};
-
-        if (role === 'ADMIN') {
-            // Admin sees all tasks? Or maybe filter by query?
-            // For now, return all tasks for admin dashboard
-            whereClause = {};
-        } else {
-            // User sees assigned tasks and personal tasks
-            whereClause = {
+        // My Tasks: Only show tasks for current user
+        // - Tasks assigned to this user
+        // - Personal tasks created by this user
+        const tasks = await prisma.task.findMany({
+            where: {
                 OR: [
                     { assigneeId: userId },
-                    { creatorId: userId, type: 'PERSONAL' }
+                    { creatorId: userId, type: 'PERSONAL' as const }
                 ]
-            };
-        }
-
-        const tasks = await prisma.task.findMany({
-            where: whereClause,
+            },
             include: {
                 assignee: {
                     select: { id: true, username: true, name: true }

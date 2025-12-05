@@ -79,12 +79,25 @@ const createApi = () => {
         post: async (path: string, data?: any, config?: { headers?: Record<string, string> }) => {
             const isFormData = data instanceof FormData;
             const headers: Record<string, string> = {
-                ...getAuthHeaders(),
-                ...(config?.headers || {})
+                ...getAuthHeaders()
             };
+            
+            // For FormData, don't set Content-Type - browser will set it with boundary
             if (!isFormData) {
                 headers['Content-Type'] = 'application/json';
             }
+            
+            // Merge custom headers, but ignore Content-Type for FormData
+            if (config?.headers) {
+                Object.entries(config.headers).forEach(([key, value]) => {
+                    if (isFormData && key.toLowerCase() === 'content-type') {
+                        // Skip Content-Type for FormData to let browser set it
+                        return;
+                    }
+                    headers[key] = value;
+                });
+            }
+            
             const res = await fetch(`${API_URL}${path}`, {
                 method: 'POST',
                 headers: headers as HeadersInit,

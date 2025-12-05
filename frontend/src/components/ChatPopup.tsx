@@ -153,6 +153,31 @@ const formatMessageTime = (dateStr: string): string => {
     return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
+// Format date separator between message groups
+const formatDateSeparator = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+    
+    if (isToday) {
+        return 'Hôm nay';
+    }
+    if (isYesterday) {
+        return 'Hôm qua';
+    }
+    return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+};
+
+// Check if two dates are on different days
+const isDifferentDay = (date1: string, date2: string): boolean => {
+    const d1 = new Date(date1);
+    const d2 = new Date(date2);
+    return d1.toDateString() !== d2.toDateString();
+};
+
 const isOfficeFile = (filename: string | null): boolean => {
     if (!filename) return false;
     const ext = filename.split('.').pop()?.toLowerCase() || '';
@@ -175,6 +200,18 @@ const getFileIconColor = (filename: string): string => {
         default: 'bg-gray-500'
     };
     return colors[ext] || colors.default;
+};
+
+// Helper to resolve relative URLs to absolute URLs
+const resolveAttachmentUrl = (url: string | null): string | null => {
+    if (!url) return null;
+    // If already absolute URL, return as is
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        return url;
+    }
+    // For relative URLs, prepend API_URL base (remove /api suffix if present)
+    const baseUrl = API_URL.replace(/\/api$/, '');
+    return `${baseUrl}${url}`;
 };
 
 // ==================== MAIN COMPONENT ====================
@@ -200,6 +237,7 @@ const ChatPopup: React.FC = () => {
     const [showReactionPicker, setShowReactionPicker] = useState<number | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null); // Emoji picker for input
     const [mobileMenuOpen, setMobileMenuOpen] = useState<number | null>(null); // Mobile header menu
+    const [conversationMenuOpen, setConversationMenuOpen] = useState<number | null>(null); // Menu 3 chấm cho conversation list
     const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
     
     // Typing state
@@ -241,6 +279,12 @@ const ChatPopup: React.FC = () => {
     const [showImageCropper, setShowImageCropper] = useState(false);
     const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
     const [cropTarget, setCropTarget] = useState<'profile' | 'group'>('group');
+
+    // Mention state
+    const [showMentionPopup, setShowMentionPopup] = useState<number | null>(null); // conversationId
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionStartPos, setMentionStartPos] = useState(0);
+    const inputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -782,6 +826,91 @@ const ChatPopup: React.FC = () => {
                 });
             }
         }, 300); // 300ms debounce
+
+        // Check for @ mention trigger
+        const cursorPos = (document.activeElement as HTMLInputElement)?.selectionStart || value.length;
+        const textBeforeCursor = value.substring(0, cursorPos);
+        const atMatch = textBeforeCursor.match(/@(\w*)$/);
+        
+        if (atMatch) {
+            setMentionQuery(atMatch[1]);
+            setMentionStartPos(cursorPos - atMatch[0].length);
+            setShowMentionPopup(conversationId);
+        } else {
+            setShowMentionPopup(null);
+            setMentionQuery('');
+        }
+    };
+
+    // Insert mention into input
+    const insertMention = (conversationId: number, userName: string) => {
+        const currentInput = messageInputs[conversationId] || '';
+        const beforeMention = currentInput.substring(0, mentionStartPos);
+        const afterMention = currentInput.substring(mentionStartPos + mentionQuery.length + 1); // +1 for @
+        const newValue = `${beforeMention}@${userName} ${afterMention}`;
+        
+        setMessageInputs(prev => ({ ...prev, [conversationId]: newValue }));
+        setShowMentionPopup(null);
+        setMentionQuery('');
+        
+        // Focus back to input
+        inputRefs.current[conversationId]?.focus();
+    };
+
+    // Get filtered members for mention popup
+    const getMentionSuggestions = (conversationId: number) => {
+        const window = chatWindows.find(w => w.conversationId === conversationId);
+        const mobileChat = mobileActiveChat;
+        const members = window?.conversation.members || mobileChat?.conversation.members || [];
+        
+        if (!mentionQuery) {
+            return members.filter(m => m.user.id !== user?.id).slice(0, 5);
+        }
+        
+        return members
+            .filter(m => 
+                m.user.id !== user?.id &&
+                m.user.name.toLowerCase().includes(mentionQuery.toLowerCase())
+            )
+            .slice(0, 5);
+    };
+
+    // Render message content with mentions highlighted
+    const renderMessageWithMentions = (content: string | null): React.ReactNode => {
+        if (!content) return null;
+        
+        // Pattern to find @username mentions
+        const mentionPattern = /@(\S+)/g;
+        const parts: React.ReactNode[] = [];
+        let lastIndex = 0;
+        let match;
+        
+        while ((match = mentionPattern.exec(content)) !== null) {
+            // Add text before mention
+            if (match.index > lastIndex) {
+                parts.push(content.substring(lastIndex, match.index));
+            }
+            
+            // Add highlighted mention
+            parts.push(
+                <span 
+                    key={match.index} 
+                    className="bg-blue-100 text-blue-700 px-1 rounded font-medium cursor-pointer hover:bg-blue-200"
+                    title={`Tag: ${match[1]}`}
+                >
+                    @{match[1]}
+                </span>
+            );
+            
+            lastIndex = match.index + match[0].length;
+        }
+        
+        // Add remaining text
+        if (lastIndex < content.length) {
+            parts.push(content.substring(lastIndex));
+        }
+        
+        return parts.length > 0 ? <>{parts}</> : content;
     };
 
     const sendMessage = async (conversationId: number, content: string) => {
@@ -1128,13 +1257,15 @@ const ChatPopup: React.FC = () => {
     // ==================== RENDER MESSAGE ====================
     const renderMessage = (msg: Message, isOwn: boolean) => {
         const filename = msg.attachmentName || extractFilename(msg.attachment || '');
+        // Resolve attachment URL to absolute URL
+        const resolvedAttachmentUrl = resolveAttachmentUrl(msg.attachmentUrl);
 
         switch (msg.messageType) {
             case 'VOICE':
                 return (
                     <div className="flex items-center gap-2 min-w-[180px]">
                         <button
-                            onClick={() => msg.attachmentUrl && toggleAudioPlayback(msg.id, msg.attachmentUrl)}
+                            onClick={() => resolvedAttachmentUrl && toggleAudioPlayback(msg.id, resolvedAttachmentUrl)}
                             className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
                                 isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-blue-500 hover:bg-blue-600 text-white'
                             }`}
@@ -1155,7 +1286,7 @@ const ChatPopup: React.FC = () => {
                 );
 
             case 'IMAGE':
-                const imageUrl = msg.attachmentUrl || msg.attachment;
+                const imageUrl = resolvedAttachmentUrl || msg.attachment;
                 return imageUrl ? (
                     <img
                         src={imageUrl}
@@ -1179,8 +1310,8 @@ const ChatPopup: React.FC = () => {
             case 'TEXT_WITH_FILE':
                 return (
                     <div>
-                        {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{msg.content}</p>}
-                        {msg.attachmentUrl && (
+                        {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>}
+                        {resolvedAttachmentUrl && (
                             <div 
                                 className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${isOwn ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
                                 onClick={(e) => {
@@ -1188,7 +1319,7 @@ const ChatPopup: React.FC = () => {
                                     if (isOfficeFile(filename)) {
                                         setShowOnlyOffice({ messageId: msg.id, filename });
                                     } else {
-                                        window.open(msg.attachmentUrl!, '_blank');
+                                        window.open(resolvedAttachmentUrl!, '_blank');
                                     }
                                 }}
                             >
@@ -1217,7 +1348,7 @@ const ChatPopup: React.FC = () => {
                                         </button>
                                     )}
                                     <a
-                                        href={msg.attachmentUrl}
+                                        href={resolvedAttachmentUrl || '#'}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         onClick={(e) => e.stopPropagation()}
@@ -1233,7 +1364,7 @@ const ChatPopup: React.FC = () => {
                 );
 
             default:
-                return <p className="whitespace-pre-wrap break-words">{msg.content}</p>;
+                return <p className="whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>;
         }
     };
 
@@ -1312,7 +1443,7 @@ const ChatPopup: React.FC = () => {
                                 </div>
                             ) : (
                                 <>
-                                    {window.messages.map(msg => {
+                                    {window.messages.map((msg, msgIndex) => {
                                         const isOwn = msg.sender.id === user?.id;
                                         const groupedReactions = msg.reactions?.reduce((acc, r) => {
                                             if (!acc[r.emoji]) acc[r.emoji] = [];
@@ -1321,18 +1452,64 @@ const ChatPopup: React.FC = () => {
                                         }, {} as Record<string, Reaction[]>) || {};
                                         const displayContent = msg.messageType === 'TEXT' && msg.content ? decryptMessage(msg.content) : msg.content;
                                         
+                                        // Check if this is a new sender group (different sender from previous message)
+                                        const prevMsg = window.messages[msgIndex - 1];
+                                        const isNewSenderGroup = !prevMsg || prevMsg.sender.id !== msg.sender.id;
+                                        // Check if next message is from same sender
+                                        const nextMsg = window.messages[msgIndex + 1];
+                                        const isLastInGroup = !nextMsg || nextMsg.sender.id !== msg.sender.id;
+                                        
+                                        // Check if we need date separator
+                                        const showDateSeparator = !prevMsg || isDifferentDay(prevMsg.createdAt, msg.createdAt);
+                                        
                                         return (
-                                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}>
-                                                <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
-                                                    {!isOwn && (
-                                                        <p className="text-xs text-gray-500 mb-0.5 ml-2">{msg.sender.name}</p>
+                                            <React.Fragment key={msg.id}>
+                                                {/* Date separator */}
+                                                {showDateSeparator && (
+                                                    <div className="flex items-center justify-center my-3">
+                                                        <div className="bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded-full">
+                                                            {formatDateSeparator(msg.createdAt)}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group ${!isNewSenderGroup ? 'mt-0.5' : 'mt-3'}`}>
+                                                {/* Avatar for other users - only show on last message in group */}
+                                                {!isOwn && (
+                                                    <div className="w-8 h-8 mr-2 shrink-0">
+                                                        {isLastInGroup ? (
+                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
+                                                                {msg.sender.avatar ? (
+                                                                    <img src={msg.sender.avatar} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-white font-semibold text-xs">{msg.sender.name.charAt(0).toUpperCase()}</span>
+                                                                )}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                )}
+                                                
+                                                <div className={`max-w-[70%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
+                                                    {/* Sender name with time - only show on first message in group */}
+                                                    {!isOwn && isNewSenderGroup && (
+                                                        <div className="flex items-center gap-2 mb-1 ml-1">
+                                                            <span className="text-xs text-gray-700 font-medium">{msg.sender.name}</span>
+                                                            <span className="text-xs text-gray-400">•</span>
+                                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                                        </div>
+                                                    )}
+                                                    {/* Time for own messages - show on first of group */}
+                                                    {isOwn && isNewSenderGroup && (
+                                                        <div className="flex justify-end mb-1 mr-1">
+                                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                                        </div>
                                                     )}
                                                     <div className="relative">
                                                         <div className={`px-3 py-2 rounded-2xl ${
                                                             isOwn 
-                                                                ? 'bg-blue-500 text-white rounded-br-sm' 
-                                                                : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'
-                                                        }`}>
+                                                                ? 'bg-blue-500 text-white' 
+                                                                : 'bg-gray-100 text-gray-800'
+                                                        } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
                                                             {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                                         </div>
                                                         
@@ -1406,12 +1583,9 @@ const ChatPopup: React.FC = () => {
                                                             ))}
                                                         </div>
                                                     )}
-                                                    
-                                                    <p className={`text-[10px] mt-0.5 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
-                                                        {formatMessageTime(msg.createdAt)}
-                                                    </p>
                                                 </div>
                                             </div>
+                                            </React.Fragment>
                                         );
                                     })}
                                     
@@ -1567,21 +1741,62 @@ const ChatPopup: React.FC = () => {
                                         <Paperclip size={18} />
                                     </button>
 
-                                    {/* Text Input */}
-                                    <input
-                                        type="text"
-                                        value={messageInput}
-                                        onChange={(e) => handleInputChange(conversationId, e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                sendMessage(conversationId, messageInput);
-                                            }
-                                        }}
-                                        placeholder="Aa"
-                                        className="flex-1 px-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
-                                        data-conversation-id={conversationId}
-                                    />
+                                    {/* Text Input with Mention Popup */}
+                                    <div className="relative flex-1 min-w-0">
+                                        <input
+                                            ref={el => { inputRefs.current[conversationId] = el; }}
+                                            type="text"
+                                            value={messageInput}
+                                            onChange={(e) => handleInputChange(conversationId, e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (showMentionPopup === conversationId) {
+                                                    const suggestions = getMentionSuggestions(conversationId);
+                                                    if (e.key === 'Escape') {
+                                                        e.preventDefault();
+                                                        setShowMentionPopup(null);
+                                                    } else if (e.key === 'Enter' && suggestions.length > 0) {
+                                                        e.preventDefault();
+                                                        insertMention(conversationId, suggestions[0].user.name);
+                                                    }
+                                                } else if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    sendMessage(conversationId, messageInput);
+                                                }
+                                            }}
+                                            placeholder="Aa"
+                                            className="w-full px-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            data-conversation-id={conversationId}
+                                        />
+                                        
+                                        {/* Mention Popup */}
+                                        {showMentionPopup === conversationId && (
+                                            <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-56 max-h-48 overflow-y-auto">
+                                                {getMentionSuggestions(conversationId).length > 0 ? (
+                                                    getMentionSuggestions(conversationId).map((member) => (
+                                                        <button
+                                                            key={member.user.id}
+                                                            onClick={() => insertMention(conversationId, member.user.name)}
+                                                            className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 transition-colors text-left"
+                                                        >
+                                                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                                {member.user.avatarUrl ? (
+                                                                    <img src={member.user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="text-sm font-medium text-gray-800 truncate">{member.user.name}</div>
+                                                                <div className="text-xs text-gray-500 truncate">{member.user.email}</div>
+                                                            </div>
+                                                        </button>
+                                                    ))
+                                                ) : (
+                                                    <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy người dùng</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* Voice Button - Always visible */}
                                     <button
@@ -1686,8 +1901,8 @@ const ChatPopup: React.FC = () => {
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
-                    {mobileActiveChat.messages.map(msg => {
+                <div className="flex-1 overflow-y-auto p-3 space-y-0.5 bg-gray-50">
+                    {mobileActiveChat.messages.map((msg, msgIndex) => {
                         const isOwn = msg.sender.id === user?.id;
                         const groupedReactions = msg.reactions?.reduce((acc, r) => {
                             if (!acc[r.emoji]) acc[r.emoji] = [];
@@ -1696,15 +1911,61 @@ const ChatPopup: React.FC = () => {
                         }, {} as Record<string, Reaction[]>) || {};
                         const displayContent = msg.messageType === 'TEXT' && msg.content ? decryptMessage(msg.content) : msg.content;
                         
+                        // Check if this is a new sender group
+                        const prevMsg = mobileActiveChat.messages[msgIndex - 1];
+                        const isNewSenderGroup = !prevMsg || prevMsg.sender.id !== msg.sender.id;
+                        const nextMsg = mobileActiveChat.messages[msgIndex + 1];
+                        const isLastInGroup = !nextMsg || nextMsg.sender.id !== msg.sender.id;
+                        
+                        // Check if we need date separator
+                        const showDateSeparator = !prevMsg || isDifferentDay(prevMsg.createdAt, msg.createdAt);
+                        
                         return (
-                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                                <div className="max-w-[80%]">
-                                    {!isOwn && <p className="text-xs text-gray-500 mb-0.5 ml-2">{msg.sender.name}</p>}
+                            <React.Fragment key={msg.id}>
+                                {/* Date separator */}
+                                {showDateSeparator && (
+                                    <div className="flex items-center justify-center my-3">
+                                        <div className="bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded-full">
+                                            {formatDateSeparator(msg.createdAt)}
+                                        </div>
+                                    </div>
+                                )}
+                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isNewSenderGroup ? 'mt-3' : 'mt-0.5'}`}>
+                                {/* Avatar for other users */}
+                                {!isOwn && (
+                                    <div className="w-8 h-8 mr-2 shrink-0">
+                                        {isLastInGroup ? (
+                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
+                                                {msg.sender.avatar ? (
+                                                    <img src={msg.sender.avatar} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-white font-semibold text-xs">{msg.sender.name.charAt(0).toUpperCase()}</span>
+                                                )}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                )}
+                                
+                                <div className="max-w-[75%]">
+                                    {/* Sender name with time */}
+                                    {!isOwn && isNewSenderGroup && (
+                                        <div className="flex items-center gap-2 mb-1 ml-1">
+                                            <span className="text-xs text-gray-700 font-medium">{msg.sender.name}</span>
+                                            <span className="text-xs text-gray-400">•</span>
+                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                        </div>
+                                    )}
+                                    {/* Time for own messages */}
+                                    {isOwn && isNewSenderGroup && (
+                                        <div className="flex justify-end mb-1 mr-1">
+                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                        </div>
+                                    )}
                                     <div className="relative">
                                         <div 
                                             className={`px-3 py-2 rounded-2xl ${
-                                                isOwn ? 'bg-blue-500 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'
-                                            } ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
+                                                isOwn ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+                                            } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''} ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
                                             onTouchStart={(e) => {
                                                 const target = e.target as HTMLElement;
                                                 if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.tagName === 'A') return;
@@ -1783,12 +2044,9 @@ const ChatPopup: React.FC = () => {
                                             ))}
                                         </div>
                                     )}
-                                    
-                                    <p className={`text-[10px] mt-0.5 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
-                                        {formatMessageTime(msg.createdAt)}
-                                    </p>
                                 </div>
                             </div>
+                            </React.Fragment>
                         );
                     })}
                     
@@ -1911,20 +2169,63 @@ const ChatPopup: React.FC = () => {
                             >
                                 <Camera size={20} />
                             </button>
-                            <input
-                                type="text"
-                                value={messageInput}
-                                onChange={(e) => handleInputChange(conversationId, e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        sendMessage(conversationId, messageInput);
-                                    }
-                                }}
-                                placeholder="Nhập tin nhắn..."
-                                className="flex-1 px-3 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-w-0"
-                                data-mobile-conversation-id={conversationId}
-                            />
+                            
+                            {/* Mobile Text Input with Mention Popup */}
+                            <div className="relative flex-1 min-w-0">
+                                <input
+                                    ref={el => { inputRefs.current[conversationId] = el; }}
+                                    type="text"
+                                    value={messageInput}
+                                    onChange={(e) => handleInputChange(conversationId, e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (showMentionPopup === conversationId) {
+                                            const suggestions = getMentionSuggestions(conversationId);
+                                            if (e.key === 'Escape') {
+                                                e.preventDefault();
+                                                setShowMentionPopup(null);
+                                            } else if (e.key === 'Enter' && suggestions.length > 0) {
+                                                e.preventDefault();
+                                                insertMention(conversationId, suggestions[0].user.name);
+                                            }
+                                        } else if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            sendMessage(conversationId, messageInput);
+                                        }
+                                    }}
+                                    placeholder="Nhập tin nhắn..."
+                                    className="w-full px-3 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    data-mobile-conversation-id={conversationId}
+                                />
+                                
+                                {/* Mobile Mention Popup */}
+                                {showMentionPopup === conversationId && (
+                                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-64 max-h-48 overflow-y-auto">
+                                        {getMentionSuggestions(conversationId).length > 0 ? (
+                                            getMentionSuggestions(conversationId).map((member) => (
+                                                <button
+                                                    key={member.user.id}
+                                                    onClick={() => insertMention(conversationId, member.user.name)}
+                                                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 active:bg-blue-100 transition-colors text-left"
+                                                >
+                                                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                        {member.user.avatarUrl ? (
+                                                            <img src={member.user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-medium text-gray-800 truncate">{member.user.name}</div>
+                                                        <div className="text-xs text-gray-500 truncate">{member.user.email}</div>
+                                                    </div>
+                                                </button>
+                                            ))
+                                        ) : (
+                                            <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy người dùng</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                             {/* Send Button - Always visible */}
                             <button
                                 onClick={() => sendMessage(conversationId, messageInput)}
@@ -2166,54 +2467,71 @@ const ChatPopup: React.FC = () => {
                 {/* Chat List Panel */}
                 {isOpen && (
                     <div className={`absolute ${isMobile ? 'fixed inset-0 z-50' : 'top-full right-0 mt-2 w-96'} bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${isMobile ? '' : 'max-h-[580px]'}`}>
-                        {/* Header - Modern gradient */}
-                        <div className="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 text-white shrink-0">
+                        {/* Header - Clean White Style */}
+                        <div className="bg-white border-b border-gray-100 shrink-0">
                             <div className="p-4 pb-3">
                                 <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
-                                            <MessageCircle size={22} className="text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-lg">Tin nhắn</h3>
-                                            <p className="text-xs text-blue-100">{conversations.length} cuộc trò chuyện</p>
-                                        </div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-bold text-xl text-gray-800">Chat</h3>
                                     </div>
                                     <div className="flex items-center gap-1">
+                                        <button
+                                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
+                                            title="Cài đặt"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="3"/>
+                                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                                            </svg>
+                                        </button>
                                         <button
                                             onClick={() => {
                                                 setShowCreateGroup(true);
                                                 fetchAllUsers();
                                             }}
-                                            className="p-2.5 hover:bg-white/20 rounded-xl transition-colors"
+                                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
                                             title="Tạo nhóm mới"
                                         >
-                                            <Plus size={22} />
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                                                <circle cx="9" cy="7" r="4"/>
+                                                <line x1="19" y1="8" x2="19" y2="14"/>
+                                                <line x1="22" y1="11" x2="16" y2="11"/>
+                                            </svg>
                                         </button>
                                         {isMobile && (
-                                            <button onClick={() => setIsOpen(false)} className="p-2.5 hover:bg-white/20 rounded-xl transition-colors">
-                                                <X size={22} />
+                                            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600">
+                                                <X size={20} />
                                             </button>
                                         )}
                                     </div>
                                 </div>
                                 
-                                {/* Search - Glass morphism style */}
+                                {/* Search - Clean style */}
                                 <div className="relative">
-                                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/60" />
+                                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                                     <input
                                         type="text"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="Tìm kiếm cuộc trò chuyện..."
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/15 backdrop-blur-sm text-white placeholder-white/60 focus:outline-none focus:bg-white/25 border border-white/20 focus:border-white/40 transition-all"
+                                        placeholder="Tìm kiếm mọi người..."
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-full bg-gray-100 text-gray-800 placeholder-gray-500 focus:outline-none focus:bg-gray-200 transition-all"
                                     />
                                 </div>
                             </div>
                         </div>
                         
-                        {/* Tabs - Modern pill style */}
-                        <div className="flex gap-1 p-2 bg-gray-50 shrink-0">
+                        {/* Recent conversations label */}
+                        <div className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2 bg-white border-b border-gray-100">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            Trò chuyện gần đây
+                        </div>
+                        
+                        {/* Hidden Tabs - keep for functionality */}
+                        <div className="hidden">
                             <button
                                 onClick={() => setSearchMode('conversations')}
                                 className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${
@@ -2267,71 +2585,131 @@ const ChatPopup: React.FC = () => {
                                         {filteredConversations.map(conv => (
                                             <div
                                                 key={conv.id}
-                                                onClick={() => openConversation(conv)}
-                                                className={`flex items-center gap-3 px-4 py-3 hover:bg-blue-50 cursor-pointer transition-all group ${
-                                                    conv.unreadCount > 0 ? 'bg-blue-50/50' : ''
+                                                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${
+                                                    conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
                                                 }`}
                                             >
-                                                <div className="relative shrink-0">
-                                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-md ${
-                                                        conv.type === 'GROUP' 
-                                                            ? 'bg-gradient-to-br from-purple-500 to-indigo-600' 
-                                                            : 'bg-gradient-to-br from-blue-500 to-blue-600'
-                                                    }`}>
-                                                        {conv.displayAvatar ? (
-                                                            <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
-                                                        ) : conv.type === 'GROUP' ? (
-                                                            <Users size={22} className="text-white" />
-                                                        ) : (
-                                                            conv.displayName.charAt(0).toUpperCase()
-                                                        )}
-                                                    </div>
-                                                    {/* Online indicator */}
-                                                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
-                                                    {conv.unreadCount > 0 && (
-                                                        <div className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5 shadow-lg animate-pulse">
-                                                            {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                                                <div className="flex-1 flex items-center gap-3" onClick={() => openConversation(conv)}>
+                                                    <div className="relative shrink-0">
+                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${
+                                                            conv.type === 'GROUP' 
+                                                                ? 'bg-gradient-to-br from-purple-500 to-indigo-600' 
+                                                                : 'bg-gradient-to-br from-blue-500 to-blue-600'
+                                                        }`}>
+                                                            {conv.displayAvatar ? (
+                                                                <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
+                                                            ) : conv.type === 'GROUP' ? (
+                                                                <Users size={22} className="text-white" />
+                                                            ) : (
+                                                                conv.displayName.charAt(0).toUpperCase()
+                                                            )}
                                                         </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between mb-0.5">
-                                                        <p className={`font-semibold truncate transition-colors ${
-                                                            conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
-                                                        } group-hover:text-blue-600`}>
-                                                            {conv.displayName}
-                                                        </p>
-                                                        {conv.lastMessage && (
-                                                            <span className={`text-xs shrink-0 ml-2 ${
-                                                                conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
-                                                            }`}>
-                                                                {formatMessageTime(conv.lastMessage.createdAt)}
-                                                            </span>
+                                                        {/* Online indicator */}
+                                                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                                                        {conv.unreadCount > 0 && (
+                                                            <div className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1">
+                                                                {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    {typingUsers[conv.id] && typingUsers[conv.id].length > 0 ? (
-                                                        <p className="text-sm text-blue-600 font-medium italic flex items-center gap-1">
-                                                            <span className="inline-flex gap-0.5">
-                                                                <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                                <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                                <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                                            </span>
-                                                            đang soạn tin nhắn...
-                                                        </p>
-                                                    ) : conv.lastMessage ? (
-                                                        <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
-                                                            {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
-                                                            {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
-                                                             conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
-                                                             conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
-                                                             conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
-                                                        </p>
-                                                    ) : (
-                                                        <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center justify-between mb-0.5">
+                                                            <p className={`font-semibold truncate ${
+                                                                conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
+                                                            }`}>
+                                                                {conv.displayName}
+                                                            </p>
+                                                            {conv.lastMessage && (
+                                                                <span className={`text-xs shrink-0 ml-2 ${
+                                                                    conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
+                                                                }`}>
+                                                                    {formatMessageTime(conv.lastMessage.createdAt)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {typingUsers[conv.id] && typingUsers[conv.id].length > 0 ? (
+                                                            <p className="text-sm text-blue-600 font-medium italic flex items-center gap-1">
+                                                                <span className="inline-flex gap-0.5">
+                                                                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                                </span>
+                                                                đang soạn...
+                                                            </p>
+                                                        ) : conv.lastMessage ? (
+                                                            <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                                                                {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
+                                                                {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
+                                                                 conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
+                                                                 conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
+                                                                 conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
+                                                            </p>
+                                                        ) : (
+                                                            <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Menu 3 chấm */}
+                                                <div className="relative shrink-0">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setConversationMenuOpen(conversationMenuOpen === conv.id ? null : conv.id);
+                                                        }}
+                                                        className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-all"
+                                                    >
+                                                        <MoreVertical size={18} />
+                                                    </button>
+                                                    
+                                                    {conversationMenuOpen === conv.id && (
+                                                        <>
+                                                            <div className="fixed inset-0 z-[9998]" onClick={() => setConversationMenuOpen(null)} />
+                                                            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999]">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setConversationMenuOpen(null);
+                                                                        // TODO: Implement pin conversation
+                                                                        alert('Chức năng ghim sẽ được phát triển');
+                                                                    }}
+                                                                    className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-sm"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <line x1="12" y1="17" x2="12" y2="22"/>
+                                                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                                                                    </svg>
+                                                                    Ghim cuộc trò chuyện
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setConversationMenuOpen(null);
+                                                                        deleteConversation(conv.id);
+                                                                    }}
+                                                                    className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 text-sm"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                    Xóa cuộc trò chuyện
+                                                                </button>
+                                                            </div>
+                                                        </>
                                                     )}
                                                 </div>
                                             </div>
                                         ))}
+                                        
+                                        {/* XEM TẤT CẢ button */}
+                                        {filteredConversations.length > 0 && (
+                                            <div className="py-3 text-center border-t border-gray-100">
+                                                <button
+                                                    onClick={() => setSearchMode('users')}
+                                                    className="text-red-500 hover:text-red-600 font-medium text-sm"
+                                                >
+                                                    XEM TẤT CẢ
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )
                             ) : (
@@ -2411,6 +2789,7 @@ const ChatPopup: React.FC = () => {
                     fileName={showOnlyOffice.filename}
                     onClose={() => setShowOnlyOffice(null)}
                     token={token}
+                    type="chat"
                 />
             )}
 

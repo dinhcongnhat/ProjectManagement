@@ -225,4 +225,13 @@
   .animate-slideDown {
     animation: slideDown 0.15s ease-out;
   }
+
+  /* Hide sidebar when OnlyOffice viewer is open */
+  body.onlyoffice-viewer-open aside {
+    display: none !important;
+  }
+  
+  body.onlyoffice-viewer-open .lg\:ml-64 {
+    margin-left: 0 !important;
+  }
 }

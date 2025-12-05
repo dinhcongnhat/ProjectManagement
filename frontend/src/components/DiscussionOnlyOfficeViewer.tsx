@@ -8,6 +8,7 @@ interface DiscussionOnlyOfficeViewerProps {
     onClose: () => void;
     token: string;
     onOpenChange?: (isOpen: boolean) => void; // Callback to notify parent about open/close state
+    type?: 'discussion' | 'chat'; // Type of message (default: discussion)
 }
 
 declare global {
@@ -53,12 +54,23 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     return window._onlyofficeScriptLoading;
 };
 
-export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token, onOpenChange }: DiscussionOnlyOfficeViewerProps) => {
+export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token, onOpenChange, type = 'discussion' }: DiscussionOnlyOfficeViewerProps) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [scriptLoaded, setScriptLoaded] = useState(false);
     const editorInstanceRef = useRef<object | null>(null);
+    
+    // Build API path based on type
+    const apiPath = type === 'chat' ? 'onlyoffice/chat' : 'onlyoffice/discussion';
+
+    // Hide sidebar when viewer opens (add class to body)
+    useEffect(() => {
+        document.body.classList.add('onlyoffice-viewer-open');
+        return () => {
+            document.body.classList.remove('onlyoffice-viewer-open');
+        };
+    }, []);
 
     // Notify parent when viewer opens/closes
     useEffect(() => {
@@ -94,7 +106,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
 
                 // Start loading script and checking file in parallel
                 const scriptPromise = loadOnlyOfficeScript(onlyofficeUrl);
-                const checkPromise = fetch(`${API_URL}/onlyoffice/discussion/check/${messageId}`, {
+                const checkPromise = fetch(`${API_URL}/${apiPath}/check/${messageId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -128,7 +140,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                 editorInstanceRef.current = null;
             }
         };
-    }, [messageId, token]);
+    }, [messageId, token, apiPath]);
 
     // Initialize editor when script is loaded
     useEffect(() => {
@@ -136,8 +148,8 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
 
         const initEditor = async () => {
             try {
-                // Get OnlyOffice configuration from backend (view only for discussions)
-                const response = await fetch(`${API_URL}/onlyoffice/discussion/config/${messageId}`, {
+                // Get OnlyOffice configuration from backend (view only for discussions/chat)
+                const response = await fetch(`${API_URL}/${apiPath}/config/${messageId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -188,7 +200,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
         };
 
         initEditor();
-    }, [scriptLoaded, messageId, token]);
+    }, [scriptLoaded, messageId, token, apiPath]);
 
     return (
         <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col">

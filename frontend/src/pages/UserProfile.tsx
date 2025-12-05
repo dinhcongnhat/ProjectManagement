@@ -99,9 +99,8 @@ export default function UserProfile() {
             const formData = new FormData();
             formData.append('avatar', croppedBlob, 'avatar.jpg');
 
-            const response = await api.post('/users/profile/avatar', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            // Don't set Content-Type manually - let axios/browser set it with proper boundary
+            const response = await api.post('/users/profile/avatar', formData);
 
             setProfile(response.data);
             alert('Cập nhật ảnh đại diện thành công!');

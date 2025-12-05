@@ -424,14 +424,22 @@ const MyTasks = () => {
 
             {view === 'kanban' && (
                 <DndContext onDragEnd={handleDragEnd}>
-                    <div className="grid grid-cols-3 gap-6 h-[500px]">
+                    {/* Mobile: Vertical stack, Desktop: 3 columns */}
+                    <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6 lg:h-[500px]">
                         {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
                             <DroppableColumn key={status} id={status}>
-                                <h3 className="font-bold text-gray-700 mb-2">{status === 'TODO' ? 'Cần làm' : status === 'IN_PROGRESS' ? 'Đang làm' : 'Hoàn thành'}</h3>
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="font-bold text-gray-700">
+                                        {status === 'TODO' ? '📋 Cần làm' : status === 'IN_PROGRESS' ? '🔄 Đang làm' : '✅ Hoàn thành'}
+                                    </h3>
+                                    <span className="text-sm font-medium text-gray-500 bg-white px-2 py-0.5 rounded-full">
+                                        {tasks.filter(t => t.status === status).length}
+                                    </span>
+                                </div>
                                 {tasks.filter(t => t.status === status).map(task => (
                                     <DraggableTask key={task.id} task={task}>
-                                        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 group relative cursor-move hover:shadow-md transition-shadow">
-                                            <h4 className="font-medium text-gray-900 pr-16">{task.title}</h4>
+                                        <div className="bg-white p-3 lg:p-4 rounded-lg shadow-sm border border-gray-200 group relative cursor-move hover:shadow-md transition-shadow">
+                                            <h4 className="font-medium text-gray-900 text-sm lg:text-base pr-12 lg:pr-16">{task.title}</h4>
                                             <p className="text-xs text-gray-500 mt-1">{task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}</p>
 
                                             {/* Note indicator */}
@@ -476,56 +484,101 @@ const MyTasks = () => {
             )}
 
             {view === 'gantt' && (
-                <div className="bg-white p-6 rounded-xl border border-gray-200 overflow-x-auto">
-                    <h3 className="font-bold text-gray-900 mb-4">Timeline</h3>
-                    <div className="min-w-[800px]">
-                        {/* Simple Gantt implementation */}
-                        <div className="flex border-b border-gray-200 pb-2 mb-4">
-                            <div className="w-1/4 font-medium text-gray-500">Task</div>
-                            <div className="w-3/4 flex justify-between text-gray-500 text-sm">
-                                <span>Start</span>
-                                <span>End</span>
-                            </div>
-                        </div>
+                <div className="bg-white p-4 lg:p-6 rounded-xl border border-gray-200">
+                    <h3 className="font-bold text-gray-900 mb-4">📅 Timeline</h3>
+                    
+                    {/* Mobile: Card layout */}
+                    <div className="lg:hidden space-y-3">
                         {tasks.map(task => (
-                            <div key={task.id} className="flex items-center py-2 border-b border-gray-50 group">
-                                <div className="w-1/4 pr-4 truncate font-medium flex justify-between items-center gap-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span className="truncate">{task.title}</span>
-                                        {task.note && (
-                                            <StickyNote size={12} className="text-amber-500 shrink-0" />
-                                        )}
+                            <div key={task.id} className="p-3 border border-gray-100 rounded-lg bg-gray-50 group">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <span className="font-medium text-sm truncate">{task.title}</span>
+                                        {task.note && <StickyNote size={12} className="text-amber-500 shrink-0" />}
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                    <div className="flex gap-1 shrink-0">
                                         <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
                                         {task.type === 'PERSONAL' && (
                                             <>
-                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
+                                                <button onClick={() => openEditModal(task)} className="p-1.5 text-gray-400 hover:text-blue-600">
                                                     <Pencil size={14} />
                                                 </button>
-                                                <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
+                                                <button onClick={() => handleDeleteTask(task.id)} className="p-1.5 text-gray-400 hover:text-red-600">
                                                     <Trash2 size={14} />
                                                 </button>
                                             </>
                                         )}
                                     </div>
                                 </div>
-                                <div className="w-3/4 relative h-8 bg-gray-50 rounded">
-                                    {task.startDate && task.endDate && (
-                                        <div
-                                            className="absolute h-full bg-blue-500 rounded opacity-75 flex items-center px-2 text-white text-xs"
-                                            style={{
-                                                left: '0%', // Mock positioning
-                                                width: '50%' // Mock width
-                                            }}
-                                        >
-                                            {new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}
-                                        </div>
-                                    )}
-                                    {(!task.startDate || !task.endDate) && <span className="text-xs text-gray-400 p-2">No dates set</span>}
+                                <div className={`text-xs px-2 py-1 rounded inline-block ${
+                                    task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
+                                    task.status === 'IN_PROGRESS' ? 'bg-orange-100 text-orange-600' :
+                                    'bg-green-100 text-green-600'
+                                }`}>
+                                    {task.status === 'TODO' ? 'Todo' : task.status === 'IN_PROGRESS' ? 'Đang làm' : 'Xong'}
                                 </div>
+                                {task.startDate && task.endDate ? (
+                                    <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+                                        <Calendar size={12} />
+                                        <span>{new Date(task.startDate).toLocaleDateString('vi-VN')} - {new Date(task.endDate).toLocaleDateString('vi-VN')}</span>
+                                    </div>
+                                ) : (
+                                    <div className="mt-2 text-xs text-gray-400">Chưa đặt thời gian</div>
+                                )}
                             </div>
                         ))}
+                    </div>
+
+                    {/* Desktop: Table layout */}
+                    <div className="hidden lg:block overflow-x-auto">
+                        <div className="min-w-[800px]">
+                            <div className="flex border-b border-gray-200 pb-2 mb-4">
+                                <div className="w-1/4 font-medium text-gray-500">Task</div>
+                                <div className="w-3/4 flex justify-between text-gray-500 text-sm">
+                                    <span>Start</span>
+                                    <span>End</span>
+                                </div>
+                            </div>
+                            {tasks.map(task => (
+                                <div key={task.id} className="flex items-center py-2 border-b border-gray-50 group">
+                                    <div className="w-1/4 pr-4 truncate font-medium flex justify-between items-center gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span className="truncate">{task.title}</span>
+                                            {task.note && (
+                                                <StickyNote size={12} className="text-amber-500 shrink-0" />
+                                            )}
+                                        </div>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                            <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
+                                            {task.type === 'PERSONAL' && (
+                                                <>
+                                                    <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                    <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="w-3/4 relative h-8 bg-gray-50 rounded">
+                                        {task.startDate && task.endDate && (
+                                            <div
+                                                className="absolute h-full bg-blue-500 rounded opacity-75 flex items-center px-2 text-white text-xs"
+                                                style={{
+                                                    left: '0%',
+                                                    width: '50%'
+                                                }}
+                                            >
+                                                {new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}
+                                            </div>
+                                        )}
+                                        {(!task.startDate || !task.endDate) && <span className="text-xs text-gray-400 p-2">No dates set</span>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}

@@ -263,10 +263,10 @@ export default function CompanyChat() {
         formData.append('file', file);
 
         try {
+            // Don't set Content-Type manually - browser will set it with proper boundary
             const response = await api.post(
                 `/chat/conversations/${selectedConversation.id}/messages/file`,
-                formData,
-                { headers: { 'Content-Type': 'multipart/form-data' } }
+                formData
             );
 
             const socket = socketRef.current;

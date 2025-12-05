@@ -65,13 +65,17 @@ export const checkMinioConnection = async (): Promise<boolean> => {
 
 export const ensureBucketExists = async (): Promise<void> => {
     try {
+        console.log(`[MinIO] Checking if bucket '${bucketName}' exists...`);
         const exists = await minioClient.bucketExists(bucketName);
         if (!exists) {
+            console.log(`[MinIO] Bucket '${bucketName}' does not exist, creating...`);
             await minioClient.makeBucket(bucketName, 'us-east-1'); // Region is required but often ignored by MinIO standalone
-            console.log(`Bucket '${bucketName}' created successfully.`);
+            console.log(`[MinIO] Bucket '${bucketName}' created successfully.`);
+        } else {
+            console.log(`[MinIO] Bucket '${bucketName}' already exists.`);
         }
     } catch (error) {
-        console.error(`Error ensuring bucket '${bucketName}' exists:`, error);
+        console.error(`[MinIO] Error ensuring bucket '${bucketName}' exists:`, error);
         throw error;
     }
 };
@@ -82,14 +86,17 @@ export const uploadFile = async (
     metaData: Record<string, string> = {}
 ): Promise<string> => {
     try {
+        console.log(`[MinIO] uploadFile starting for: ${fileName}`);
         await ensureBucketExists();
         
         // Normalize Vietnamese filename
         const normalizedFileName = normalizeVietnameseFilename(fileName);
+        console.log(`[MinIO] Normalized filename: ${normalizedFileName}`);
         
         // Determine if file should go to onlyoffice folder
         const isOffice = isOfficeFile(normalizedFileName);
         const finalFileName = isOffice ? `${onlyofficePrefix}${normalizedFileName}` : normalizedFileName;
+        console.log(`[MinIO] Final filename: ${finalFileName}, isOffice: ${isOffice}`);
         
         // Ensure Content-Type header includes charset for text-based files
         const finalMetaData: Record<string, string> = { ...metaData };
