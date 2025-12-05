@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Clock, Loader2, ChevronDown, ChevronUp, Edit, TrendingUp, CheckCircle, AlertCircle, FileText, RefreshCw } from 'lucide-react';
+import { API_URL } from '../config/api';
 
 interface Activity {
     id: number;
@@ -18,8 +19,6 @@ interface Activity {
 interface ActivityHistoryPanelProps {
     projectId: number;
 }
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 export const ActivityHistoryPanel = ({ projectId }: ActivityHistoryPanelProps) => {
     const [activities, setActivities] = useState<Activity[]>([]);

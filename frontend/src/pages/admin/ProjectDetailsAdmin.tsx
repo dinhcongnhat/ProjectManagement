@@ -9,7 +9,7 @@ import { OnlyOfficeViewer } from '../../components/OnlyOfficeViewer';
 import { getDisplayFilename } from '../../utils/filenameUtils';
 
 // Office file extensions supported by OnlyOffice
-const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf'];
+const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
 const isOfficeFile = (fileName: string): boolean => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     return officeExtensions.includes(ext);

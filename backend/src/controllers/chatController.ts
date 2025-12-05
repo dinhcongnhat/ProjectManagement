@@ -583,6 +583,71 @@ export const leaveConversation = async (req: AuthRequest, res: Response) => {
     }
 };
 
+// Delete entire conversation (only for admins or private chat participants)
+export const deleteConversation = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { id } = req.params;
+        const conversationId = Number(id);
+
+        // Check if user is a member
+        const member = await prisma.conversationMember.findUnique({
+            where: {
+                conversationId_userId: {
+                    conversationId,
+                    userId
+                }
+            }
+        });
+
+        if (!member) {
+            return res.status(403).json({ message: 'You are not a member of this conversation' });
+        }
+
+        // Get conversation to check type
+        const conversation = await prisma.conversation.findUnique({
+            where: { id: conversationId }
+        });
+
+        if (!conversation) {
+            return res.status(404).json({ message: 'Conversation not found' });
+        }
+
+        // For GROUP conversations, only admin can delete
+        if (conversation.type === 'GROUP' && !member.isAdmin) {
+            return res.status(403).json({ message: 'Only admin can delete group conversation' });
+        }
+
+        // Delete all messages first (including their reactions)
+        await prisma.chatMessageReaction.deleteMany({
+            where: {
+                message: {
+                    conversationId
+                }
+            }
+        });
+
+        await prisma.chatMessage.deleteMany({
+            where: { conversationId }
+        });
+
+        // Delete all members
+        await prisma.conversationMember.deleteMany({
+            where: { conversationId }
+        });
+
+        // Delete the conversation
+        await prisma.conversation.delete({
+            where: { id: conversationId }
+        });
+
+        res.json({ message: 'Conversation deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting conversation:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Cập nhật thông tin nhóm
 export const updateConversation = async (req: AuthRequest, res: Response) => {
     try {
@@ -936,6 +1001,65 @@ export const markConversationAsRead = async (req: AuthRequest, res: Response) =>
         res.json({ message: 'Marked as read' });
     } catch (error) {
         console.error('Error marking as read:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Xóa tin nhắn
+export const deleteMessage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { messageId } = req.params;
+
+        // Tìm tin nhắn
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) },
+            include: {
+                conversation: {
+                    include: {
+                        members: true
+                    }
+                }
+            }
+        });
+
+        if (!message) {
+            return res.status(404).json({ message: 'Message not found' });
+        }
+
+        // Kiểm tra quyền xóa (chỉ người gửi hoặc admin nhóm mới được xóa)
+        const member = message.conversation.members.find(m => m.userId === userId);
+        if (!member) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const isOwner = message.senderId === userId;
+        const isAdmin = member.isAdmin;
+
+        if (!isOwner && !isAdmin) {
+            return res.status(403).json({ message: 'Only message owner or admin can delete' });
+        }
+
+        // Xóa reactions của tin nhắn trước
+        await (prisma as any).chatMessageReaction.deleteMany({
+            where: { messageId: Number(messageId) }
+        });
+
+        // Xóa tin nhắn
+        await prisma.chatMessage.delete({
+            where: { id: Number(messageId) }
+        });
+
+        // Emit WebSocket event
+        const io = getIO();
+        io.to(`conversation:${message.conversationId}`).emit('chat:message_deleted', {
+            conversationId: message.conversationId,
+            messageId: Number(messageId)
+        });
+
+        res.json({ message: 'Message deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting message:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };

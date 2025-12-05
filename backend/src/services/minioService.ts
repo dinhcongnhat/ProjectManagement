@@ -8,7 +8,7 @@ export const discussionPrefix = 'discussions/';
 export const onlyofficePrefix = 'onlyoffice/';
 
 // Office file extensions that should be opened with OnlyOffice
-export const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf'];
+export const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
 
 // Check if file is an Office document
 export const isOfficeFile = (fileName: string): boolean => {

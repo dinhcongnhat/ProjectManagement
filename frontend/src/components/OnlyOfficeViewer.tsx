@@ -17,6 +17,12 @@ declare global {
     }
 }
 
+// Check if mobile device
+const isMobile = typeof window !== 'undefined' && (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    window.innerWidth <= 768
+);
+
 // Singleton script loader - prevents multiple loads
 const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     // Return existing promise if already loading
@@ -128,10 +134,29 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
 
                 const data = await response.json();
                 
-                // Add token to config
+                // Add token to config with mobile optimizations
                 const configWithToken = {
                     ...data.config,
                     token: data.token,
+                    // Mobile-specific settings
+                    ...(isMobile && {
+                        width: '100%',
+                        height: '100%',
+                        editorConfig: {
+                            ...data.config.editorConfig,
+                            customization: {
+                                ...data.config.editorConfig?.customization,
+                                compactHeader: true,
+                                compactToolbar: true,
+                                toolbarNoTabs: true,
+                                hideRightMenu: true,
+                                leftMenu: false,
+                                rightMenu: false,
+                                statusBar: false,
+                            },
+                            mobile: true,
+                        }
+                    })
                 };
 
                 // Initialize editor
@@ -150,7 +175,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
     }, [scriptLoaded, projectId, token]);
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col">
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-1.5 bg-white border-b shadow-sm">
                 <div className="flex items-center gap-2">

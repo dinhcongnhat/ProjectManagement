@@ -174,6 +174,11 @@ io.on('connection', (socket) => {
         console.log(`User ${socket.data.userId} left project ${projectId}`);
     });
 
+    // Heartbeat ping/pong for PWA connection health check
+    socket.on('ping', () => {
+        socket.emit('pong');
+    });
+
     // Send message
     socket.on('send_message', async (data: { projectId: number; message: any }) => {
         try {
@@ -196,6 +201,25 @@ io.on('connection', (socket) => {
     socket.on('stop_typing', (data: { projectId: number }) => {
         socket.to(`project:${data.projectId}`).emit('user_stop_typing', {
             userId: socket.data.userId
+        });
+    });
+
+    // ===== DISCUSSION EVENTS =====
+    
+    // Discussion typing indicator
+    socket.on('discussion:typing', (data: { projectId: number; userId: number; userName: string }) => {
+        socket.to(`project:${data.projectId}`).emit('discussion:typing', {
+            projectId: data.projectId,
+            userId: data.userId,
+            userName: data.userName
+        });
+    });
+
+    // Discussion stop typing
+    socket.on('discussion:stop_typing', (data: { projectId: number; userId: number }) => {
+        socket.to(`project:${data.projectId}`).emit('discussion:stop_typing', {
+            projectId: data.projectId,
+            userId: data.userId
         });
     });
 

@@ -2,12 +2,45 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     MessageCircle, X, Search, Users, MessageSquare, Send, Smile, Paperclip,
     Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
-    Volume2, FileText, Download, Eye, Plus, Check, Loader2, Camera
+    Volume2, FileText, Download, Eye, Plus, Check, Loader2, Camera, Trash2, MoreVertical
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import api, { API_URL } from '../config/api';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
+import ImageCropper from './ImageCropper';
+
+// ==================== ENCRYPTION UTILITIES ====================
+const ENCRYPTION_KEY = 'JTSC_CHAT_2025'; // Base key for encryption
+
+// Simple XOR-based encryption for message content
+const encryptMessage = (text: string): string => {
+    if (!text) return text;
+    try {
+        const encoded = btoa(unescape(encodeURIComponent(text)));
+        let result = '';
+        for (let i = 0; i < encoded.length; i++) {
+            result += String.fromCharCode(encoded.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length));
+        }
+        return btoa(result);
+    } catch {
+        return text;
+    }
+};
+
+const decryptMessage = (encrypted: string): string => {
+    if (!encrypted) return encrypted;
+    try {
+        const decoded = atob(encrypted);
+        let result = '';
+        for (let i = 0; i < decoded.length; i++) {
+            result += String.fromCharCode(decoded.charCodeAt(i) ^ ENCRYPTION_KEY.charCodeAt(i % ENCRYPTION_KEY.length));
+        }
+        return decodeURIComponent(escape(atob(result)));
+    } catch {
+        return encrypted; // Return original if decryption fails (for non-encrypted messages)
+    }
+};
 
 // ==================== TYPES ====================
 interface User {
@@ -79,8 +112,29 @@ interface ChatWindow {
 }
 
 // ==================== UTILITIES ====================
-const EMOJI_LIST = ['😀', '😂', '😍', '🥰', '😎', '🤔', '😢', '😡', '👍', '👎', '❤️', '🔥', '🎉', '👏', '🙏', '💪'];
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+
+// Common emojis for quick picker
+const COMMON_EMOJIS = [
+    // Faces
+    '😀', '😃', '😄', '😁', '😊', '🥰', '😍', '🤩', '😘', '😗',
+    '😋', '😛', '🤪', '😎', '🤗', '🤔', '🤫', '🤭', '😏', '😐',
+    '😑', '🙄', '😌', '😴', '🥱', '😷', '🤒', '🤕', '🤢', '🤮',
+    '😵', '🥴', '🤯', '🤠', '🥳', '😎', '🤓', '🧐', '😕', '😟',
+    '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨',
+    '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩',
+    '😫', '🥱', '😤', '😡', '😠', '🤬', '😈', '👿', '💀', '☠️',
+    // Gestures
+    '👍', '👎', '👊', '✊', '🤛', '🤜', '🤞', '✌️', '🤟', '🤘',
+    '👌', '🤌', '🤏', '👈', '👉', '👆', '👇', '☝️', '✋', '🤚',
+    '🖐️', '🖖', '👋', '🤙', '💪', '🦾', '🙏', '🤝', '👏', '🙌',
+    // Hearts
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔',
+    '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '♥️',
+    // Objects
+    '🎉', '🎊', '🎁', '🎂', '🍰', '☕', '🍵', '🍺', '🍻', '🥂',
+    '🔥', '✨', '⭐', '🌟', '💫', '🎯', '🎪', '🎭', '🎨', '🎬',
+];
 
 const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -102,7 +156,7 @@ const formatMessageTime = (dateStr: string): string => {
 const isOfficeFile = (filename: string | null): boolean => {
     if (!filename) return false;
     const ext = filename.split('.').pop()?.toLowerCase() || '';
-    return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv', 'txt'].includes(ext);
+    return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv', 'txt', 'pdf'].includes(ext);
 };
 
 const extractFilename = (path: string): string => {
@@ -144,7 +198,8 @@ const ChatPopup: React.FC = () => {
     // Input state
     const [messageInputs, setMessageInputs] = useState<Record<number, string>>({});
     const [showReactionPicker, setShowReactionPicker] = useState<number | null>(null);
-    const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null); // Emoji picker for input
+    const [mobileMenuOpen, setMobileMenuOpen] = useState<number | null>(null); // Mobile header menu
     const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
     
     // Typing state
@@ -181,6 +236,11 @@ const ChatPopup: React.FC = () => {
     
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    
+    // Image cropper state
+    const [showImageCropper, setShowImageCropper] = useState(false);
+    const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
+    const [cropTarget, setCropTarget] = useState<'profile' | 'group'>('group');
 
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -204,42 +264,6 @@ const ChatPopup: React.FC = () => {
         }
     }, [isOpen]);
 
-    // Polling for active conversations to ensure realtime updates
-    useEffect(() => {
-        if (chatWindows.length === 0 && !mobileActiveChat) return;
-
-        // Poll every 3 seconds for new messages in active conversations
-        const pollMessages = async () => {
-            const activeConvIds = [
-                ...chatWindows.map(w => w.conversationId),
-                mobileActiveChat?.conversationId
-            ].filter(Boolean) as number[];
-
-            for (const convId of activeConvIds) {
-                try {
-                    const messages = await fetchMessages(convId);
-                    
-                    // Update chat windows
-                    setChatWindows(prev => prev.map(w =>
-                        w.conversationId === convId
-                            ? { ...w, messages }
-                            : w
-                    ));
-
-                    // Update mobile chat
-                    if (mobileActiveChat?.conversationId === convId) {
-                        setMobileActiveChat(prev => prev ? { ...prev, messages } : null);
-                    }
-                } catch (error) {
-                    // Silently ignore polling errors
-                }
-            }
-        };
-
-        const interval = setInterval(pollMessages, 3000);
-        return () => clearInterval(interval);
-    }, [chatWindows.length, mobileActiveChat?.conversationId]);
-
     useEffect(() => {
         if (searchMode === 'users' && searchQuery) {
             const timer = setTimeout(() => fetchSearchUsers(searchQuery), 300);
@@ -247,9 +271,10 @@ const ChatPopup: React.FC = () => {
         }
     }, [searchQuery, searchMode]);
 
-    useEffect(() => {
+    // Scroll to bottom only when sending new message, not on every render
+    const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatWindows, mobileActiveChat]);
+    };
 
     // Cleanup audio and recording on unmount
     useEffect(() => {
@@ -442,6 +467,27 @@ const ChatPopup: React.FC = () => {
         
         socketRef.current.on('chat:conversation_updated', handleConversationUpdated);
 
+        // Listen for message deleted
+        const handleMessageDeleted = (data: { conversationId: number; messageId: number }) => {
+            const removeMessage = (messages: Message[]) =>
+                messages.filter(m => m.id !== data.messageId);
+
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === data.conversationId
+                    ? { ...w, messages: removeMessage(w.messages) }
+                    : w
+            ));
+
+            setMobileActiveChat(prev => {
+                if (prev?.conversationId === data.conversationId) {
+                    return { ...prev, messages: removeMessage(prev.messages) };
+                }
+                return prev;
+            });
+        };
+        
+        socketRef.current.on('chat:message_deleted', handleMessageDeleted);
+
         return () => {
             socketRef.current?.off('chat:new_message', handleNewMessage);
             socketRef.current?.off('chat:typing', handleTyping);
@@ -450,6 +496,7 @@ const ChatPopup: React.FC = () => {
             socketRef.current?.off('chat:reaction_removed', handleReactionRemoved);
             socketRef.current?.off('chat:new_conversation', handleNewConversation);
             socketRef.current?.off('chat:conversation_updated', handleConversationUpdated);
+            socketRef.current?.off('chat:message_deleted', handleMessageDeleted);
         };
     }, [connected, socketRef, user?.id]); // Removed mobileActiveChat from dependencies
 
@@ -676,6 +723,30 @@ const ChatPopup: React.FC = () => {
         if (isMobile) setMobileActiveChat(null);
     };
 
+    // Delete entire conversation
+    const deleteConversation = async (conversationId: number) => {
+        if (!confirm('Bạn có chắc muốn xóa cuộc hội thoại này? Tất cả tin nhắn sẽ bị xóa vĩnh viễn.')) {
+            return;
+        }
+        
+        try {
+            await api.delete(`/chat/conversations/${conversationId}`);
+            
+            // Remove from conversations list
+            setConversations(prev => prev.filter(c => c.id !== conversationId));
+            
+            // Close any open window for this conversation
+            setChatWindows(prev => prev.filter(w => w.conversationId !== conversationId));
+            
+            if (mobileActiveChat?.conversationId === conversationId) {
+                setMobileActiveChat(null);
+            }
+        } catch (error) {
+            console.error('Error deleting conversation:', error);
+            alert('Không thể xóa cuộc hội thoại');
+        }
+    };
+
     const toggleMinimize = (windowId: number) => {
         setChatWindows(prev => prev.map(w =>
             w.id === windowId ? { ...w, isMinimized: !w.isMinimized } : w
@@ -716,6 +787,9 @@ const ChatPopup: React.FC = () => {
     const sendMessage = async (conversationId: number, content: string) => {
         if (!content.trim()) return;
 
+        // Encrypt the message content
+        const encryptedContent = encryptMessage(content.trim());
+
         // Stop typing indicator
         if (socketRef.current?.connected) {
             socketRef.current.emit('chat:stop_typing', { 
@@ -724,10 +798,10 @@ const ChatPopup: React.FC = () => {
             });
         }
 
-        // Optimistic update - Add message immediately
+        // Optimistic update - Add message immediately (show original content locally)
         const optimisticMessage: Message = {
             id: Date.now(), // Temporary ID
-            content: content.trim(),
+            content: content.trim(), // Show original content locally
             messageType: 'TEXT',
             attachment: null,
             attachmentUrl: null,
@@ -753,20 +827,19 @@ const ChatPopup: React.FC = () => {
             setMobileActiveChat(prev => prev ? { ...prev, messages: [...prev.messages, optimisticMessage] } : null);
         }
 
+        // Scroll to bottom
+        setTimeout(scrollToBottom, 100);
+
         // Clear input immediately
         setMessageInputs(prev => ({ ...prev, [conversationId]: '' }));
 
         try {
-            console.log('Sending message to:', `/chat/conversations/${conversationId}/messages`);
-            console.log('Message payload:', { content: content.trim(), messageType: 'TEXT' });
-            
             const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
-                content: content.trim(),
+                content: encryptedContent,
                 messageType: 'TEXT'
             });
 
-            console.log('Message sent successfully:', response.data);
-            const realMessage = response.data;
+            const realMessage = { ...response.data, content: content.trim() }; // Keep original content for display
             
             // Replace optimistic message with real one from server
             setChatWindows(prev => prev.map(w =>
@@ -800,6 +873,32 @@ const ChatPopup: React.FC = () => {
             }
             
             alert('Không thể gửi tin nhắn. Vui lòng thử lại.');
+        }
+    };
+
+    // Delete message
+    const deleteMessage = async (messageId: number, conversationId: number) => {
+        if (!confirm('Bạn có chắc muốn xóa tin nhắn này?')) return;
+        
+        try {
+            await api.delete(`/chat/messages/${messageId}`);
+            
+            // Optimistic update
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === conversationId
+                    ? { ...w, messages: w.messages.filter(m => m.id !== messageId) }
+                    : w
+            ));
+
+            if (mobileActiveChat?.conversationId === conversationId) {
+                setMobileActiveChat(prev => prev ? { 
+                    ...prev, 
+                    messages: prev.messages.filter(m => m.id !== messageId)
+                } : null);
+            }
+        } catch (error) {
+            console.error('Error deleting message:', error);
+            alert('Không thể xóa tin nhắn');
         }
     };
 
@@ -1082,7 +1181,17 @@ const ChatPopup: React.FC = () => {
                     <div>
                         {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{msg.content}</p>}
                         {msg.attachmentUrl && (
-                            <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwn ? 'bg-white/10' : 'bg-gray-100'}`}>
+                            <div 
+                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${isOwn ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (isOfficeFile(filename)) {
+                                        setShowOnlyOffice({ messageId: msg.id, filename });
+                                    } else {
+                                        window.open(msg.attachmentUrl!, '_blank');
+                                    }
+                                }}
+                            >
                                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white ${getFileIconColor(filename)}`}>
                                     <FileText size={20} />
                                 </div>
@@ -1090,11 +1199,17 @@ const ChatPopup: React.FC = () => {
                                     <p className={`text-sm font-medium truncate ${isOwn ? 'text-white' : 'text-gray-800'}`}>
                                         {filename}
                                     </p>
+                                    <p className={`text-xs ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>
+                                        {isOfficeFile(filename) ? 'Click để xem' : 'Click để tải'}
+                                    </p>
                                 </div>
                                 <div className="flex items-center gap-1">
                                     {isOfficeFile(filename) && (
                                         <button
-                                            onClick={() => setShowOnlyOffice({ messageId: msg.id, filename })}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowOnlyOffice({ messageId: msg.id, filename });
+                                            }}
                                             className={`p-1.5 rounded ${isOwn ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
                                             title="Xem file"
                                         >
@@ -1105,6 +1220,7 @@ const ChatPopup: React.FC = () => {
                                         href={msg.attachmentUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
                                         className={`p-1.5 rounded ${isOwn ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
                                         title="Tải xuống"
                                     >
@@ -1188,12 +1304,11 @@ const ChatPopup: React.FC = () => {
                 {!window.isMinimized && (
                     <>
                         {/* Messages */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gradient-to-b from-gray-50 to-white">
+                        <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
                             {window.messages.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
-                                    <MessageSquare size={48} className="mb-3 opacity-30" />
-                                    <p className="text-sm font-medium">Bắt đầu cuộc trò chuyện</p>
-                                    <p className="text-xs mt-1">Gửi tin nhắn đầu tiên của bạn</p>
+                                    <MessageSquare size={40} className="mb-2 opacity-30" />
+                                    <p className="text-sm">Bắt đầu cuộc trò chuyện</p>
                                 </div>
                             ) : (
                                 <>
@@ -1204,52 +1319,58 @@ const ChatPopup: React.FC = () => {
                                             acc[r.emoji].push(r);
                                             return acc;
                                         }, {} as Record<string, Reaction[]>) || {};
+                                        const displayContent = msg.messageType === 'TEXT' && msg.content ? decryptMessage(msg.content) : msg.content;
                                         
                                         return (
-                                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} animate-fadeIn group`}>
+                                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}>
                                                 <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
                                                     {!isOwn && (
-                                                        <p className="text-xs text-gray-500 mb-1 ml-3 font-medium">{msg.sender.name}</p>
+                                                        <p className="text-xs text-gray-500 mb-0.5 ml-2">{msg.sender.name}</p>
                                                     )}
                                                     <div className="relative">
-                                                        <div className={`px-4 py-2.5 rounded-2xl shadow-sm transition-all hover:shadow-md ${
+                                                        <div className={`px-3 py-2 rounded-2xl ${
                                                             isOwn 
-                                                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-sm' 
-                                                                : 'bg-white text-gray-800 rounded-bl-sm border border-gray-100'
+                                                                ? 'bg-blue-500 text-white rounded-br-sm' 
+                                                                : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'
                                                         }`}>
-                                                            {renderMessage(msg, isOwn)}
+                                                            {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                                         </div>
                                                         
-                                                        {/* Quick Reaction Bar - Show on hover for desktop */}
-                                                        <div className={`absolute ${isOwn ? '-left-2 -translate-x-full' : '-right-2 translate-x-full'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all duration-200`}>
-                                                            <div className="bg-white rounded-full shadow-lg border border-gray-200 px-1.5 py-1 flex items-center gap-0.5">
-                                                                {REACTION_EMOJIS.slice(0, 3).map(emoji => (
-                                                                    <button
-                                                                        key={emoji}
-                                                                        onClick={() => toggleReaction(msg, emoji)}
-                                                                        className={`text-sm hover:scale-125 transition-transform p-1 rounded-full hover:bg-gray-100 ${
-                                                                            msg.reactions?.some(r => r.emoji === emoji && r.userId === user?.id) ? 'bg-blue-100' : ''
-                                                                        }`}
-                                                                        title={emoji}
-                                                                    >
-                                                                        {emoji}
-                                                                    </button>
-                                                                ))}
+                                                        {/* Reaction buttons - Show on hover for desktop */}
+                                                        <div className={`absolute ${isOwn ? '-left-24' : '-right-24'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white rounded-full shadow-md border px-1 py-0.5`}>
+                                                            {REACTION_EMOJIS.slice(0, 3).map(emoji => (
                                                                 <button
-                                                                    onClick={() => setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id)}
-                                                                    className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600"
-                                                                    title="Thêm cảm xúc"
+                                                                    key={emoji}
+                                                                    onClick={() => toggleReaction(msg, emoji)}
+                                                                    className="text-sm hover:scale-125 transition-transform p-0.5"
+                                                                    title={emoji}
                                                                 >
-                                                                    <Smile size={14} />
+                                                                    {emoji}
                                                                 </button>
-                                                            </div>
+                                                            ))}
+                                                            <button
+                                                                onClick={() => setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id)}
+                                                                className="p-0.5 text-gray-400 hover:text-gray-600"
+                                                                title="Thêm reaction"
+                                                            >
+                                                                <Plus size={12} />
+                                                            </button>
+                                                            {isOwn && (
+                                                                <button
+                                                                    onClick={() => deleteMessage(msg.id, conversationId)}
+                                                                    className="p-0.5 text-gray-400 hover:text-red-500"
+                                                                    title="Xóa tin nhắn"
+                                                                >
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
                                                         </div>
                                                         
-                                                        {/* Full Reaction Picker - Desktop */}
+                                                        {/* Full Reaction Picker - shown when clicking Plus */}
                                                         {showReactionPicker === msg.id && (
                                                             <>
                                                                 <div className="fixed inset-0 z-[9998]" onClick={() => setShowReactionPicker(null)} />
-                                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 bg-white rounded-full shadow-xl border border-gray-200 px-2 py-1 flex items-center gap-1 z-[9999] animate-slideDown`}>
+                                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-10 bg-white rounded-full shadow-lg border px-2 py-1 flex gap-1 z-[9999]`}>
                                                                     {REACTION_EMOJIS.map(emoji => (
                                                                         <button
                                                                             key={emoji}
@@ -1257,9 +1378,7 @@ const ChatPopup: React.FC = () => {
                                                                                 toggleReaction(msg, emoji);
                                                                                 setShowReactionPicker(null);
                                                                             }}
-                                                                            className={`text-lg hover:scale-125 transition-transform p-1 rounded-full hover:bg-gray-100 ${
-                                                                                msg.reactions?.some(r => r.emoji === emoji && r.userId === user?.id) ? 'bg-blue-100' : ''
-                                                                            }`}
+                                                                            className="text-base hover:scale-125 transition-transform p-0.5"
                                                                         >
                                                                             {emoji}
                                                                         </button>
@@ -1269,28 +1388,26 @@ const ChatPopup: React.FC = () => {
                                                         )}
                                                     </div>
                                                     
-                                                    {/* Display Reactions - Compact inline style */}
+                                                    {/* Reactions */}
                                                     {Object.keys(groupedReactions).length > 0 && (
-                                                        <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
+                                                        <div className={`flex gap-0.5 mt-0.5 ${isOwn ? 'justify-end' : ''}`}>
                                                             {Object.entries(groupedReactions).map(([emoji, reactions]) => (
                                                                 <button
                                                                     key={emoji}
                                                                     onClick={() => toggleReaction(msg, emoji)}
-                                                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-all ${
+                                                                    className={`text-xs px-1 py-0.5 rounded-full ${
                                                                         reactions.some(r => r.userId === user?.id) 
-                                                                            ? 'bg-blue-100 border border-blue-200' 
-                                                                            : 'bg-gray-100 border border-gray-200 hover:bg-gray-200'
+                                                                            ? 'bg-blue-100' 
+                                                                            : 'bg-gray-100'
                                                                     }`}
-                                                                    title={reactions.map(r => r.user.name).join(', ')}
                                                                 >
-                                                                    <span className="text-sm">{emoji}</span>
-                                                                    {reactions.length > 1 && <span className="text-gray-600 text-[10px] font-medium">{reactions.length}</span>}
+                                                                    {emoji}{reactions.length > 1 && reactions.length}
                                                                 </button>
                                                             ))}
                                                         </div>
                                                     )}
                                                     
-                                                    <p className={`text-xs mt-0.5 text-gray-400 ${isOwn ? 'text-right mr-2' : 'ml-3'}`}>
+                                                    <p className={`text-[10px] mt-0.5 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
                                                         {formatMessageTime(msg.createdAt)}
                                                     </p>
                                                 </div>
@@ -1397,24 +1514,20 @@ const ChatPopup: React.FC = () => {
                                         <button
                                             onClick={() => setShowEmojiPicker(showEmojiPicker === conversationId ? null : conversationId)}
                                             className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
-                                            title="Emoji"
+                                            title="Chọn emoji"
                                         >
                                             <Smile size={18} />
                                         </button>
+                                        
+                                        {/* Emoji Picker Popup */}
                                         {showEmojiPicker === conversationId && (
                                             <>
-                                                {/* Backdrop */}
-                                                <div 
-                                                    className="fixed inset-0 z-[9998]" 
-                                                    onClick={() => setShowEmojiPicker(null)}
-                                                />
-                                                {/* Emoji Panel */}
-                                                <div className="fixed bottom-20 left-4 bg-white rounded-xl shadow-2xl border border-gray-200 p-3 z-[9999] w-[180px]">
-                                                    <div className="text-xs font-semibold text-gray-600 mb-2">Chọn emoji</div>
-                                                    <div className="grid grid-cols-4 gap-1 max-h-[200px] overflow-y-auto scrollbar-hide">
-                                                        {EMOJI_LIST.map(emoji => (
+                                                <div className="fixed inset-0 z-[9990]" onClick={() => setShowEmojiPicker(null)} />
+                                                <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border p-2 z-[9991] w-64 max-h-48 overflow-y-auto">
+                                                    <div className="grid grid-cols-8 gap-0.5">
+                                                        {COMMON_EMOJIS.map((emoji, i) => (
                                                             <button
-                                                                key={emoji}
+                                                                key={i}
                                                                 onClick={() => {
                                                                     setMessageInputs(prev => ({
                                                                         ...prev,
@@ -1422,7 +1535,7 @@ const ChatPopup: React.FC = () => {
                                                                     }));
                                                                     setShowEmojiPicker(null);
                                                                 }}
-                                                                className="text-xl hover:bg-gray-100 rounded-lg p-1.5 transition-colors flex items-center justify-center"
+                                                                className="text-lg p-1 hover:bg-gray-100 rounded transition-colors"
                                                             >
                                                                 {emoji}
                                                             </button>
@@ -1467,6 +1580,7 @@ const ChatPopup: React.FC = () => {
                                         }}
                                         placeholder="Aa"
                                         className="flex-1 px-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
+                                        data-conversation-id={conversationId}
                                     />
 
                                     {/* Voice Button - Always visible */}
@@ -1511,43 +1625,68 @@ const ChatPopup: React.FC = () => {
 
         return (
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
-                {/* Header - Modern design with status */}
-                <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white shrink-0 shadow-lg safe-area-top">
-                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-white/20 active:bg-white/30 rounded-lg transition-colors">
-                        <ArrowLeft size={24} />
+                {/* Header */}
+                <div className="flex items-center gap-3 px-4 py-3 bg-white text-gray-800 border-b shrink-0 safe-area-top">
+                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-gray-100 rounded-lg">
+                        <ArrowLeft size={22} />
                     </button>
-                    <div className="relative">
-                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center overflow-hidden ring-2 ring-white/30">
-                            {mobileActiveChat.conversation.displayAvatar ? (
-                                <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="font-semibold text-white">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
-                            )}
-                        </div>
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-blue-600"></div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <span className="font-semibold truncate block text-white">{mobileActiveChat.conversation.displayName}</span>
-                        {isTyping ? (
-                            <span className="text-xs text-blue-100 flex items-center gap-1">
-                                <span className="inline-flex gap-0.5">
-                                    <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                    <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                    <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                </span>
-                                đang soạn tin...
-                            </span>
+                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                        {mobileActiveChat.conversation.displayAvatar ? (
+                            <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
                         ) : (
-                            <span className="text-xs text-blue-100">Đang hoạt động</span>
+                            <span className="font-semibold text-gray-600">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
                         )}
                     </div>
-                    <button onClick={() => closeWindow(mobileActiveChat.id)} className="p-2 hover:bg-white/20 active:bg-white/30 rounded-lg transition-colors">
-                        <X size={24} />
+                    <div className="flex-1 min-w-0">
+                        <span className="font-semibold truncate block">{mobileActiveChat.conversation.displayName}</span>
+                        {isTyping && <span className="text-xs text-gray-500">đang soạn tin...</span>}
+                    </div>
+                    {/* 3 buttons: minimize, expand, more */}
+                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-gray-100 rounded-lg" title="Thu nhỏ">
+                        <Minimize2 size={20} />
                     </button>
+                    <button onClick={() => setMobileActiveChat(null)} className="p-2 hover:bg-gray-100 rounded-lg" title="Mở rộng">
+                        <Maximize2 size={20} />
+                    </button>
+                    <div className="relative">
+                        <button 
+                            onClick={() => setMobileMenuOpen(mobileMenuOpen === conversationId ? null : conversationId)} 
+                            className="p-2 hover:bg-gray-100 rounded-lg"
+                        >
+                            <MoreVertical size={20} />
+                        </button>
+                        {mobileMenuOpen === conversationId && (
+                            <>
+                                <div className="fixed inset-0 z-[9998]" onClick={() => setMobileMenuOpen(null)} />
+                                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999]">
+                                    <button
+                                        onClick={() => {
+                                            setMobileMenuOpen(null);
+                                            deleteConversation(conversationId);
+                                        }}
+                                        className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                    >
+                                        <Trash2 size={16} />
+                                        Xóa cuộc trò chuyện
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setMobileMenuOpen(null);
+                                            closeWindow(mobileActiveChat.id);
+                                        }}
+                                        className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
+                                    >
+                                        <X size={16} />
+                                        Đóng
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+                <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
                     {mobileActiveChat.messages.map(msg => {
                         const isOwn = msg.sender.id === user?.id;
                         const groupedReactions = msg.reactions?.reduce((acc, r) => {
@@ -1555,35 +1694,27 @@ const ChatPopup: React.FC = () => {
                             acc[r.emoji].push(r);
                             return acc;
                         }, {} as Record<string, Reaction[]>) || {};
+                        const displayContent = msg.messageType === 'TEXT' && msg.content ? decryptMessage(msg.content) : msg.content;
                         
                         return (
                             <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                                 <div className="max-w-[80%]">
-                                    {!isOwn && <p className="text-xs text-gray-500 mb-1 ml-2">{msg.sender.name}</p>}
+                                    {!isOwn && <p className="text-xs text-gray-500 mb-0.5 ml-2">{msg.sender.name}</p>}
                                     <div className="relative">
-                                        {/* Long press for reactions on mobile */}
                                         <div 
-                                            className={`px-3 py-2 rounded-2xl transition-all select-none ${
-                                                isOwn ? 'bg-blue-500 text-white rounded-br-md' : 'bg-white text-gray-800 rounded-bl-md border border-gray-100 shadow-sm'
-                                            } ${longPressMessageId === msg.id ? 'scale-95 opacity-80' : ''}`}
+                                            className={`px-3 py-2 rounded-2xl ${
+                                                isOwn ? 'bg-blue-500 text-white rounded-br-sm' : 'bg-white text-gray-800 rounded-bl-sm border border-gray-200'
+                                            } ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
                                             onTouchStart={(e) => {
-                                                // Don't trigger long press if touching image or interactive element
                                                 const target = e.target as HTMLElement;
-                                                if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.tagName === 'A') {
-                                                    return;
-                                                }
-                                                // Start long press timer
+                                                if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.tagName === 'A') return;
                                                 longPressTimerRef.current = setTimeout(() => {
                                                     setLongPressMessageId(msg.id);
                                                     setShowReactionPicker(msg.id);
-                                                    // Vibrate if supported
-                                                    if (navigator.vibrate) {
-                                                        navigator.vibrate(50);
-                                                    }
+                                                    if (navigator.vibrate) navigator.vibrate(50);
                                                 }, 500);
                                             }}
                                             onTouchEnd={() => {
-                                                // Cancel long press
                                                 if (longPressTimerRef.current) {
                                                     clearTimeout(longPressTimerRef.current);
                                                     longPressTimerRef.current = null;
@@ -1591,7 +1722,6 @@ const ChatPopup: React.FC = () => {
                                                 setLongPressMessageId(null);
                                             }}
                                             onTouchMove={() => {
-                                                // Cancel if moved
                                                 if (longPressTimerRef.current) {
                                                     clearTimeout(longPressTimerRef.current);
                                                     longPressTimerRef.current = null;
@@ -1599,15 +1729,15 @@ const ChatPopup: React.FC = () => {
                                                 setLongPressMessageId(null);
                                             }}
                                         >
-                                            {renderMessage(msg, isOwn)}
+                                            {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                         </div>
                                         
-                                        {/* Reaction Picker for Mobile - Show on long press */}
+                                        {/* Reaction Picker with delete */}
                                         {showReactionPicker === msg.id && (
                                             <>
                                                 <div className="fixed inset-0 z-[9998] bg-black/10" onClick={() => setShowReactionPicker(null)} />
-                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-14 bg-white rounded-full shadow-2xl border border-gray-200 px-3 py-2 flex items-center gap-2 z-[9999] animate-slideUp`}>
-                                                    {REACTION_EMOJIS.map((emoji, index) => (
+                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 bg-white rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 z-[9999]`}>
+                                                    {REACTION_EMOJIS.map(emoji => (
                                                         <button
                                                             key={emoji}
                                                             onClick={(e) => { 
@@ -1615,41 +1745,46 @@ const ChatPopup: React.FC = () => {
                                                                 toggleReaction(msg, emoji); 
                                                                 setShowReactionPicker(null);
                                                             }}
-                                                            className={`text-2xl active:scale-150 transition-transform p-1.5 rounded-full active:bg-gray-100 ${
-                                                                msg.reactions?.some(r => r.emoji === emoji && r.userId === user?.id) ? 'bg-blue-100 scale-110' : ''
-                                                            }`}
-                                                            style={{ animationDelay: `${index * 50}ms` }}
+                                                            className="text-xl p-1 active:scale-125"
                                                         >
                                                             {emoji}
                                                         </button>
                                                     ))}
+                                                    {isOwn && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setShowReactionPicker(null);
+                                                                deleteMessage(msg.id, conversationId);
+                                                            }}
+                                                            className="p-1 text-red-500"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </>
                                         )}
                                     </div>
                                     
-                                    {/* Display Reactions - Compact inline style */}
+                                    {/* Reactions */}
                                     {Object.keys(groupedReactions).length > 0 && (
-                                        <div className={`flex items-center gap-1 mt-1 ${isOwn ? 'justify-end mr-1' : 'ml-1'}`}>
+                                        <div className={`flex gap-0.5 mt-0.5 ${isOwn ? 'justify-end' : ''}`}>
                                             {Object.entries(groupedReactions).map(([emoji, reactions]) => (
                                                 <button
                                                     key={emoji}
                                                     onClick={(e) => { e.stopPropagation(); toggleReaction(msg, emoji); }}
-                                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-all ${
-                                                        reactions.some(r => r.userId === user?.id) 
-                                                            ? 'bg-blue-100 border border-blue-200' 
-                                                            : 'bg-gray-100 border border-gray-200 hover:bg-gray-200'
+                                                    className={`text-xs px-1 py-0.5 rounded-full ${
+                                                        reactions.some(r => r.userId === user?.id) ? 'bg-blue-100' : 'bg-gray-100'
                                                     }`}
-                                                    title={reactions.map(r => r.user.name).join(', ')}
                                                 >
-                                                    <span className="text-sm">{emoji}</span>
-                                                    {reactions.length > 1 && <span className="text-gray-600 text-[10px] font-medium">{reactions.length}</span>}
+                                                    {emoji}{reactions.length > 1 && reactions.length}
                                                 </button>
                                             ))}
                                         </div>
                                     )}
                                     
-                                    <p className={`text-xs mt-0.5 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
+                                    <p className={`text-[10px] mt-0.5 text-gray-400 ${isOwn ? 'text-right' : ''}`}>
                                         {formatMessageTime(msg.createdAt)}
                                     </p>
                                 </div>
@@ -1657,19 +1792,14 @@ const ChatPopup: React.FC = () => {
                         );
                     })}
                     
-                    {/* Typing indicator for mobile - Improved */}
+                    {/* Typing indicator */}
                     {typingUsers[conversationId] && typingUsers[conversationId].length > 0 && (
-                        <div className="flex justify-start animate-fadeIn">
-                            <div className="max-w-[80%]">
-                                <p className="text-xs text-blue-600 mb-1 ml-2 italic font-medium">
-                                    {typingUsers[conversationId].map(u => u.userName).join(', ')} đang soạn tin nhắn...
-                                </p>
-                                <div className="px-3 py-2 rounded-2xl bg-white text-gray-800 rounded-bl-md border border-gray-200 shadow-sm">
-                                    <div className="flex items-center gap-1">
-                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                    </div>
+                        <div className="flex justify-start">
+                            <div className="px-3 py-2 bg-white rounded-2xl border">
+                                <div className="flex gap-1">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                                 </div>
                             </div>
                         </div>
@@ -1740,12 +1870,6 @@ const ChatPopup: React.FC = () => {
                         </div>
                     ) : (
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowEmojiPicker(showEmojiPicker === conversationId ? null : conversationId)}
-                                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
-                            >
-                                <Smile size={20} />
-                            </button>
                             <input
                                 type="file"
                                 id={`mobile-file-input-${conversationId}`}
@@ -1799,6 +1923,7 @@ const ChatPopup: React.FC = () => {
                                 }}
                                 placeholder="Nhập tin nhắn..."
                                 className="flex-1 px-3 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-base min-w-0"
+                                data-mobile-conversation-id={conversationId}
                             />
                             {/* Send Button - Always visible */}
                             <button
@@ -1823,27 +1948,6 @@ const ChatPopup: React.FC = () => {
                         </div>
                     )}
                 </div>
-
-                {/* Mobile Emoji Picker */}
-                {showEmojiPicker === conversationId && (
-                    <div className="absolute bottom-20 left-4 bg-white rounded-xl shadow-xl border p-3 grid grid-cols-8 gap-2 z-50">
-                        {EMOJI_LIST.map(emoji => (
-                            <button
-                                key={emoji}
-                                onClick={() => {
-                                    setMessageInputs(prev => ({
-                                        ...prev,
-                                        [conversationId]: (prev[conversationId] || '') + emoji
-                                    }));
-                                    setShowEmojiPicker(null);
-                                }}
-                                className="text-2xl hover:bg-gray-100 rounded p-1"
-                            >
-                                {emoji}
-                            </button>
-                        ))}
-                    </div>
-                )}
             </div>
         );
     };
@@ -1883,29 +1987,28 @@ const ChatPopup: React.FC = () => {
                                     onChange={(e) => {
                                         const file = e.target.files?.[0];
                                         if (file) {
-                                            // Store file for later upload
-                                            (window as any)._groupAvatarFile = file;
+                                            // Open image cropper
                                             const url = URL.createObjectURL(file);
-                                            (document.getElementById('group-avatar-preview') as HTMLImageElement).src = url;
-                                            (document.getElementById('group-avatar-preview') as HTMLImageElement).classList.remove('hidden');
-                                            (document.getElementById('group-avatar-placeholder') as HTMLElement).classList.add('hidden');
+                                            setCropImageUrl(url);
+                                            setCropTarget('group');
+                                            setShowImageCropper(true);
                                         }
                                     }}
                                 />
                                 <label
                                     htmlFor="group-avatar-input"
-                                    className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 border-2 border-dashed border-blue-300 flex items-center justify-center cursor-pointer hover:border-blue-400 hover:from-blue-50 hover:to-indigo-50 overflow-hidden transition-all relative group"
+                                    className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 border-2 border-dashed border-blue-300 flex items-center justify-center cursor-pointer hover:border-blue-400 overflow-hidden transition-all relative group"
                                 >
                                     <img id="group-avatar-preview" src="" alt="" className="w-full h-full object-cover hidden" />
-                                    <div id="group-avatar-placeholder" className="flex flex-col items-center text-blue-400 group-hover:text-blue-500 transition-colors">
-                                        <Camera size={28} />
-                                        <span className="text-xs mt-1 font-medium">Ảnh nhóm</span>
+                                    <div id="group-avatar-placeholder" className="flex flex-col items-center text-blue-400 group-hover:text-blue-500">
+                                        <Camera size={24} />
+                                        <span className="text-xs mt-1">Ảnh nhóm</span>
                                     </div>
                                 </label>
                             </div>
                             <div className="flex-1 space-y-3">
                                 <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Tên nhóm <span className="text-red-500">*</span>
                                     </label>
                                     <input
@@ -1913,16 +2016,16 @@ const ChatPopup: React.FC = () => {
                                         value={groupName}
                                         onChange={(e) => setGroupName(e.target.value)}
                                         placeholder="Nhập tên nhóm..."
-                                        className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-500 mb-1.5">Mô tả</label>
+                                    <label className="block text-sm text-gray-500 mb-1">Mô tả</label>
                                     <input
                                         type="text"
                                         id="group-description"
-                                        placeholder="Mô tả về nhóm (tùy chọn)..."
-                                        className="w-full px-3.5 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+                                        placeholder="Mô tả về nhóm..."
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                     />
                                 </div>
                             </div>
@@ -2221,7 +2324,7 @@ const ChatPopup: React.FC = () => {
                                                             {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
                                                              conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
                                                              conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
-                                                             conv.lastMessage.content}
+                                                             conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
                                                         </p>
                                                     ) : (
                                                         <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
@@ -2308,6 +2411,36 @@ const ChatPopup: React.FC = () => {
                     fileName={showOnlyOffice.filename}
                     onClose={() => setShowOnlyOffice(null)}
                     token={token}
+                />
+            )}
+
+            {/* Image Cropper */}
+            {showImageCropper && cropImageUrl && (
+                <ImageCropper
+                    imageUrl={cropImageUrl}
+                    onCrop={(croppedBlob) => {
+                        if (cropTarget === 'group') {
+                            // Convert blob to file for upload
+                            const file = new File([croppedBlob], 'group-avatar.jpg', { type: 'image/jpeg' });
+                            (window as any)._groupAvatarFile = file;
+                            
+                            // Update preview
+                            const url = URL.createObjectURL(croppedBlob);
+                            const preview = document.getElementById('group-avatar-preview') as HTMLImageElement;
+                            const placeholder = document.getElementById('group-avatar-placeholder') as HTMLElement;
+                            if (preview && placeholder) {
+                                preview.src = url;
+                                preview.classList.remove('hidden');
+                                placeholder.classList.add('hidden');
+                            }
+                        }
+                        setShowImageCropper(false);
+                        setCropImageUrl(null);
+                    }}
+                    onCancel={() => {
+                        setShowImageCropper(false);
+                        setCropImageUrl(null);
+                    }}
                 />
             )}
         </>

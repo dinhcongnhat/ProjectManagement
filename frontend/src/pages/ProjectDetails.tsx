@@ -9,7 +9,7 @@ import { API_URL } from '../config/api';
 import { getDisplayFilename } from '../utils/filenameUtils';
 
 // Office file extensions supported by OnlyOffice
-const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf'];
+const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
 const isOfficeFile = (fileName: string): boolean => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     return officeExtensions.includes(ext);
@@ -111,37 +111,39 @@ const ProjectDetails = () => {
                 </div>
 
                 {/* Tabs */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex border-b border-gray-200">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+                    <div className="flex border-b border-gray-200 min-w-max sm:min-w-0">
                         <button
                             onClick={() => setActiveTab('info')}
-                            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === 'info'
+                            className={`flex-1 px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'info'
                                 ? 'text-red-600 border-b-2 border-red-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
                         >
-                            <FileText className="inline-block mr-2" size={18} />
-                            Thông tin dự án
+                            <FileText className="inline-block mr-1 sm:mr-2" size={16} />
+                            <span className="hidden sm:inline">Thông tin</span>
+                            <span className="sm:hidden">Info</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('discussion')}
-                            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === 'discussion'
+                            className={`flex-1 px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'discussion'
                                 ? 'text-red-600 border-b-2 border-red-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
                         >
-                            <MessageSquare className="inline-block mr-2" size={18} />
+                            <MessageSquare className="inline-block mr-1 sm:mr-2" size={16} />
                             Thảo luận
                         </button>
                         <button
                             onClick={() => setActiveTab('activity')}
-                            className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${activeTab === 'activity'
+                            className={`flex-1 px-3 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm font-medium transition-colors whitespace-nowrap ${activeTab === 'activity'
                                 ? 'text-red-600 border-b-2 border-red-600'
                                 : 'text-gray-600 hover:text-gray-900'
                                 }`}
                         >
-                            <History className="inline-block mr-2" size={18} />
-                            Lịch sử hoạt động
+                            <History className="inline-block mr-1 sm:mr-2" size={16} />
+                            <span className="hidden sm:inline">Lịch sử</span>
+                            <span className="sm:hidden">Activity</span>
                         </button>
                     </div>
                 </div>

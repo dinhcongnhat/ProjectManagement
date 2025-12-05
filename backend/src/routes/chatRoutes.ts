@@ -16,7 +16,9 @@ import {
     searchUsers,
     addReaction,
     removeReaction,
-    markConversationAsRead
+    markConversationAsRead,
+    deleteMessage,
+    deleteConversation
 } from '../controllers/chatController.js';
 
 const router = express.Router();
@@ -34,12 +36,14 @@ router.put('/conversations/:id', upload.single('avatar'), updateConversation);
 router.put('/conversations/:id/read', markConversationAsRead);
 router.post('/conversations/:id/members', addMembers);
 router.delete('/conversations/:id/leave', leaveConversation);
+router.delete('/conversations/:id', deleteConversation);
 
 // Messages
 router.get('/conversations/:id/messages', getMessages);
 router.post('/conversations/:id/messages', sendMessage);
 router.post('/conversations/:id/messages/file', upload.single('file'), sendFileMessage);
 router.post('/conversations/:id/messages/voice', upload.single('audio'), sendVoiceMessage);
+router.delete('/messages/:messageId', deleteMessage);
 
 // Reactions
 router.post('/messages/:messageId/reactions', addReaction);

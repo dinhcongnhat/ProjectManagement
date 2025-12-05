@@ -24,6 +24,10 @@ const getDocumentType = (filename: string): string => {
     if (['ppt', 'pptx', 'odp'].includes(ext)) {
         return 'slide';
     }
+    // PDF documents
+    if (ext === 'pdf') {
+        return 'pdf';
+    }
     
     return 'word'; // default
 };

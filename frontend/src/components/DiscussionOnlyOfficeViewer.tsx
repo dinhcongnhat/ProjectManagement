@@ -7,6 +7,7 @@ interface DiscussionOnlyOfficeViewerProps {
     fileName: string;
     onClose: () => void;
     token: string;
+    onOpenChange?: (isOpen: boolean) => void; // Callback to notify parent about open/close state
 }
 
 declare global {
@@ -17,6 +18,12 @@ declare global {
         _onlyofficeScriptLoading?: Promise<void>;
     }
 }
+
+// Check if mobile device
+const isMobile = typeof window !== 'undefined' && (
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    window.innerWidth <= 768
+);
 
 // Singleton script loader - prevents multiple loads
 const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
@@ -46,12 +53,20 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     return window._onlyofficeScriptLoading;
 };
 
-export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token }: DiscussionOnlyOfficeViewerProps) => {
+export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token, onOpenChange }: DiscussionOnlyOfficeViewerProps) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [scriptLoaded, setScriptLoaded] = useState(false);
     const editorInstanceRef = useRef<object | null>(null);
+
+    // Notify parent when viewer opens/closes
+    useEffect(() => {
+        onOpenChange?.(true);
+        return () => {
+            onOpenChange?.(false);
+        };
+    }, [onOpenChange]);
 
     // Handle browser back button
     useEffect(() => {
@@ -137,6 +152,27 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                 const configWithToken = {
                     ...data.config,
                     token: data.config.token,
+                    // Mobile-specific settings
+                    ...(isMobile && {
+                        width: '100%',
+                        height: '100%',
+                        editorConfig: {
+                            ...data.config.editorConfig,
+                            customization: {
+                                ...data.config.editorConfig?.customization,
+                                compactHeader: true,
+                                compactToolbar: true,
+                                toolbarNoTabs: true,
+                                hideRightMenu: true,
+                                leftMenu: false,
+                                rightMenu: false,
+                                statusBar: false,
+                                autosave: false,
+                                forcesave: false,
+                            },
+                            mobile: true,
+                        }
+                    })
                 };
 
                 // Initialize editor
@@ -155,7 +191,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
     }, [scriptLoaded, messageId, token]);
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col">
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-1.5 bg-white border-b shadow-sm">
                 <div className="flex items-center gap-2">

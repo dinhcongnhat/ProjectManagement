@@ -12,6 +12,7 @@ import {
     Eye,
     EyeOff
 } from 'lucide-react';
+import ImageCropper from '../components/ImageCropper';
 
 interface UserProfileData {
     id: number;
@@ -33,6 +34,10 @@ export default function UserProfile() {
     const [editing, setEditing] = useState(false);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
+    
+    // Image cropper state
+    const [showCropper, setShowCropper] = useState(false);
+    const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
     
     // Form fields
     const [name, setName] = useState('');
@@ -61,7 +66,7 @@ export default function UserProfile() {
         fetchProfile();
     }, []);
 
-    // Handle avatar upload
+    // Handle avatar upload - open cropper first
     const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -78,10 +83,21 @@ export default function UserProfile() {
             return;
         }
 
+        // Open cropper
+        const url = URL.createObjectURL(file);
+        setCropImageUrl(url);
+        setShowCropper(true);
+        
+        // Reset input
+        e.target.value = '';
+    };
+
+    // Upload cropped avatar
+    const uploadCroppedAvatar = async (croppedBlob: Blob) => {
         setUploadingAvatar(true);
         try {
             const formData = new FormData();
-            formData.append('avatar', file);
+            formData.append('avatar', croppedBlob, 'avatar.jpg');
 
             const response = await api.post('/users/profile/avatar', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
@@ -95,6 +111,8 @@ export default function UserProfile() {
             alert(message);
         } finally {
             setUploadingAvatar(false);
+            setShowCropper(false);
+            setCropImageUrl(null);
         }
     };
 
@@ -359,6 +377,18 @@ export default function UserProfile() {
             {showPasswordModal && (
                 <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
             )}
+
+            {/* Image Cropper */}
+            {showCropper && cropImageUrl && (
+                <ImageCropper
+                    imageUrl={cropImageUrl}
+                    onCrop={uploadCroppedAvatar}
+                    onCancel={() => {
+                        setShowCropper(false);
+                        setCropImageUrl(null);
+                    }}
+                />
+            )}
         </>
     );
 }
@@ -498,3 +528,5 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         </div>
     );
 }
+
+export { ImageCropper };

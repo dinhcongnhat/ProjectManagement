@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import multer from 'multer';
 import { uploadFile, uploadAudioFile, uploadDiscussionFile, getPresignedUrl, deleteFile } from '../services/minioService.js';
 import { Readable } from 'stream';
+import { getIO } from '../index.js';
 
 const prisma = new PrismaClient();
 
@@ -47,10 +48,9 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
         const skip = (page - 1) * limit;
-        const BACKEND_URL = process.env.BACKEND_URL || 'http://10.10.1.24:3000';
 
         const messages = await prisma.message.findMany({
-            where: { projectId: parseInt(projectId) },
+            where: { projectId: parseInt(projectId as string) },
             include: {
                 sender: {
                     select: { id: true, name: true, role: true }
@@ -61,18 +61,18 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
             take: limit
         });
 
-        // Generate backend proxy URLs for attachments (accessible from LAN)
+        // Generate relative URLs for attachments (frontend will resolve to absolute)
         const messagesWithUrls = messages.map((message) => {
             if (message.attachment) {
-                // Use backend proxy URL instead of MinIO presigned URL
-                const attachmentUrl = `${BACKEND_URL}/api/messages/${message.id}/file`;
+                // Use relative URL - frontend will prepend the correct base URL
+                const attachmentUrl = `/api/messages/${message.id}/file`;
                 return { ...message, attachmentUrl };
             }
             return { ...message, attachmentUrl: null };
         });
 
         const total = await prisma.message.count({
-            where: { projectId: parseInt(projectId) }
+            where: { projectId: parseInt(projectId as string) }
         });
 
         res.json({
@@ -93,7 +93,7 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
 // Create a text message
 export const createMessage = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { projectId } = req.params;
+        const projectId = req.params.projectId as string;
         const { content } = req.body;
         const userId = (req as any).user.id;
 
@@ -110,6 +110,17 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
                 }
             }
         });
+
+        // Emit WebSocket event for realtime discussion
+        try {
+            const io = getIO();
+            io.to(`project:${projectId}`).emit('discussion:new_message', {
+                projectId: parseInt(projectId),
+                message: { ...message, attachmentUrl: null }
+            });
+        } catch (wsError) {
+            console.error('WebSocket emit error:', wsError);
+        }
 
         res.status(201).json(message);
     } catch (error) {
@@ -154,7 +165,21 @@ export const uploadVoiceMessage = async (req: Request, res: Response): Promise<v
             }
         });
 
-        res.status(201).json(message);
+        // Use relative URL - frontend will prepend the correct base URL
+        const attachmentUrl = `/api/messages/${message.id}/file`;
+
+        // Emit WebSocket event for realtime discussion
+        try {
+            const io = getIO();
+            io.to(`project:${projectId}`).emit('discussion:new_message', {
+                projectId: parseInt(projectId),
+                message: { ...message, attachmentUrl }
+            });
+        } catch (wsError) {
+            console.error('WebSocket emit error:', wsError);
+        }
+
+        res.status(201).json({ ...message, attachmentUrl });
     } catch (error) {
         console.error('Error uploading voice message:', error);
         res.status(500).json({ error: 'Failed to upload voice message' });
@@ -195,7 +220,6 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
         // Determine message type based on file type
         const isImage = file.mimetype.startsWith('image/');
         const messageType = content ? 'TEXT_WITH_FILE' : (isImage ? 'IMAGE' : 'FILE');
-        const BACKEND_URL = process.env.BACKEND_URL || 'http://10.10.1.24:3000';
 
         // Create message record
         const message = await prisma.message.create({
@@ -213,8 +237,19 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
             }
         });
 
-        // Use backend proxy URL instead of MinIO presigned URL
-        const attachmentUrl = `${BACKEND_URL}/api/messages/${message.id}/file`;
+        // Use relative URL - frontend will prepend the correct base URL
+        const attachmentUrl = `/api/messages/${message.id}/file`;
+
+        // Emit WebSocket event for realtime discussion
+        try {
+            const io = getIO();
+            io.to(`project:${projectId}`).emit('discussion:new_message', {
+                projectId: parseInt(projectId),
+                message: { ...message, attachmentUrl, originalFileName: originalName }
+            });
+        } catch (wsError) {
+            console.error('WebSocket emit error:', wsError);
+        }
 
         res.status(201).json({ ...message, attachmentUrl, originalFileName: originalName });
     } catch (error) {
