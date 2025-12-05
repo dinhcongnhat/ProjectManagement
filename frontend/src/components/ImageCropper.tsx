@@ -179,8 +179,8 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/90 z-[200] flex flex-col items-center justify-center">
-            {/* Header */}
-            <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4 bg-gradient-to-b from-black/50 to-transparent">
+            {/* Header - hidden on mobile, controls are at bottom */}
+            <div className="absolute top-0 left-0 right-0 hidden md:flex items-center justify-between p-4 pt-6 bg-gradient-to-b from-black/50 to-transparent safe-area-top">
                 <button
                     onClick={onCancel}
                     className="p-2 text-white hover:bg-white/20 rounded-full transition-colors"
@@ -194,6 +194,11 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                 >
                     <Check size={24} />
                 </button>
+            </div>
+
+            {/* Mobile Header - just title */}
+            <div className="absolute top-0 left-0 right-0 flex md:hidden items-center justify-center p-4 pt-12 bg-gradient-to-b from-black/50 to-transparent">
+                <h3 className="text-white font-medium">Cắt ảnh đại diện</h3>
             </div>
 
             {/* Crop Area */}
@@ -254,7 +259,18 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
             </div>
 
             {/* Controls */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/50 to-transparent">
+            <div className="absolute bottom-0 left-0 right-0 p-6 pb-8 bg-gradient-to-t from-black/80 to-transparent safe-area-bottom">
+                {/* Confirm button for mobile - large and prominent */}
+                <div className="flex justify-center mb-4 md:hidden">
+                    <button
+                        onClick={handleCrop}
+                        className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-full font-medium flex items-center gap-2 shadow-lg active:scale-95 transition-all"
+                    >
+                        <Check size={20} />
+                        Xác nhận
+                    </button>
+                </div>
+
                 <div className="flex items-center justify-center gap-6">
                     {/* Zoom Out */}
                     <button
@@ -293,8 +309,18 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                 </div>
 
                 <p className="text-center text-white/60 text-sm mt-3">
-                    Kéo để di chuyển • Cuộn để zoom
+                    Kéo để di chuyển • Cuộn/pinch để zoom
                 </p>
+
+                {/* Cancel button for mobile */}
+                <div className="flex justify-center mt-4 md:hidden">
+                    <button
+                        onClick={onCancel}
+                        className="px-6 py-2 text-white/80 hover:text-white transition-colors"
+                    >
+                        Hủy
+                    </button>
+                </div>
             </div>
 
             {/* Hidden canvas for cropping */}

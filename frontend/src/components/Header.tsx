@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Menu, Bell, Briefcase } from 'lucide-react';
 import ChatPopup from './ChatPopup';
 import UserProfilePopup from './UserProfilePopup';
+import NotificationSettings from './NotificationSettings';
+import { usePushNotifications } from '../context/PushNotificationContext';
 import api from '../config/api';
 
 interface HeaderProps {
@@ -23,7 +25,10 @@ const Header = ({ onMenuClick }: HeaderProps) => {
     const [searchResults, setSearchResults] = useState<ProjectResult[]>([]);
     const [showResults, setShowResults] = useState(false);
     const [searching, setSearching] = useState(false);
+    const [showNotificationSettings, setShowNotificationSettings] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
+    const notificationRef = useRef<HTMLDivElement>(null);
+    const { isSubscribed, isSupported } = usePushNotifications();
 
     // Close results when clicking outside
     useEffect(() => {
@@ -156,10 +161,38 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                 <ChatPopup />
                 
                 {/* Notifications */}
-                <button className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors relative touch-target">
-                    <Bell size={22} className="text-gray-600" />
-                    <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                </button>
+                <div className="relative" ref={notificationRef}>
+                    <button 
+                        onClick={() => setShowNotificationSettings(!showNotificationSettings)}
+                        className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors relative touch-target"
+                    >
+                        <Bell size={22} className="text-gray-600" />
+                        {isSupported && isSubscribed && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                        )}
+                        {isSupported && !isSubscribed && (
+                            <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                        )}
+                    </button>
+                    
+                    {/* Notification Settings Popup */}
+                    {showNotificationSettings && (
+                        <>
+                            {/* Backdrop */}
+                            <div 
+                                className="fixed inset-0 z-40 bg-black/20 md:bg-transparent" 
+                                onClick={() => setShowNotificationSettings(false)}
+                            />
+                            {/* Mobile: fullscreen bottom sheet, Desktop: dropdown */}
+                            <div className="fixed md:absolute inset-x-0 bottom-0 md:bottom-auto md:right-0 md:left-auto md:top-full md:mt-2 md:w-80 z-50">
+                                <div className="md:hidden w-full h-1 flex justify-center pt-2 pb-1 bg-white rounded-t-2xl">
+                                    <div className="w-10 h-1 bg-gray-300 rounded-full"></div>
+                                </div>
+                                <NotificationSettings onClose={() => setShowNotificationSettings(false)} />
+                            </div>
+                        </>
+                    )}
+                </div>
 
                 {/* User Profile */}
                 <UserProfilePopup />

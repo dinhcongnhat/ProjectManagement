@@ -4,6 +4,7 @@ import multer from 'multer';
 import { uploadFile, uploadAudioFile, uploadDiscussionFile, getPresignedUrl, deleteFile } from '../services/minioService.js';
 import { Readable } from 'stream';
 import { getIO } from '../index.js';
+import { notifyProjectDiscussion, notifyMention } from '../services/pushNotificationService.js';
 
 const prisma = new PrismaClient();
 
@@ -120,6 +121,64 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
             });
         } catch (wsError) {
             console.error('WebSocket emit error:', wsError);
+        }
+
+        // Send push notifications to project members
+        try {
+            const project = await prisma.project.findUnique({
+                where: { id: parseInt(projectId) },
+                select: {
+                    name: true,
+                    managerId: true,
+                    implementers: { select: { id: true } },
+                    followers: { select: { id: true } }
+                }
+            });
+
+            if (project) {
+                const recipientIds = [
+                    project.managerId,
+                    ...project.implementers.map(i => i.id),
+                    ...project.followers.map(f => f.id)
+                ];
+                const uniqueRecipientIds = [...new Set(recipientIds)];
+                const messagePreview = content.length > 50 
+                    ? content.substring(0, 50) + '...' 
+                    : content;
+
+                await notifyProjectDiscussion(
+                    uniqueRecipientIds,
+                    userId,
+                    message.sender.name,
+                    parseInt(projectId),
+                    project.name,
+                    messagePreview
+                );
+
+                // Check for mentions
+                const mentionPattern = /@(\S+)/g;
+                let match;
+                while ((match = mentionPattern.exec(content)) !== null) {
+                    const mentionedName = match[1];
+                    if (mentionedName) {
+                        const mentionedUser = await prisma.user.findFirst({
+                            where: { name: { contains: mentionedName, mode: 'insensitive' } }
+                        });
+                        if (mentionedUser && mentionedUser.id !== userId) {
+                            await notifyMention(
+                                mentionedUser.id,
+                                message.sender.name,
+                                'discussion',
+                                parseInt(projectId),
+                                project.name,
+                                messagePreview
+                            );
+                        }
+                    }
+                }
+            }
+        } catch (pushError) {
+            console.error('[createMessage] Push notification error:', pushError);
         }
 
         res.status(201).json(message);

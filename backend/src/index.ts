@@ -55,6 +55,7 @@ import messageRoutes from './routes/messageRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 app.use(cors({
     origin: function(origin, callback) {
@@ -202,6 +203,14 @@ app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
 });
 // ==================== END PUBLIC ROUTES ====================
 
+// Public route for VAPID key (NO AUTH - must be before authenticated routes)
+app.get('/api/notifications/vapid-public-key', (req, res) => {
+    console.log('[Index] VAPID public key requested (public route)');
+    const publicKey = process.env.VAPID_PUBLIC_KEY || '';
+    console.log('[Index] Returning VAPID key:', publicKey ? publicKey.substring(0, 20) + '...' : 'NOT SET');
+    res.json({ publicKey });
+});
+
 // Debug middleware to check body parsing
 app.use('/api/chat', (req, res, next) => {
     if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
@@ -226,6 +235,7 @@ app.use('/api', messageRoutes);
 app.use('/api', activityRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');

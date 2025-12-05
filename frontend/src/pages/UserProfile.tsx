@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import api, { API_URL } from '../config/api';
+import api from '../config/api';
 import { useDialog } from '../components/ui/Dialog';
 import { 
     User as UserIcon, 
@@ -14,18 +14,7 @@ import {
     EyeOff
 } from 'lucide-react';
 import ImageCropper from '../components/ImageCropper';
-
-// Helper to resolve relative URLs to absolute URLs
-const resolveAvatarUrl = (url: string | null): string | null => {
-    if (!url) return null;
-    // If already absolute URL, return as is
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-        return url;
-    }
-    // For relative URLs, prepend API_URL base (remove /api suffix if present)
-    const baseUrl = API_URL.replace(/\/api$/, '');
-    return `${baseUrl}${url}`;
-};
+import { resolveAvatarUrl } from '../utils/urlUtils';
 
 interface UserProfileData {
     id: number;

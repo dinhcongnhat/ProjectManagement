@@ -3,12 +3,14 @@ import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
 import { getIO } from '../index.js';
+import { notifyNewChatMessage, notifyMention } from '../services/pushNotificationService.js';
 
 // Lấy danh sách cuộc trò chuyện
 export const getConversations = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
 
+        // Fetch conversations with optimized query
         const conversations = await prisma.conversation.findMany({
             where: {
                 members: {
@@ -34,21 +36,51 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 },
                 createdBy: {
                     select: { id: true, name: true }
+                },
+                // Include count of unread messages in a single query
+                _count: {
+                    select: {
+                        messages: true
+                    }
                 }
             },
             orderBy: { updatedAt: 'desc' }
         });
 
-        // Format response với thông tin unread count
-        const formattedConversations = await Promise.all(conversations.map(async (conv) => {
-            const member = conv.members.find(m => m.userId === userId);
-            const unreadCount = await prisma.chatMessage.count({
-                where: {
-                    conversationId: conv.id,
-                    createdAt: { gt: member?.lastRead || new Date(0) },
-                    senderId: { not: userId }
-                }
-            });
+        // Get all member lastRead dates in one query
+        const memberLastReads = await prisma.conversationMember.findMany({
+            where: {
+                userId,
+                conversationId: { in: conversations.map(c => c.id) }
+            },
+            select: {
+                conversationId: true,
+                lastRead: true
+            }
+        });
+        const lastReadMap = new Map(memberLastReads.map(m => [m.conversationId, m.lastRead]));
+
+        // Get unread counts in batch - single query for all conversations
+        const unreadCounts = await prisma.$queryRaw<Array<{ conversationId: number; count: bigint }>>`
+            SELECT "conversationId", COUNT(*) as count
+            FROM "ChatMessage"
+            WHERE "conversationId" IN (${conversations.length > 0 ? prisma.$queryRaw`${conversations.map(c => c.id).join(',')}` : prisma.$queryRaw`0`})
+            AND "senderId" != ${userId}
+            AND "createdAt" > (
+                SELECT COALESCE("lastRead", '1970-01-01'::timestamp)
+                FROM "ConversationMember"
+                WHERE "conversationId" = "ChatMessage"."conversationId"
+                AND "userId" = ${userId}
+            )
+            GROUP BY "conversationId"
+        `.catch(() => []);
+        
+        const unreadMap = new Map((unreadCounts as any[]).map(u => [u.conversationId, Number(u.count)]));
+
+        // Format response - no more N+1 queries
+        const formattedConversations = conversations.map((conv) => {
+            const lastRead = lastReadMap.get(conv.id) || new Date(0);
+            const unreadCount = unreadMap.get(conv.id) || 0;
 
             // Cho chat 1-1, lấy thông tin người còn lại
             let displayName = conv.name;
@@ -90,14 +122,15 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
 
             return {
                 ...conv,
+                _count: undefined, // Remove from response
                 members: membersWithAvatars,
                 displayName,
                 displayAvatar,
-                avatarUrl, // Presigned URL
+                avatarUrl,
                 unreadCount,
                 lastMessage: conv.messages[0] || null
             };
-        }));
+        });
 
         res.json(formattedConversations);
     } catch (error) {
@@ -311,8 +344,8 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             take: Number(limit)
         });
 
-        // Cập nhật lastRead
-        await prisma.conversationMember.update({
+        // Cập nhật lastRead - run async, don't wait
+        prisma.conversationMember.update({
             where: {
                 conversationId_userId: {
                     conversationId: Number(id),
@@ -320,10 +353,10 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
                 }
             },
             data: { lastRead: new Date() }
-        });
+        }).catch(err => console.error('Error updating lastRead:', err));
 
-        // Thêm URL cho attachment và avatar - sử dụng relative URL để mobile có thể truy cập
-        const messagesWithUrls = await Promise.all(messages.map(async (msg: any) => {
+        // Thêm URL cho attachment và avatar - no async needed, just transform
+        const messagesWithUrls = messages.map((msg: any) => {
             let attachmentUrl = null;
             if (msg.attachment) {
                 // Use relative URL - frontend will prepend the correct base URL
@@ -344,7 +377,7 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
                     avatar: senderAvatarUrl
                 }
             };
-        }));
+        });
 
         res.json({
             messages: messagesWithUrls.reverse(),
@@ -425,6 +458,62 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             conversationId: Number(id),
             message: messageWithAvatar
         });
+
+        // Send push notifications to other members
+        try {
+            const conversation = await prisma.conversation.findUnique({
+                where: { id: Number(id) },
+                include: {
+                    members: { select: { userId: true } }
+                }
+            });
+            
+            if (conversation) {
+                const memberIds = conversation.members.map(m => m.userId);
+                const displayName = conversation.type === 'GROUP' 
+                    ? (conversation.name || 'Nhóm chat')
+                    : message.sender.name;
+                const messagePreview = content.trim().length > 50 
+                    ? content.trim().substring(0, 50) + '...' 
+                    : content.trim();
+                
+                await notifyNewChatMessage(
+                    memberIds,
+                    userId,
+                    message.sender.name,
+                    Number(id),
+                    displayName,
+                    messagePreview,
+                    conversation.type === 'GROUP'
+                );
+
+                // Check for mentions and send separate notifications
+                const mentionPattern = /@(\S+)/g;
+                let match;
+                while ((match = mentionPattern.exec(content)) !== null) {
+                    const mentionedName = match[1];
+                    if (mentionedName) {
+                        // Find user by name
+                        const mentionedUser = await prisma.user.findFirst({
+                            where: { name: { contains: mentionedName, mode: 'insensitive' } }
+                        });
+                        if (mentionedUser && mentionedUser.id !== userId) {
+                            await notifyMention(
+                                mentionedUser.id,
+                                message.sender.name,
+                                'chat',
+                                Number(id),
+                                displayName,
+                                messagePreview
+                            );
+                        }
+                    }
+                }
+            }
+        } catch (pushError) {
+            console.error('[sendMessage] Push notification error:', pushError);
+            // Don't fail the request if push fails
+        }
 
         res.status(201).json(messageWithAvatar);
     } catch (error) {

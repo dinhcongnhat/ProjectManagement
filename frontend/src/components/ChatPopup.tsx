@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     MessageCircle, X, Search, Users, MessageSquare, Send, Smile, Paperclip,
     Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
-    Volume2, FileText, Download, Eye, Plus, Check, Loader2, Camera, Trash2, MoreVertical
+    Volume2, FileText, Download, Plus, Check, Loader2, Camera, Trash2, MoreVertical
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from './ui/Dialog';
@@ -10,6 +10,7 @@ import api, { API_URL } from '../config/api';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
 import ImageCropper from './ImageCropper';
+import { resolveAttachmentUrl } from '../utils/urlUtils';
 
 // ==================== ENCRYPTION UTILITIES ====================
 const ENCRYPTION_KEY = 'JTSC_CHAT_2025'; // Base key for encryption
@@ -204,18 +205,6 @@ const getFileIconColor = (filename: string): string => {
     return colors[ext] || colors.default;
 };
 
-// Helper to resolve relative URLs to absolute URLs
-const resolveAttachmentUrl = (url: string | null): string | null => {
-    if (!url) return null;
-    // If already absolute URL, return as is
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-    }
-    // For relative URLs, prepend API_URL base (remove /api suffix if present)
-    const baseUrl = API_URL.replace(/\/api$/, '');
-    return `${baseUrl}${url}`;
-};
-
 // ==================== MAIN COMPONENT ====================
 const ChatPopup: React.FC = () => {
     const { user, token } = useAuth();
@@ -240,7 +229,6 @@ const ChatPopup: React.FC = () => {
     const [messageInputs, setMessageInputs] = useState<Record<number, string>>({});
     const [showReactionPicker, setShowReactionPicker] = useState<number | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null); // Emoji picker for input
-    const [mobileMenuOpen, setMobileMenuOpen] = useState<number | null>(null); // Mobile header menu
     const [conversationMenuOpen, setConversationMenuOpen] = useState<number | null>(null); // Menu 3 chấm cho conversation list
     const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
     
@@ -990,8 +978,10 @@ const ChatPopup: React.FC = () => {
         }
 
         // Optimistic update - Add message immediately (show original content locally)
+        // Use negative ID to distinguish from real messages and avoid INT4 overflow
+        const tempId = -Math.floor(Math.random() * 1000000) - 1;
         const optimisticMessage: Message = {
-            id: Date.now(), // Temporary ID
+            id: tempId, // Temporary negative ID to distinguish from real messages
             content: content.trim(), // Show original content locally
             messageType: 'TEXT',
             attachment: null,
@@ -1101,6 +1091,12 @@ const ChatPopup: React.FC = () => {
 
     // Add reaction to message
     const addReaction = async (messageId: number, emoji: string) => {
+        // Prevent adding reaction to optimistic messages (negative IDs)
+        if (messageId < 0) {
+            console.warn('Cannot add reaction to unsent message');
+            setShowReactionPicker(null);
+            return;
+        }
         try {
             await api.post(`/chat/messages/${messageId}/reactions`, { emoji });
             setShowReactionPicker(null);
@@ -1111,6 +1107,11 @@ const ChatPopup: React.FC = () => {
 
     // Remove reaction from message
     const removeReaction = async (messageId: number, emoji: string) => {
+        // Prevent removing reaction from optimistic messages (negative IDs)
+        if (messageId < 0) {
+            console.warn('Cannot remove reaction from unsent message');
+            return;
+        }
         try {
             await api.delete(`/chat/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
         } catch (error) {
@@ -1120,6 +1121,12 @@ const ChatPopup: React.FC = () => {
 
     // Toggle reaction (add if not exists, remove if exists)
     const toggleReaction = async (msg: Message, emoji: string) => {
+        // Prevent toggling reaction on optimistic messages (negative IDs)
+        if (msg.id < 0) {
+            console.warn('Cannot react to unsent message');
+            setShowReactionPicker(null);
+            return;
+        }
         const existingReaction = msg.reactions?.find(r => r.emoji === emoji && r.userId === user?.id);
         if (existingReaction) {
             await removeReaction(msg.id, emoji);
@@ -1376,12 +1383,21 @@ const ChatPopup: React.FC = () => {
 
             case 'FILE':
             case 'TEXT_WITH_FILE':
+                // Truncate long filenames
+                const displayFilename = filename.length > 25 
+                    ? filename.substring(0, 20) + '...' + filename.substring(filename.lastIndexOf('.'))
+                    : filename;
+                
                 return (
-                    <div>
+                    <div className="max-w-[220px]">
                         {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>}
                         {resolvedAttachmentUrl && (
                             <div 
-                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${isOwn ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                className={`flex items-center gap-2 p-2.5 rounded-xl cursor-pointer transition-all ${
+                                    isOwn 
+                                        ? 'bg-white/10 hover:bg-white/20' 
+                                        : 'bg-white border border-gray-200 hover:border-gray-300 shadow-sm'
+                                }`}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (isOfficeFile(filename)) {
@@ -1391,41 +1407,34 @@ const ChatPopup: React.FC = () => {
                                     }
                                 }}
                             >
-                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white ${getFileIconColor(filename)}`}>
-                                    <FileText size={20} />
+                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0 ${getFileIconColor(filename)}`}>
+                                    <FileText size={18} />
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className={`text-sm font-medium truncate ${isOwn ? 'text-white' : 'text-gray-800'}`}>
-                                        {filename}
-                                    </p>
-                                    <p className={`text-xs ${isOwn ? 'text-white/60' : 'text-gray-500'}`}>
-                                        {isOfficeFile(filename) ? 'Click để xem' : 'Click để tải'}
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    {isOfficeFile(filename) && (
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setShowOnlyOffice({ messageId: msg.id, filename });
-                                            }}
-                                            className={`p-1.5 rounded ${isOwn ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
-                                            title="Xem file"
-                                        >
-                                            <Eye size={16} />
-                                        </button>
-                                    )}
-                                    <a
-                                        href={resolvedAttachmentUrl || '#'}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className={`p-1.5 rounded ${isOwn ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
-                                        title="Tải xuống"
+                                <div className="flex-1 min-w-0 overflow-hidden">
+                                    <p 
+                                        className={`text-sm font-medium truncate ${isOwn ? 'text-white' : 'text-gray-800'}`}
+                                        title={filename}
                                     >
-                                        <Download size={16} />
-                                    </a>
+                                        {displayFilename}
+                                    </p>
+                                    <p className={`text-xs ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
+                                        {isOfficeFile(filename) ? 'Nhấn để xem' : 'Nhấn để tải'}
+                                    </p>
                                 </div>
+                                <a
+                                    href={resolvedAttachmentUrl || '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                                        isOwn 
+                                            ? 'hover:bg-white/20 text-white' 
+                                            : 'hover:bg-gray-100 text-gray-500'
+                                    }`}
+                                    title="Tải xuống"
+                                >
+                                    <Download size={16} />
+                                </a>
                             </div>
                         )}
                     </div>
@@ -1453,45 +1462,48 @@ const ChatPopup: React.FC = () => {
                 className="bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden transition-all duration-200"
                 style={windowStyle}
             >
-                {/* Header */}
+                {/* Header - Clean White Design */}
                 <div
-                    className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 via-blue-600 to-blue-700 text-white cursor-pointer shrink-0 shadow-md"
+                    className="flex items-center justify-between px-3 py-2.5 bg-white border-b border-gray-100 cursor-pointer shrink-0"
                     onClick={() => toggleMinimize(window.id)}
                 >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="relative">
-                            <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center overflow-hidden shrink-0 ring-2 ring-white/30">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
                                 {window.conversation.displayAvatar ? (
                                     <img src={window.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
                                 ) : (
-                                    <span className="text-sm font-semibold">{window.conversation.displayName.charAt(0).toUpperCase()}</span>
+                                    <span className="text-white text-sm font-semibold">{window.conversation.displayName.charAt(0).toUpperCase()}</span>
                                 )}
                             </div>
-                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></div>
+                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
                         </div>
-                        <div className="min-w-0">
-                            <span className="font-semibold text-sm truncate block">{window.conversation.displayName}</span>
-                            <span className="text-xs text-blue-100">Đang hoạt động</span>
+                        <div className="min-w-0 flex-1">
+                            <span className="font-semibold text-gray-800 text-sm truncate block">{window.conversation.displayName}</span>
+                            <div className="flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                                <span className="text-xs text-gray-500">Đang hoạt động</span>
+                            </div>
                         </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center shrink-0">
                         <button 
                             onClick={(e) => { e.stopPropagation(); toggleMinimize(window.id); }} 
-                            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700"
                             title="Thu nhỏ"
                         >
                             <Minimize2 size={16} />
                         </button>
                         <button 
                             onClick={(e) => { e.stopPropagation(); toggleMaximize(window.id); }} 
-                            className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                            title="Phóng to"
+                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700"
+                            title={window.isMaximized ? "Thu nhỏ" : "Phóng to"}
                         >
                             <Maximize2 size={16} />
                         </button>
                         <button 
                             onClick={(e) => { e.stopPropagation(); closeWindow(window.id); }} 
-                            className="p-2 hover:bg-red-500/30 rounded-lg transition-colors"
+                            className="w-8 h-8 flex items-center justify-center hover:bg-red-50 rounded-full transition-colors text-gray-500 hover:text-red-500"
                             title="Đóng"
                         >
                             <X size={16} />
@@ -1548,7 +1560,7 @@ const ChatPopup: React.FC = () => {
                                                         {isLastInGroup ? (
                                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
                                                                 {msg.sender.avatar ? (
-                                                                    <img src={msg.sender.avatar} alt="" className="w-full h-full object-cover" />
+                                                                    <img src={resolveAttachmentUrl(msg.sender.avatar) || ''} alt="" className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     <span className="text-white font-semibold text-xs">{msg.sender.name.charAt(0).toUpperCase()}</span>
                                                                 )}
@@ -1557,26 +1569,26 @@ const ChatPopup: React.FC = () => {
                                                     </div>
                                                 )}
                                                 
-                                                <div className={`max-w-[70%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
+                                                <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
                                                     {/* Sender name with time - only show on first message in group */}
                                                     {!isOwn && isNewSenderGroup && (
-                                                        <div className="flex items-center gap-2 mb-1 ml-1">
-                                                            <span className="text-xs text-gray-700 font-medium">{msg.sender.name}</span>
-                                                            <span className="text-xs text-gray-400">•</span>
+                                                        <div className="flex items-center gap-1.5 mb-0.5 ml-1">
+                                                            <span className="text-xs text-gray-600 font-medium">{msg.sender.name}</span>
+                                                            <span className="text-xs text-gray-300">•</span>
                                                             <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
                                                         </div>
                                                     )}
                                                     {/* Time for own messages - show on first of group */}
                                                     {isOwn && isNewSenderGroup && (
-                                                        <div className="flex justify-end mb-1 mr-1">
+                                                        <div className="flex justify-end mb-0.5 mr-1">
                                                             <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
                                                         </div>
                                                     )}
                                                     <div className="relative">
-                                                        <div className={`px-3 py-2 rounded-2xl ${
+                                                        <div className={`px-3 py-2 rounded-2xl shadow-sm ${
                                                             isOwn 
-                                                                ? 'bg-blue-500 text-white' 
-                                                                : 'bg-gray-100 text-gray-800'
+                                                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white' 
+                                                                : 'bg-white text-gray-800 border border-gray-100'
                                                         } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
                                                             {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                                         </div>
@@ -1908,63 +1920,60 @@ const ChatPopup: React.FC = () => {
 
         return (
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
-                {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 bg-white text-gray-800 border-b shrink-0 safe-area-top">
-                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-gray-100 rounded-lg">
-                        <ArrowLeft size={22} />
-                    </button>
-                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                        {mobileActiveChat.conversation.displayAvatar ? (
-                            <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                            <span className="font-semibold text-gray-600">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
-                        )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <span className="font-semibold truncate block">{mobileActiveChat.conversation.displayName}</span>
-                        {isTyping && <span className="text-xs text-gray-500">đang soạn tin...</span>}
-                    </div>
-                    {/* 3 buttons: minimize, expand, more */}
-                    <button onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} className="p-2 hover:bg-gray-100 rounded-lg" title="Thu nhỏ">
-                        <Minimize2 size={20} />
-                    </button>
-                    <button onClick={() => setMobileActiveChat(null)} className="p-2 hover:bg-gray-100 rounded-lg" title="Mở rộng">
-                        <Maximize2 size={20} />
+                {/* Header - Clean White Design */}
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100 shrink-0 safe-area-top">
+                    <button 
+                        onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} 
+                        className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors"
+                    >
+                        <ArrowLeft size={20} className="text-gray-600" />
                     </button>
                     <div className="relative">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden shadow-sm">
+                            {mobileActiveChat.conversation.displayAvatar ? (
+                                <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                                <span className="font-semibold text-white text-sm">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
+                            )}
+                        </div>
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <span className="font-semibold text-gray-800 truncate block">{mobileActiveChat.conversation.displayName}</span>
+                        <div className="flex items-center gap-1">
+                            {isTyping ? (
+                                <span className="text-xs text-blue-500 font-medium">đang soạn tin...</span>
+                            ) : (
+                                <>
+                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                                    <span className="text-xs text-gray-500">Đang hoạt động</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                    {/* 3 Control Buttons */}
+                    <div className="flex items-center">
                         <button 
-                            onClick={() => setMobileMenuOpen(mobileMenuOpen === conversationId ? null : conversationId)} 
-                            className="p-2 hover:bg-gray-100 rounded-lg"
+                            onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} 
+                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+                            title="Thu nhỏ"
                         >
-                            <MoreVertical size={20} />
+                            <Minimize2 size={18} />
                         </button>
-                        {mobileMenuOpen === conversationId && (
-                            <>
-                                <div className="fixed inset-0 z-[9998]" onClick={() => setMobileMenuOpen(null)} />
-                                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999]">
-                                    <button
-                                        onClick={() => {
-                                            setMobileMenuOpen(null);
-                                            deleteConversation(conversationId);
-                                        }}
-                                        className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                    >
-                                        <Trash2 size={16} />
-                                        Xóa cuộc trò chuyện
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setMobileMenuOpen(null);
-                                            closeWindow(mobileActiveChat.id);
-                                        }}
-                                        className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
-                                    >
-                                        <X size={16} />
-                                        Đóng
-                                    </button>
-                                </div>
-                            </>
-                        )}
+                        <button 
+                            onClick={() => {}} 
+                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500"
+                            title="Phóng to"
+                        >
+                            <Maximize2 size={18} />
+                        </button>
+                        <button 
+                            onClick={() => setMobileActiveChat(null)} 
+                            className="w-8 h-8 flex items-center justify-center hover:bg-red-50 rounded-full transition-colors text-gray-500 hover:text-red-500"
+                            title="Đóng"
+                        >
+                            <X size={18} />
+                        </button>
                     </div>
                 </div>
 
@@ -2005,7 +2014,7 @@ const ChatPopup: React.FC = () => {
                                         {isLastInGroup ? (
                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
                                                 {msg.sender.avatar ? (
-                                                    <img src={msg.sender.avatar} alt="" className="w-full h-full object-cover" />
+                                                    <img src={resolveAttachmentUrl(msg.sender.avatar) || ''} alt="" className="w-full h-full object-cover" />
                                                 ) : (
                                                     <span className="text-white font-semibold text-xs">{msg.sender.name.charAt(0).toUpperCase()}</span>
                                                 )}

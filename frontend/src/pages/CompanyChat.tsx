@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
-import api, { API_URL } from '../config/api';
+import api from '../config/api';
 import {
     Send,
     Image,
@@ -15,16 +15,7 @@ import {
     ArrowLeft,
     User as UserCircle
 } from 'lucide-react';
-
-// Helper to resolve relative URLs to absolute URLs
-const resolveUrl = (url: string | null | undefined): string | null => {
-    if (!url) return null;
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        return url;
-    }
-    const baseUrl = API_URL.replace(/\/api$/, '');
-    return `${baseUrl}${url}`;
-};
+import { resolveUrl } from '../utils/urlUtils';
 
 interface User {
     id: number;

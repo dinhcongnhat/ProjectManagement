@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { createActivity } from './activityController.js';
+import { notifyProjectAssignment, notifyProjectUpdate } from '../services/pushNotificationService.js';
 
 import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename } from '../services/minioService.js';
 
@@ -92,6 +93,62 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 children: { select: { id: true, name: true, code: true, progress: true, status: true } },
             },
         });
+
+        // Send push notifications to assigned users
+        try {
+            // Get creator name from database
+            let creatorName = 'Admin';
+            if (req.user?.id) {
+                const creator = await prisma.user.findUnique({
+                    where: { id: req.user.id },
+                    select: { name: true }
+                });
+                creatorName = creator?.name || 'Admin';
+            }
+            
+            // Notify manager
+            if (Number(managerId) !== req.user?.id) {
+                await notifyProjectAssignment(
+                    Number(managerId),
+                    project.id,
+                    name,
+                    creatorName,
+                    'manager'
+                );
+            }
+
+            // Notify implementers
+            if (Array.isArray(implementerIds)) {
+                for (const implId of implementerIds) {
+                    if (Number(implId) !== req.user?.id) {
+                        await notifyProjectAssignment(
+                            Number(implId),
+                            project.id,
+                            name,
+                            creatorName,
+                            'implementer'
+                        );
+                    }
+                }
+            }
+
+            // Notify followers
+            if (Array.isArray(followerIds)) {
+                for (const followId of followerIds) {
+                    if (Number(followId) !== req.user?.id) {
+                        await notifyProjectAssignment(
+                            Number(followId),
+                            project.id,
+                            name,
+                            creatorName,
+                            'follower'
+                        );
+                    }
+                }
+            }
+        } catch (pushError) {
+            console.error('[createProject] Push notification error:', pushError);
+        }
 
         res.status(201).json(project);
     } catch (error: any) {

@@ -16,12 +16,14 @@ import UserProfile from './pages/UserProfile';
 import Login from './pages/Login';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/ui/Dialog';
+import { PushNotificationProvider } from './context/PushNotificationContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
     <AuthProvider>
       <DialogProvider>
+        <PushNotificationProvider>
         <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -51,6 +53,7 @@ function App() {
           </Route>
         </Routes>
         </BrowserRouter>
+        </PushNotificationProvider>
       </DialogProvider>
     </AuthProvider>
   );

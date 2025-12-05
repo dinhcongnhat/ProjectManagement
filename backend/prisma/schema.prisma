@@ -73,6 +73,10 @@ model User {
   chatMessages      ChatMessage[]       @relation("ChatMessageSender")
   createdConversations Conversation[]   @relation("ConversationCreator")
   chatReactions     ChatMessageReaction[] @relation("UserReactions")
+  
+  // Push notifications
+  pushSubscriptions    PushSubscription[]
+  notificationSettings NotificationSettings?
 }
 
 model Task {
@@ -191,6 +195,7 @@ model ConversationMember {
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
+  @@index([userId])
 }
 
 model ChatMessage {
@@ -209,6 +214,9 @@ model ChatMessage {
   sender   User @relation("ChatMessageSender", fields: [senderId], references: [id])
   
   reactions ChatMessageReaction[]
+  
+  @@index([conversationId, createdAt(sort: Desc)])
+  @@index([senderId])
 }
 
 // Reaction trên tin nhắn chat
@@ -224,4 +232,35 @@ model ChatMessageReaction {
   user   User @relation("UserReactions", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([messageId, userId, emoji])
+}
+
+// ==================== PUSH NOTIFICATIONS ====================
+
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  endpoint  String   @unique
+  p256dh    String   // Public key
+  auth      String   // Auth secret
+  userAgent String?  // Browser/device info
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Notification preferences per user
+model NotificationSettings {
+  id                    Int      @id @default(autoincrement())
+  chatMessages          Boolean  @default(true)
+  projectAssignments    Boolean  @default(true)
+  projectDiscussions    Boolean  @default(true)
+  projectUpdates        Boolean  @default(true)
+  taskAssignments       Boolean  @default(true)
+  mentions              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  userId Int    @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
