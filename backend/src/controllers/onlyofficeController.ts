@@ -5,7 +5,8 @@ import { isOfficeFile, getFileStream, getFileStats } from '../services/minioServ
 // JWT import removed - OnlyOffice server has JWT disabled
 
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+// For production, use ai.jtsc.io.vn so OnlyOffice server can access files
+const BACKEND_URL = process.env.BACKEND_URL || 'https://ai.jtsc.io.vn';
 
 // Get document type based on file extension
 const getDocumentType = (filename: string): string => {

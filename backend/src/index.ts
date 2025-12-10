@@ -19,7 +19,10 @@ const allowedOrigins = [
     'https://www.jtsc.io.vn',
     'http://www.jtsc.io.vn',
     'https://ai.jtsc.io.vn',
-    'http://ai.jtsc.io.vn'
+    'http://ai.jtsc.io.vn',
+    // OnlyOffice server needs access to backend for file downloads
+    'https://jtsconlyoffice.duckdns.org',
+    'http://jtsconlyoffice.duckdns.org'
 ];
 
 const io = new Server(httpServer, {
@@ -58,7 +61,7 @@ import chatRoutes from './routes/chatRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 
 app.use(cors({
-    origin: function(origin, callback) {
+    origin: function (origin, callback) {
         // Cho phÃ©p requests khÃ´ng cÃ³ origin (nhÆ° mobile apps, Postman)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1) {
@@ -232,7 +235,7 @@ io.use((socket, next) => {
 // Socket.io connection handling
 io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.data.userId}`);
-    
+
     // Update user online status
     try {
         await prisma.user.update({
@@ -243,7 +246,7 @@ io.on('connection', async (socket) => {
     } catch (err) {
         console.error('Error updating online status:', err);
     }
-    
+
     // Join user's personal room for notifications
     socket.join(`user:${socket.data.userId}`);
 
@@ -290,7 +293,7 @@ io.on('connection', async (socket) => {
     });
 
     // ===== DISCUSSION EVENTS =====
-    
+
     // Discussion typing indicator
     socket.on('discussion:typing', (data: { projectId: number; userId: number; userName: string }) => {
         socket.to(`project:${data.projectId}`).emit('discussion:typing', {
@@ -309,7 +312,7 @@ io.on('connection', async (socket) => {
     });
 
     // ===== CHAT EVENTS =====
-    
+
     // Join conversation room
     socket.on('join_conversation', (conversationId: string) => {
         socket.join(`conversation:${conversationId}`);
@@ -361,7 +364,7 @@ io.on('connection', async (socket) => {
                 },
                 data: { lastRead: new Date() }
             });
-            
+
             // Notify other members that this user has read the messages
             socket.to(`conversation:${conversationId}`).emit('conversation_read', {
                 conversationId: Number(conversationId),
@@ -385,7 +388,7 @@ io.on('connection', async (socket) => {
     // Disconnect
     socket.on('disconnect', async () => {
         console.log(`User disconnected: ${socket.data.userId}`);
-        
+
         // Update user offline status
         try {
             await prisma.user.update({
@@ -395,11 +398,11 @@ io.on('connection', async (socket) => {
         } catch (err) {
             console.error('Error updating offline status:', err);
         }
-        
+
         // Broadcast offline status
-        io.emit('user:offline', { 
-            userId: socket.data.userId, 
-            lastActive: new Date().toISOString() 
+        io.emit('user:offline', {
+            userId: socket.data.userId,
+            lastActive: new Date().toISOString()
         });
     });
 });
