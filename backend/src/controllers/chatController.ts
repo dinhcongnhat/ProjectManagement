@@ -217,7 +217,7 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
         let avatarPath = null;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `chat-avatars/${Date.now()}-${normalizedFilename}`;
+            const fileName = `chat-avatars/${normalizedFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -579,7 +579,7 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
 
         // Upload file
         const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `chat/${id}/${userId}-${Date.now()}-${normalizedFilename}`;
+        const fileName = `chat/${id}/${normalizedFilename}`;
         console.log('[sendFileMessage] Uploading file:', fileName);
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': req.file.mimetype,
@@ -669,7 +669,8 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
         }
 
         // Upload audio
-        const fileName = `chat/${id}/${userId}-${Date.now()}-voice.webm`;
+        const timestamp = Date.now();
+        const fileName = `chat/${id}/audio/recording-${timestamp}.webm`;
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': 'audio/webm',
         });
@@ -1296,33 +1297,16 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
 
         console.log('[serveMessageAttachment] Attachment path:', message.attachment);
 
-        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        // Redirect to presigned URL from MinIO
+        const { getPresignedUrl } = await import('../services/minioService.js');
         
         try {
-            console.log('[serveMessageAttachment] Getting file stats...');
-            const stats = await getFileStats(message.attachment);
-            console.log('[serveMessageAttachment] File stats:', JSON.stringify(stats, null, 2));
+            console.log('[serveMessageAttachment] Generating presigned URL...');
+            const presignedUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
+            console.log('[serveMessageAttachment] Redirecting to presigned URL');
             
-            console.log('[serveMessageAttachment] Getting file stream...');
-            const fileStream = await getFileStream(message.attachment);
-
-            // Set appropriate content type - check both cases
-            const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'application/octet-stream';
-            console.log('[serveMessageAttachment] Content-Type:', contentType, 'Size:', stats.size);
-            
-            res.setHeader('Content-Type', contentType);
-            res.setHeader('Content-Length', stats.size);
-            
-            // For images and audio, allow caching and inline display
-            if (contentType.startsWith('image/') || contentType.startsWith('audio/')) {
-                res.setHeader('Cache-Control', 'public, max-age=31536000');
-                res.setHeader('Content-Disposition', 'inline');
-            }
-            
-            // Allow CORS for cross-origin image loading
-            res.setHeader('Access-Control-Allow-Origin', '*');
-
-            fileStream.pipe(res);
+            // Redirect to presigned URL
+            res.redirect(presignedUrl);
         } catch (minioError: any) {
             console.error('[serveMessageAttachment] MinIO error:', minioError?.message || minioError);
             console.error('[serveMessageAttachment] MinIO error code:', minioError?.code);

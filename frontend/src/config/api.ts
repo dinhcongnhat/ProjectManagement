@@ -23,17 +23,17 @@ const getDefaultApiUrl = () => {
     if (isProduction()) {
         return 'https://ai.jtsc.io.vn/api';
     }
-    // Development mode - use env or localhost
-    return import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+    // Development mode - use env or IP default
+    return import.meta.env.VITE_API_URL || 'http://10.10.1.254:3001/api';
 };
 
 const getDefaultWsUrl = () => {
-    // Production - always use domain backend with WSS
+    // Production - always use domain backend
     if (isProduction()) {
         return 'wss://ai.jtsc.io.vn';
     }
-    // Development mode - use env or localhost
-    return import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
+    // Development mode - use env or IP default
+    return import.meta.env.VITE_WS_URL || 'ws://10.10.1.254:3001';
 };
 
 export const API_URL = getDefaultApiUrl();

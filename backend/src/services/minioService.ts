@@ -19,36 +19,33 @@ export const isOfficeFile = (fileName: string): boolean => {
 // Normalize Vietnamese filename to ensure proper encoding
 export const normalizeVietnameseFilename = (filename: string): string => {
     try {
-        // Try to decode if it's URI encoded
-        let decoded = filename;
-        try {
-            decoded = decodeURIComponent(filename);
-        } catch {
-            // Not URI encoded, continue
+        // Multer sends filename as latin1 encoded bytes when it should be UTF-8
+        // We need to convert from latin1 to UTF-8
+        if (/[\xC0-\xFF]/.test(filename)) {
+            // Contains high bytes, likely UTF-8 interpreted as latin1
+            try {
+                const utf8Filename = Buffer.from(filename, 'latin1').toString('utf8');
+                // Normalize to composed form (NFC)
+                return utf8Filename.normalize('NFC').trim();
+            } catch (e) {
+                console.warn('[normalizeFilename] UTF-8 conversion failed:', e);
+            }
         }
         
-        // Fix common encoding issues (Latin-1 interpreted as UTF-8)
-        // This handles cases where UTF-8 bytes are misinterpreted as Latin-1
+        // Try URL decoding if encoded
         try {
-            // Check if it looks like mojibake (garbled text)
-            if (/Ã|Æ|Â|á»|áº/.test(decoded)) {
-                // Try to fix by re-encoding
-                const bytes = new Uint8Array([...decoded].map(c => c.charCodeAt(0)));
-                const fixedText = new TextDecoder('utf-8').decode(bytes);
-                if (fixedText && !/�/.test(fixedText)) {
-                    decoded = fixedText;
-                }
+            if (filename.includes('%')) {
+                const decoded = decodeURIComponent(filename);
+                return decoded.normalize('NFC').trim();
             }
         } catch {
-            // Keep original if fix fails
+            // Not URL encoded
         }
         
-        // Normalize to composed form (NFC) for consistent display
-        return decoded
-            .normalize('NFC')
-            .replace(/[\x00-\x1f\x7f]/g, '') // Remove control characters
-            .trim();
-    } catch {
+        // Already clean, just normalize
+        return filename.normalize('NFC').trim();
+    } catch (error) {
+        console.warn('[normalizeFilename] Error normalizing:', error);
         return filename;
     }
 };
@@ -112,6 +109,16 @@ export const uploadFile = async (
         // Add custom metadata for original filename with proper encoding
         finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(normalizedFileName);
         
+        // Check if file exists and delete it first (to ensure fresh upload)
+        try {
+            const exists = await minioClient.statObject(bucketName, finalFileName);
+            if (exists) {
+                console.log(`[MinIO] File exists, will overwrite: ${finalFileName}`);
+            }
+        } catch (err) {
+            // File doesn't exist, that's fine
+        }
+        
         await minioClient.putObject(bucketName, finalFileName, fileStream, undefined, finalMetaData);
         console.log(`File '${finalFileName}' uploaded successfully.`);
         return finalFileName;
@@ -148,9 +155,12 @@ export const uploadAudioFile = async (
 export const getFileStream = async (fileName: string): Promise<Readable> => {
     try {
         await ensureBucketExists();
-        return await minioClient.getObject(bucketName, fileName);
-    } catch (error) {
-        console.error(`Error getting file stream for '${fileName}':`, error);
+        console.log(`[MinIO] Getting file stream for: ${fileName}`);
+        const stream = await minioClient.getObject(bucketName, fileName);
+        console.log(`[MinIO] File stream obtained successfully for: ${fileName}`);
+        return stream;
+    } catch (error: any) {
+        console.error(`[MinIO] Error getting file stream for '${fileName}':`, error?.message || error);
         throw error;
     }
 };
@@ -158,9 +168,14 @@ export const getFileStream = async (fileName: string): Promise<Readable> => {
 export const getFileStats = async (fileName: string): Promise<any> => {
     try {
         await ensureBucketExists();
-        return await minioClient.statObject(bucketName, fileName);
-    } catch (error) {
-        console.error(`Error getting file stats for '${fileName}':`, error);
+        console.log(`[MinIO] Getting file stats for: ${fileName}`);
+        
+        const stats = await minioClient.statObject(bucketName, fileName);
+        console.log(`[MinIO] File stats obtained for: ${fileName}, size: ${stats.size}`);
+        return stats;
+    } catch (error: any) {
+        console.error(`[MinIO] Error getting file stats for '${fileName}':`, error?.message || error);
+        console.error(`[MinIO] Error code:`, error?.code);
         throw error;
     }
 };

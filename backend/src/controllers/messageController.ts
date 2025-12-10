@@ -45,13 +45,17 @@ export const upload = multer({
 // Get all messages for a project
 export const getMessages = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { projectId } = req.params;
+        const projectId = req.params.projectId;
+        if (!projectId) {
+            res.status(400).json({ error: 'Project ID is required' });
+            return;
+        }
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
         const skip = (page - 1) * limit;
 
         const messages = await prisma.message.findMany({
-            where: { projectId: parseInt(projectId as string) },
+            where: { projectId: parseInt(projectId) },
             include: {
                 sender: {
                     select: { id: true, name: true, role: true }
@@ -73,7 +77,7 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
         });
 
         const total = await prisma.message.count({
-            where: { projectId: parseInt(projectId as string) }
+            where: { projectId: parseInt(projectId) }
         });
 
         res.json({
@@ -94,7 +98,11 @@ export const getMessages = async (req: Request, res: Response): Promise<void> =>
 // Create a text message
 export const createMessage = async (req: Request, res: Response): Promise<void> => {
     try {
-        const projectId = req.params.projectId as string;
+        const projectId = req.params.projectId;
+        if (!projectId) {
+            res.status(400).json({ error: 'Project ID is required' });
+            return;
+        }
         const { content } = req.body;
         const userId = (req as any).user.id;
 
@@ -192,6 +200,10 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
 export const uploadVoiceMessage = async (req: Request, res: Response): Promise<void> => {
     try {
         const { projectId } = req.params;
+        if (!projectId) {
+            res.status(400).json({ error: 'Project ID is required' });
+            return;
+        }
         const userId = (req as any).user.id;
         const file = req.file;
 
@@ -200,9 +212,10 @@ export const uploadVoiceMessage = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        // Generate unique filename
+        // Generate filename with audio-specific prefix
         const timestamp = Date.now();
-        const fileName = `voice-${userId}-${timestamp}.${file.mimetype.split('/')[1]}`;
+        const extension = file.mimetype.split('/')[1];
+        const fileName = `audio/recording-${timestamp}.${extension}`;
 
         // Upload to MinIO audio bucket
         const audioPath = await uploadAudioFile(fileName, file.buffer, {
@@ -249,6 +262,10 @@ export const uploadVoiceMessage = async (req: Request, res: Response): Promise<v
 export const uploadFileMessage = async (req: Request, res: Response): Promise<void> => {
     try {
         const { projectId } = req.params;
+        if (!projectId) {
+            res.status(400).json({ error: 'Project ID is required' });
+            return;
+        }
         const userId = (req as any).user.id;
         const file = req.file;
         const { content } = req.body; // Optional text with file
@@ -266,9 +283,8 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
         console.log('Original filename from multer:', file.originalname);
         console.log('Decoded filename:', originalName);
         
-        // Generate unique filename - keep original name, MinIO handles UTF-8
-        const timestamp = Date.now();
-        const fileName = `${projectId}-${userId}-${timestamp}-${originalName}`;
+        // Use original filename directly without timestamp prefix
+        const fileName = `${projectId}/${originalName}`;
 
         // Upload to MinIO discussions folder
         const filePath = await uploadDiscussionFile(fileName, file.buffer, {
@@ -321,6 +337,10 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
 export const deleteMessage = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+        if (!id) {
+            res.status(400).json({ error: 'Message ID is required' });
+            return;
+        }
         const userId = (req as any).user.id;
         const userRole = (req as any).user.role;
 
@@ -356,6 +376,10 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
 export const downloadAttachment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+        if (!id) {
+            res.status(400).json({ error: 'Message ID is required' });
+            return;
+        }
 
         const message = await prisma.message.findUnique({
             where: { id: parseInt(id) }
@@ -384,6 +408,10 @@ export const downloadAttachment = async (req: Request, res: Response): Promise<v
 export const serveAttachment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { id } = req.params;
+        if (!id) {
+            res.status(400).json({ error: 'Message ID is required' });
+            return;
+        }
 
         const message = await prisma.message.findUnique({
             where: { id: parseInt(id) }

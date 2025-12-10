@@ -52,16 +52,17 @@ import messageRoutes from './routes/messageRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
 import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 app.use(cors({
     origin: function (origin, callback) {
-        // Cho phép requests không có origin (như mobile apps, Postman)
+        // Cho phÃ©p requests khÃ´ng cÃ³ origin (nhÆ° mobile apps, Postman)
         if (!origin)
             return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         }
         else {
-            // Cho phép tất cả để hỗ trợ mobile app
+            // Cho phÃ©p táº¥t cáº£ Ä‘á»ƒ há»— trá»£ mobile app
             callback(null, true);
         }
     },
@@ -93,6 +94,69 @@ app.use((req, res, next) => {
     }
     next();
 });
+// ==================== PUBLIC ROUTES (NO AUTH) ====================
+// These must be defined BEFORE any authenticated routes
+// Serve chat message attachments (images, files, audio)
+app.get('/api/chat/messages/:messageId/file', async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) }
+        });
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const stats = await getFileStats(message.attachment);
+        const fileStream = await getFileStream(message.attachment);
+        const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'application/octet-stream';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    }
+    catch (error) {
+        console.error('[serveMessageAttachment] Error:', error?.message);
+        res.status(404).json({ message: 'File not found' });
+    }
+});
+// Serve user avatars
+// NOTE: User avatar route is handled in userRoutes.ts
+// Serve conversation avatars
+app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const conversation = await prisma.conversation.findUnique({
+            where: { id: Number(id) },
+            select: { avatar: true }
+        });
+        if (!conversation || !conversation.avatar) {
+            return res.status(404).json({ message: 'Avatar not found' });
+        }
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const stats = await getFileStats(conversation.avatar);
+        const fileStream = await getFileStream(conversation.avatar);
+        const contentType = stats.metaData?.['content-type'] || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    }
+    catch (error) {
+        console.error('[serveConversationAvatar] Error:', error?.message);
+        res.status(404).json({ message: 'Avatar not found' });
+    }
+});
+// ==================== END PUBLIC ROUTES ====================
+// Public route for VAPID key (NO AUTH - must be before authenticated routes)
+app.get('/api/notifications/vapid-public-key', (req, res) => {
+    console.log('[Index] VAPID public key requested (public route)');
+    const publicKey = process.env.VAPID_PUBLIC_KEY || '';
+    console.log('[Index] Returning VAPID key:', publicKey ? publicKey.substring(0, 20) + '...' : 'NOT SET');
+    res.json({ publicKey });
+});
 // Debug middleware to check body parsing
 app.use('/api/chat', (req, res, next) => {
     if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
@@ -116,6 +180,7 @@ app.use('/api', messageRoutes);
 app.use('/api', activityRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');
 });
@@ -146,8 +211,19 @@ io.use((socket, next) => {
     }
 });
 // Socket.io connection handling
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.data.userId}`);
+    // Update user online status
+    try {
+        await prisma.user.update({
+            where: { id: socket.data.userId },
+            data: { isOnline: true, lastActive: new Date() }
+        });
+        io.emit('user:online', { userId: socket.data.userId });
+    }
+    catch (err) {
+        console.error('Error updating online status:', err);
+    }
     // Join user's personal room for notifications
     socket.join(`user:${socket.data.userId}`);
     // Join project room
@@ -238,16 +314,55 @@ io.on('connection', (socket) => {
         });
     });
     // Mark conversation as read
-    socket.on('mark_read', (conversationId) => {
-        // Notify other members that this user has read the messages
-        socket.to(`conversation:${conversationId}`).emit('conversation_read', {
-            conversationId,
+    socket.on('mark_read', async (conversationId) => {
+        try {
+            // Update lastRead in database
+            await prisma.conversationMember.update({
+                where: {
+                    conversationId_userId: {
+                        conversationId: Number(conversationId),
+                        userId: socket.data.userId
+                    }
+                },
+                data: { lastRead: new Date() }
+            });
+            // Notify other members that this user has read the messages
+            socket.to(`conversation:${conversationId}`).emit('conversation_read', {
+                conversationId: Number(conversationId),
+                userId: socket.data.userId,
+                readAt: new Date().toISOString()
+            });
+        }
+        catch (err) {
+            console.error('Error marking conversation as read:', err);
+        }
+    });
+    // Message delivered acknowledgment
+    socket.on('message_delivered', (data) => {
+        socket.to(`conversation:${data.conversationId}`).emit('message_delivered', {
+            messageId: data.messageId,
+            conversationId: data.conversationId,
             userId: socket.data.userId
         });
     });
     // Disconnect
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log(`User disconnected: ${socket.data.userId}`);
+        // Update user offline status
+        try {
+            await prisma.user.update({
+                where: { id: socket.data.userId },
+                data: { isOnline: false, lastActive: new Date() }
+            });
+        }
+        catch (err) {
+            console.error('Error updating offline status:', err);
+        }
+        // Broadcast offline status
+        io.emit('user:offline', {
+            userId: socket.data.userId,
+            lastActive: new Date().toISOString()
+        });
     });
 });
 httpServer.listen(Number(port), host, () => {

@@ -284,9 +284,9 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'File size must be less than 5MB' });
         }
 
-        // Upload to MinIO
+        // Upload to MinIO with original filename
         const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `avatars/${userId}-${Date.now()}-${normalizedFilename}`;
+        const fileName = `avatars/${normalizedFilename}`;
         console.log('[uploadAvatar] Uploading to MinIO:', fileName);
         
         const avatarPath = await uploadFile(fileName, req.file.buffer, {
@@ -434,7 +434,6 @@ export const getAllUsersWithAvatar = async (req: AuthRequest, res: Response) => 
 export const serveUserAvatar = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        console.log('[serveUserAvatar] Request for user:', id);
         
         const user = await prisma.user.findUnique({
             where: { id: Number(id) },
@@ -442,7 +441,6 @@ export const serveUserAvatar = async (req: Request, res: Response) => {
         });
 
         if (!user || !user.avatar) {
-            console.log('[serveUserAvatar] Avatar not found for user:', id);
             return res.status(404).json({ message: 'Avatar not found' });
         }
 
@@ -465,22 +463,15 @@ export const serveUserAvatar = async (req: Request, res: Response) => {
 
         console.log('[serveUserAvatar] Avatar path:', user.avatar);
 
-        // Otherwise, serve from MinIO
-        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        // Redirect to presigned URL from MinIO
+        const { getPresignedUrl } = await import('../services/minioService.js');
         
         try {
-            const stats = await getFileStats(user.avatar);
-            const fileStream = await getFileStream(user.avatar);
-
-            const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'image/jpeg';
+            const presignedUrl = await getPresignedUrl(user.avatar, 3600); // 1 hour expiry
+            console.log('[serveUserAvatar] Redirecting to presigned URL');
             
-            res.setHeader('Content-Type', contentType);
-            res.setHeader('Content-Length', stats.size);
-            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
-            res.setHeader('Content-Disposition', 'inline');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-
-            fileStream.pipe(res);
+            // Redirect to presigned URL
+            res.redirect(presignedUrl);
         } catch (minioError: any) {
             console.error('[serveUserAvatar] MinIO error:', minioError?.message || minioError);
             return res.status(404).json({ message: 'Avatar file not found in storage' });

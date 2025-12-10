@@ -59,8 +59,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
         if (req.file) {
             // Normalize Vietnamese filename to ensure proper encoding
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `${Date.now()}-${normalizedFilename}`;
-            attachmentPath = await uploadFile(fileName, req.file.buffer, {
+            attachmentPath = await uploadFile(normalizedFilename, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
         }

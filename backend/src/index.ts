@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
@@ -59,12 +59,12 @@ import notificationRoutes from './routes/notificationRoutes.js';
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Cho phép requests không có origin (như mobile apps, Postman)
+        // Cho phÃ©p requests khÃ´ng cÃ³ origin (nhÆ° mobile apps, Postman)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            // Cho phép tất cả để hỗ trợ mobile app
+            // Cho phÃ©p táº¥t cáº£ Ä‘á»ƒ há»— trá»£ mobile app
             callback(null, true);
         }
     },
@@ -131,47 +131,8 @@ app.get('/api/chat/messages/:messageId/file', async (req, res) => {
 });
 
 // Serve user avatars
-app.get('/api/users/:id/avatar', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const user = await prisma.user.findUnique({
-            where: { id: Number(id) },
-            select: { avatar: true }
-        });
+// NOTE: User avatar route is handled in userRoutes.ts
 
-        if (!user || !user.avatar) {
-            return res.status(404).json({ message: 'Avatar not found' });
-        }
-
-        // Check if base64 avatar
-        if (user.avatar.startsWith('data:image')) {
-            const matches = user.avatar.match(/^data:([^;]+);base64,(.+)$/);
-            if (matches) {
-                const contentType = matches[1];
-                const base64Data = matches[2];
-                const buffer = Buffer.from(base64Data, 'base64');
-                res.setHeader('Content-Type', contentType);
-                res.setHeader('Content-Length', buffer.length);
-                res.setHeader('Cache-Control', 'public, max-age=86400');
-                return res.send(buffer);
-            }
-        }
-
-        const { getFileStream, getFileStats } = await import('./services/minioService.js');
-        const stats = await getFileStats(user.avatar);
-        const fileStream = await getFileStream(user.avatar);
-
-        const contentType = stats.metaData?.['content-type'] || 'image/jpeg';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        fileStream.pipe(res);
-    } catch (error: any) {
-        console.error('[serveUserAvatar] Error:', error?.message);
-        res.status(404).json({ message: 'Avatar not found' });
-    }
-});
 
 // Serve conversation avatars
 app.get('/api/chat/conversations/:id/avatar', async (req, res) => {

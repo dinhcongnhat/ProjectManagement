@@ -4,9 +4,9 @@ import prisma from '../config/prisma.js';
 import { isOfficeFile, getFileStream, getFileStats } from '../services/minioService.js';
 import jwt from 'jsonwebtoken';
 
-const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtscoffice.duckdns.org/';
+const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
 const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
-const BACKEND_URL = process.env.BACKEND_URL || 'https://ai.jtsc.io.vn/api';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://10.10.1.254:3001';
 
 // Get document type based on file extension
 const getDocumentType = (filename: string): string => {
@@ -262,72 +262,35 @@ export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) =>
 export const downloadFileForOnlyOffice = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
+        console.log('[OnlyOffice Download] Request for project:', id);
+        
+        // Set CORS headers immediately
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        
         const project = await prisma.project.findUnique({
             where: { id: Number(id) },
         });
 
         if (!project || !project.attachment) {
+            console.log('[OnlyOffice Download] Attachment not found for project:', id);
             return res.status(404).json({ message: 'Attachment not found' });
         }
-
-        const fileStream = await getFileStream(project.attachment);
-        const fileStats = await getFileStats(project.attachment);
-
-        // Extract original filename
-        let originalName = project.attachment.split('-').slice(1).join('-');
-        if (project.attachment.includes('/')) {
-            const pathParts = project.attachment.split('/');
-            const fileName = pathParts[pathParts.length - 1] || '';
-            originalName = fileName.split('-').slice(1).join('-');
-        }
         
-        try {
-            originalName = decodeURIComponent(originalName);
-        } catch {
-            // If decoding fails, use as is
-        }
+        console.log('[OnlyOffice Download] Attachment path:', project.attachment);
 
-        const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
-        // Create ASCII-safe filename by replacing non-ASCII chars
-        const asciiFilename = originalName.replace(/[^\x00-\x7F]/g, '_');
-
-        // Set headers - use ASCII filename in quotes, UTF-8 encoded in filename*
-        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
+        // Use presigned URL instead of streaming
+        const { getPresignedUrl } = await import('../services/minioService.js');
+        const presignedUrl = await getPresignedUrl(project.attachment, 3600); // 1 hour
         
-        if (fileStats.metaData && fileStats.metaData['content-type']) {
-            res.setHeader('Content-Type', fileStats.metaData['content-type']);
-        } else {
-            // Set content type based on file extension
-            const ext = originalName.split('.').pop()?.toLowerCase();
-            const mimeTypes: Record<string, string> = {
-                'doc': 'application/msword',
-                'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'xls': 'application/vnd.ms-excel',
-                'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'ppt': 'application/vnd.ms-powerpoint',
-                'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                'odt': 'application/vnd.oasis.opendocument.text',
-                'ods': 'application/vnd.oasis.opendocument.spreadsheet',
-                'odp': 'application/vnd.oasis.opendocument.presentation',
-                'csv': 'text/csv',
-                'rtf': 'application/rtf',
-            };
-            res.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
+        console.log('[OnlyOffice Download] Redirecting to presigned URL');
+        res.redirect(presignedUrl);
+    } catch (error: any) {
+        console.error('[OnlyOffice Download] Error:', error?.message || error);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Server error', error: error?.message });
         }
-
-        if (fileStats.size) {
-            res.setHeader('Content-Length', fileStats.size);
-        }
-
-        // Allow CORS for OnlyOffice server
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-        fileStream.pipe(res);
-    } catch (error) {
-        console.error('Error downloading file for OnlyOffice:', error);
-        res.status(500).json({ message: 'Server error' });
     }
 };
 
@@ -345,7 +308,7 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
-        const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtscoffice.duckdns.org';
+        const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
         const JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
         const BACKEND_URL = process.env.BACKEND_URL || 'https://ai.jtsc.io.vn/api';
 
