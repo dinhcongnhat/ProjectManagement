@@ -31,18 +31,18 @@ router.get('/test', (req, res) => {
     res.json({ message: 'Chat routes are working', timestamp: new Date().toISOString() });
 });
 
-// Debug route to check MinIO connection and list files
+// Debug route to check MinIO connection and list files (NO AUTH needed)
 router.get('/debug/minio', async (req, res) => {
     try {
         const { minioClient, bucketName } = await import('../config/minio.js');
-        
+
         // Check if bucket exists
         const bucketExists = await minioClient.bucketExists(bucketName);
-        
+
         // List files in bucket (limit to first 50)
         const objects: any[] = [];
         const objectsStream = minioClient.listObjects(bucketName, '', true);
-        
+
         await new Promise<void>((resolve, reject) => {
             let count = 0;
             objectsStream.on('data', (obj) => {
@@ -58,7 +58,7 @@ router.get('/debug/minio', async (req, res) => {
             objectsStream.on('error', reject);
             objectsStream.on('end', resolve);
         });
-        
+
         res.json({
             status: 'connected',
             bucketName,

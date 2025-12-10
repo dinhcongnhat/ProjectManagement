@@ -32,12 +32,12 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     if (window._onlyofficeScriptLoading) {
         return window._onlyofficeScriptLoading;
     }
-    
+
     // Already loaded
     if (window.DocsAPI) {
         return Promise.resolve();
     }
-    
+
     // Start loading
     window._onlyofficeScriptLoading = new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -50,7 +50,7 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
         };
         document.body.appendChild(script);
     });
-    
+
     return window._onlyofficeScriptLoading;
 };
 
@@ -60,7 +60,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
     const [error, setError] = useState<string | null>(null);
     const [scriptLoaded, setScriptLoaded] = useState(false);
     const editorInstanceRef = useRef<object | null>(null);
-    
+
     // Build API path based on type
     const apiPath = type === 'chat' ? 'onlyoffice/chat' : 'onlyoffice/discussion';
 
@@ -84,14 +84,14 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
     useEffect(() => {
         // Push a new state when viewer opens
         window.history.pushState({ onlyofficeViewer: true }, '');
-        
+
         const handlePopState = () => {
             // When user clicks back button, close the viewer
             onClose();
         };
-        
+
         window.addEventListener('popstate', handlePopState);
-        
+
         return () => {
             window.removeEventListener('popstate', handlePopState);
         };
@@ -112,13 +112,13 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
 
                 // Wait for check response first
                 const checkResponse = await checkPromise;
-                
+
                 if (!checkResponse.ok) {
                     throw new Error('Không thể kiểm tra file');
                 }
-                
+
                 const checkData = await checkResponse.json();
-                
+
                 if (!checkData.supported) {
                     throw new Error('File này không được hỗ trợ bởi OnlyOffice');
                 }
@@ -159,7 +159,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                 }
 
                 const data = await response.json();
-                
+
                 // Add token to config
                 const configWithToken = {
                     ...data.config,
@@ -191,7 +191,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                 if (editorRef.current && window.DocsAPI) {
                     editorInstanceRef.current = new window.DocsAPI.DocEditor('discussion-onlyoffice-editor', configWithToken);
                 }
-                
+
                 setLoading(false);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
@@ -251,8 +251,8 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                     </div>
                 )}
 
-                <div 
-                    id="discussion-onlyoffice-editor" 
+                <div
+                    id="discussion-onlyoffice-editor"
                     ref={editorRef}
                     className="w-full h-full"
                     style={{ display: loading || error ? 'none' : 'block' }}

@@ -4,9 +4,13 @@ import dotenv from 'dotenv';
 // Ensure environment variables are loaded
 dotenv.config();
 
-const endPoint = process.env.MINIO_ENDPOINT || 'apiminiojtsc.duckdns.org';
-const port = parseInt(process.env.MINIO_PORT || '443');
-const useSSL = process.env.MINIO_USE_SSL === 'true';
+// Strip protocol from endpoint if present (MinIO requires hostname only)
+const rawEndpoint = process.env.MINIO_ENDPOINT || 'apiminiojtsc.duckdns.org';
+const endPoint = rawEndpoint.replace(/^https?:\/\//, '');
+
+// Default to port 9000 and no SSL (the working configuration)
+const port = parseInt(process.env.MINIO_PORT || '9000');
+const useSSL = process.env.MINIO_USE_SSL === 'true'; // Default false
 const accessKey = process.env.MINIO_ACCESS_KEY || 'jtsc';
 const secretKey = process.env.MINIO_SECRET_KEY || 'jtsc12345';
 const bucketName = process.env.MINIO_BUCKET_NAME || 'projectmanagement';
