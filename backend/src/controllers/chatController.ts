@@ -639,8 +639,8 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Lấy relative URL thay vì presigned URL để mobile có thể truy cập
-        const attachmentUrl = `/api/chat/messages/${message.id}/file`;
+        // Lấy relative URL với conversationId để match với MinIO path structure
+        const attachmentUrl = `/api/chat/conversations/${id}/messages/${message.id}/file`;
 
         // Add avatar URL for sender - use relative URL
         let senderAvatarUrl = null;
@@ -1309,8 +1309,8 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
 // This route is public (no auth required) for img src, audio src to work
 export const serveMessageAttachment = async (req: Request, res: Response) => {
     try {
-        const { messageId } = req.params;
-        console.log('[serveMessageAttachment] Request for messageId:', messageId);
+        const { conversationId, messageId } = req.params;
+        console.log('[serveMessageAttachment] Request for conversationId:', conversationId, 'messageId:', messageId);
         
         const message = await prisma.chatMessage.findUnique({
             where: { id: Number(messageId) }

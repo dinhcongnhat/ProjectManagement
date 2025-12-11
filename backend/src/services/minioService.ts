@@ -80,6 +80,26 @@ export const ensureBucketExists = async (): Promise<void> => {
             console.log(`[MinIO] Bucket '${bucketName}' does not exist, creating...`);
             await minioClient.makeBucket(bucketName, 'us-east-1'); // Region is required but often ignored by MinIO standalone
             console.log(`[MinIO] Bucket '${bucketName}' created successfully.`);
+            
+            // Set bucket policy to allow public read access
+            try {
+                const policy = {
+                    Version: '2012-10-17',
+                    Statement: [
+                        {
+                            Effect: 'Allow',
+                            Principal: { AWS: ['*'] },
+                            Action: ['s3:GetObject'],
+                            Resource: [`arn:aws:s3:::${bucketName}/*`]
+                        }
+                    ]
+                };
+                await minioClient.setBucketPolicy(bucketName, JSON.stringify(policy));
+                console.log(`[MinIO] Bucket policy set for public read access.`);
+            } catch (policyError) {
+                console.warn(`[MinIO] Warning: Could not set bucket policy:`, policyError);
+                // Continue anyway - presigned URLs will still work
+            }
         } else {
             console.log(`[MinIO] Bucket '${bucketName}' already exists.`);
         }
@@ -225,9 +245,34 @@ export const uploadDiscussionFile = async (
 export const getPresignedUrl = async (fileName: string, expirySeconds: number = 3600): Promise<string> => {
     try {
         await ensureBucketExists();
-        return await minioClient.presignedGetObject(bucketName, fileName, expirySeconds);
-    } catch (error) {
-        console.error(`Error getting presigned URL for '${fileName}':`, error);
+        
+        // First check if file exists
+        console.log(`[MinIO] Getting file stats for: ${fileName}`);
+        try {
+            await minioClient.statObject(bucketName, fileName);
+            console.log(`[MinIO] File exists: ${fileName}`);
+        } catch (statError: any) {
+            console.log(`[MinIO] Error getting file stats for '${fileName}':`, statError?.message || statError);
+            console.log(`[MinIO] Error code:`, statError?.code);
+            
+            // If file doesn't exist, throw specific error
+            if (statError?.code === 'NoSuchKey' || statError?.code === 'NotFound') {
+                throw new Error(`File not found: ${fileName}`);
+            }
+            
+            // For other errors (like AccessDenied), try to generate presigned URL anyway
+            console.log(`[MinIO] Attempting to generate presigned URL despite stat error...`);
+        }
+        
+        // Generate presigned URL
+        console.log(`[MinIO] Generating presigned URL for: ${fileName}`);
+        const url = await minioClient.presignedGetObject(bucketName, fileName, expirySeconds);
+        console.log(`[MinIO] Presigned URL generated successfully`);
+        return url;
+    } catch (error: any) {
+        console.error(`[MinIO] Error getting presigned URL for '${fileName}':`, error?.message || error);
+        console.error(`[MinIO] Error code:`, error?.code);
+        console.error(`[MinIO] Error stack:`, error?.stack);
         throw error;
     }
 };

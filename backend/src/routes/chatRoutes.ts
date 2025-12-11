@@ -76,7 +76,7 @@ router.get('/debug/minio', async (req, res) => {
 });
 
 // Public routes - serve files without authentication (for img src, audio src)
-router.get('/messages/:messageId/file', serveMessageAttachment);
+router.get('/conversations/:conversationId/messages/:messageId/file', serveMessageAttachment);
 router.get('/conversations/:id/avatar', serveConversationAvatar);
 
 // All other routes require authentication
