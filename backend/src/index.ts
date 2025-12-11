@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
@@ -13,16 +13,16 @@ const httpServer = createServer(app);
 const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost',
-    'http://localhost:5173',
+    'http://localhost:3001',
     'https://jtsc.io.vn',
     'http://jtsc.io.vn',
     'https://www.jtsc.io.vn',
     'http://www.jtsc.io.vn',
     'https://ai.jtsc.io.vn',
     'http://ai.jtsc.io.vn',
-    // OnlyOffice server needs access to backend for file downloads
-    'https://jtsconlyoffice.duckdns.org',
-    'http://jtsconlyoffice.duckdns.org'
+    'http://171.237.138.176:3000',
+    'http://171.237.138.176:3001',
+    'http://171.237.138.176'
 ];
 
 const io = new Server(httpServer, {
@@ -62,12 +62,12 @@ import notificationRoutes from './routes/notificationRoutes.js';
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Cho phÃ©p requests khÃ´ng cÃ³ origin (nhÆ° mobile apps, Postman)
+        // Cho phép requests không có origin (như mobile apps, Postman)
         if (!origin) return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            // Cho phÃ©p táº¥t cáº£ Ä‘á»ƒ há»— trá»£ mobile app
+            // Cho phép tất cả để hỗ trợ mobile app
             callback(null, true);
         }
     },
@@ -133,9 +133,7 @@ app.get('/api/chat/messages/:messageId/file', async (req, res) => {
     }
 });
 
-// Serve user avatars
 // NOTE: User avatar route is handled in userRoutes.ts
-
 
 // Serve conversation avatars
 app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
@@ -163,6 +161,148 @@ app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
     } catch (error: any) {
         console.error('[serveConversationAvatar] Error:', error?.message);
         res.status(404).json({ message: 'Avatar not found' });
+    }
+});
+
+// OnlyOffice download routes (NO AUTH - OnlyOffice server needs direct access)
+app.get('/api/onlyoffice/download/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('[OnlyOffice Download] Project ID:', id);
+
+        const project = await prisma.project.findUnique({
+            where: { id: Number(id) },
+        });
+
+        if (!project || !project.attachment) {
+            console.log('[OnlyOffice Download] Attachment not found');
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        console.log('[OnlyOffice Download] Found attachment:', project.attachment);
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+
+        let fileStats;
+        try {
+            fileStats = await getFileStats(project.attachment);
+            console.log('[OnlyOffice Download] File stats:', fileStats.size, 'bytes');
+        } catch (statsError: any) {
+            console.error('[OnlyOffice Download] Failed to get file stats:', statsError?.message);
+            return res.status(404).json({ message: 'File not found in storage' });
+        }
+
+        let fileStream;
+        try {
+            fileStream = await getFileStream(project.attachment);
+        } catch (streamError: any) {
+            console.error('[OnlyOffice Download] Failed to get file stream:', streamError?.message);
+            return res.status(500).json({ message: 'Cannot read file from storage' });
+        }
+
+        // Extract original filename
+        let originalName = project.attachment.split('-').slice(1).join('-');
+        if (project.attachment.includes('/')) {
+            const pathParts = project.attachment.split('/');
+            const fileName = pathParts[pathParts.length - 1] || '';
+            originalName = fileName.split('-').slice(1).join('-');
+        }
+
+        try {
+            originalName = decodeURIComponent(originalName);
+        } catch {
+            // If decoding fails, use as is
+        }
+
+        const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
+        const asciiFilename = originalName.replace(/[^\x00-\x7F]/g, '_');
+
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
+
+        const ext = originalName.split('.').pop()?.toLowerCase();
+        const mimeTypes: Record<string, string> = {
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'pdf': 'application/pdf',
+        };
+        res.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
+
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        console.log('[OnlyOffice Download] Streaming file:', project.attachment);
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Download] Error:', error?.message, error?.stack);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.get('/api/onlyoffice/discussion/download/:messageId', async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const message = await prisma.message.findUnique({
+            where: { id: Number(messageId) },
+        });
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const fileStream = await getFileStream(message.attachment);
+        const fileStats = await getFileStats(message.attachment);
+
+        res.setHeader('Content-Type', fileStats.metaData?.['content-type'] || 'application/octet-stream');
+        if (fileStats.size) res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Discussion Download] Error:', error?.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+app.get('/api/onlyoffice/chat/download/:messageId', async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        console.log('[OnlyOffice Chat Download] Looking for message ID:', messageId);
+
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) },
+        });
+
+        console.log('[OnlyOffice Chat Download] Message found:', message ? 'Yes' : 'No');
+        if (message) {
+            console.log('[OnlyOffice Chat Download] Attachment path:', message.attachment);
+        }
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const fileStream = await getFileStream(message.attachment);
+        const fileStats = await getFileStats(message.attachment);
+
+        res.setHeader('Content-Type', fileStats.metaData?.['content-type'] || 'application/octet-stream');
+        if (fileStats.size) res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Chat Download] Error:', error?.message);
+        res.status(500).json({ message: 'Server error' });
     }
 });
 // ==================== END PUBLIC ROUTES ====================
