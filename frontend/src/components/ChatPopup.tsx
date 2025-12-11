@@ -1748,6 +1748,13 @@ const ChatPopup: React.FC = () => {
     const handleFileUpload = async (conversationId: number, file: File) => {
         if (!file) return;
         
+        console.log('[ChatPopup] Starting file upload:', {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            conversationId
+        });
+        
         const isImage = file.type.startsWith('image/');
         
         // Compress image before upload if it's an image
@@ -1756,6 +1763,10 @@ const ChatPopup: React.FC = () => {
             try {
                 setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
                 fileToUpload = await compressImage(file, 1200, 1200, 0.8);
+                console.log('[ChatPopup] Image compressed:', {
+                    originalSize: file.size,
+                    compressedSize: fileToUpload.size
+                });
             } catch (error) {
                 console.error('Error compressing image:', error);
                 // Continue with original file if compression fails
@@ -1765,6 +1776,8 @@ const ChatPopup: React.FC = () => {
         const formData = new FormData();
         formData.append('file', fileToUpload);
         formData.append('messageType', isImage ? 'IMAGE' : 'FILE');
+        
+        console.log('[ChatPopup] FormData created, uploading to:', `${API_URL}/chat/conversations/${conversationId}/messages/file`);
 
         try {
             if (!isImage) {
@@ -1773,6 +1786,8 @@ const ChatPopup: React.FC = () => {
             
             // Use XMLHttpRequest for upload progress tracking
             const token = localStorage.getItem('token');
+            console.log('[ChatPopup] Token exists:', !!token);
+            
             const response = await new Promise<any>((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
                 
@@ -1780,19 +1795,33 @@ const ChatPopup: React.FC = () => {
                     if (e.lengthComputable) {
                         const percentCompleted = Math.round((e.loaded * 100) / e.total);
                         setUploadProgress(prev => ({ ...prev, [conversationId]: percentCompleted }));
+                        console.log('[ChatPopup] Upload progress:', percentCompleted + '%');
                     }
                 });
                 
                 xhr.addEventListener('load', () => {
+                    console.log('[ChatPopup] Upload completed with status:', xhr.status);
+                    console.log('[ChatPopup] Response text:', xhr.responseText);
                     if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve(JSON.parse(xhr.responseText));
+                        try {
+                            resolve(JSON.parse(xhr.responseText));
+                        } catch (e) {
+                            console.error('[ChatPopup] Failed to parse response:', e);
+                            reject(new Error('Invalid JSON response'));
+                        }
                     } else {
-                        reject(new Error(`Upload failed: ${xhr.status}`));
+                        reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
                     }
                 });
                 
-                xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-                xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+                xhr.addEventListener('error', () => {
+                    console.error('[ChatPopup] Upload error event');
+                    reject(new Error('Upload failed'));
+                });
+                xhr.addEventListener('abort', () => {
+                    console.error('[ChatPopup] Upload aborted');
+                    reject(new Error('Upload cancelled'));
+                });
                 
                 xhr.open('POST', `${API_URL}/chat/conversations/${conversationId}/messages/file`);
                 if (token) {
@@ -1800,6 +1829,8 @@ const ChatPopup: React.FC = () => {
                 }
                 xhr.send(formData);
             });
+            
+            console.log('[ChatPopup] File uploaded successfully:', response);
             
             const newMessage = response;
             
@@ -1815,7 +1846,7 @@ const ChatPopup: React.FC = () => {
 
             fetchConversations();
         } catch (error) {
-            console.error('Error uploading file:', error);
+            console.error('[ChatPopup] Error uploading file:', error);
             showError('Không thể tải file lên. Vui lòng thử lại.');
         } finally {
             setUploadProgress(prev => {
