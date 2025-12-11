@@ -2180,11 +2180,20 @@ const ChatPopup: React.FC = () => {
                                                     <div className="w-8 h-8 mr-2 shrink-0">
                                                         {isLastInGroup ? (
                                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
-                                                                {msg.sender.avatar ? (
-                                                                    <img src={resolveAttachmentUrl(msg.sender.avatar) || ''} alt="" className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <span className="text-white font-semibold text-xs">{msg.sender.name.charAt(0).toUpperCase()}</span>
-                                                                )}
+                                                                {msg.sender.id ? (
+                                                                    <img 
+                                                                        src={`/api/users/${msg.sender.id}/avatar`} 
+                                                                        alt="" 
+                                                                        className="w-full h-full object-cover" 
+                                                                        onError={(e) => {
+                                                                            const target = e.target as HTMLImageElement;
+                                                                            target.style.display = 'none';
+                                                                            const sibling = target.nextElementSibling as HTMLElement;
+                                                                            if (sibling) sibling.classList.remove('hidden');
+                                                                        }} 
+                                                                    />
+                                                                ) : null}
+                                                                <span className="text-white font-semibold text-xs hidden">{msg.sender.name.charAt(0).toUpperCase()}</span>
                                                             </div>
                                                         ) : null}
                                                     </div>
@@ -2680,11 +2689,20 @@ const ChatPopup: React.FC = () => {
                                     <div className="w-8 h-8 mr-2 shrink-0">
                                         {isLastInGroup ? (
                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
-                                                {msg.sender.avatar ? (
-                                                    <img src={resolveAttachmentUrl(msg.sender.avatar) || ''} alt="" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-white font-semibold text-xs">{msg.sender.name.charAt(0).toUpperCase()}</span>
-                                                )}
+                                                {msg.sender.id ? (
+                                                    <img 
+                                                        src={`/api/users/${msg.sender.id}/avatar`} 
+                                                        alt="" 
+                                                        className="w-full h-full object-cover" 
+                                                        onError={(e) => {
+                                                            const target = e.target as HTMLImageElement;
+                                                            target.style.display = 'none';
+                                                            const sibling = target.nextElementSibling as HTMLElement;
+                                                            if (sibling) sibling.classList.remove('hidden');
+                                                        }} 
+                                                    />
+                                                ) : null}
+                                                <span className="text-white font-semibold text-xs hidden">{msg.sender.name.charAt(0).toUpperCase()}</span>
                                             </div>
                                         ) : null}
                                     </div>

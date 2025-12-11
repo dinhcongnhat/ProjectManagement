@@ -24,6 +24,12 @@ registerRoute(
   new NetworkOnly()
 );
 
+// Network only for avatar endpoints (never cache user avatars)
+registerRoute(
+  ({ url }) => url.pathname.includes('/avatar'),
+  new NetworkOnly()
+);
+
 // Network only for Socket.io
 registerRoute(
   ({ url }) => url.pathname.startsWith('/socket.io'),

@@ -14,6 +14,14 @@ const isStandalonePWA = window.matchMedia('(display-mode: standalone)').matches 
 const updateSW = registerSW({
   onNeedRefresh() {
     if (confirm('Có phiên bản mới! Bạn có muốn cập nhật không?')) {
+      // Clear all caches before update
+      if ('caches' in window) {
+        caches.keys().then((names) => {
+          names.forEach((name) => {
+            caches.delete(name);
+          });
+        });
+      }
       updateSW(true)
     }
   },
@@ -42,6 +50,21 @@ if (isStandalonePWA) {
       console.log('[PWA] App became visible, checking connection...')
       // Dispatch custom event for WebSocket to reconnect
       window.dispatchEvent(new CustomEvent('pwa-visible'))
+      
+      // Force reload all images to get fresh avatars
+      setTimeout(() => {
+        const images = document.querySelectorAll('img[src*="/avatar"]');
+        images.forEach((img) => {
+          const htmlImg = img as HTMLImageElement;
+          const currentSrc = htmlImg.src;
+          // Add timestamp to bypass cache
+          if (currentSrc.includes('/avatar')) {
+            const url = new URL(currentSrc);
+            url.searchParams.set('_t', Date.now().toString());
+            htmlImg.src = url.toString();
+          }
+        });
+      }, 500);
     }
   })
   

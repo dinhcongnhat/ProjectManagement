@@ -37,6 +37,7 @@ export default function UserProfile() {
     const [editing, setEditing] = useState(false);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [avatarTimestamp, setAvatarTimestamp] = useState(Date.now());
     
     // Image cropper state
     const [showCropper, setShowCropper] = useState(false);
@@ -106,10 +107,8 @@ export default function UserProfile() {
             const response = await api.post('/users/profile/avatar', formData);
 
             // Force re-render với timestamp mới để bypass cache
-            setProfile({
-                ...response.data,
-                avatarUrl: response.data.avatarUrl ? `${response.data.avatarUrl}?t=${Date.now()}` : null
-            });
+            setProfile(response.data);
+            setAvatarTimestamp(Date.now());
             showSuccess('Cập nhật ảnh đại diện thành công!');
         } catch (error: any) {
             console.error('Error uploading avatar:', error);
@@ -174,7 +173,8 @@ export default function UserProfile() {
                                 <div className="w-28 h-28 rounded-full border-4 border-white bg-white shadow-lg overflow-hidden">
                                     {(profile?.avatarUrl || profile?.avatar) ? (
                                         <img
-                                            src={profile.avatarUrl ? `${profile.avatarUrl}?t=${Date.now()}` : resolveAvatarUrl(profile.avatar) || ''}
+                                            key={avatarTimestamp}
+                                            src={profile.avatarUrl ? `${profile.avatarUrl}?t=${avatarTimestamp}` : resolveAvatarUrl(profile.avatar) || ''}
                                             alt={profile.name}
                                             className="w-full h-full object-cover"
                                         />

@@ -1,7 +1,7 @@
 // Custom Service Worker for PWA Real-time Support
-// Version: 1.0.2
+// Version: 1.0.3
 
-const CACHE_NAME = 'pwa-cache-v3';
+const CACHE_NAME = 'pwa-cache-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -47,11 +47,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   
-  // CRITICAL: Never cache WebSocket, Socket.io, or API requests
+  // CRITICAL: Never cache WebSocket, Socket.io, API requests, or avatars
   // These need to go directly to network for real-time functionality
   if (
     url.pathname.startsWith('/socket.io') ||
     url.pathname.startsWith('/api') ||
+    url.pathname.includes('/avatar') ||
     url.protocol === 'ws:' ||
     url.protocol === 'wss:' ||
     event.request.url.includes('socket.io') ||
@@ -119,7 +120,7 @@ self.addEventListener('message', (event) => {
   }
   
   if (event.data && event.data.type === 'GET_VERSION') {
-    event.ports[0].postMessage({ version: '1.0.2' });
+    event.ports[0].postMessage({ version: '1.0.3' });
   }
 });
 
