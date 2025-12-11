@@ -14,7 +14,6 @@ import {
     EyeOff
 } from 'lucide-react';
 import ImageCropper from '../components/ImageCropper';
-import { resolveAvatarUrl } from '../utils/urlUtils';
 
 interface UserProfileData {
     id: number;
@@ -56,6 +55,9 @@ export default function UserProfile() {
         const fetchProfile = async () => {
             try {
                 const response = await api.get('/users/profile');
+                console.log('Profile data:', response.data);
+                console.log('Avatar field:', response.data.avatar);
+                console.log('AvatarUrl field:', response.data.avatarUrl);
                 setProfile(response.data);
                 setName(response.data.name || '');
                 setBio(response.data.bio || '');
@@ -171,10 +173,10 @@ export default function UserProfile() {
                             {/* Avatar */}
                             <div className="relative">
                                 <div className="w-28 h-28 rounded-full border-4 border-white bg-white shadow-lg overflow-hidden">
-                                    {(profile?.avatarUrl || profile?.avatar) ? (
+                                    {profile?.avatar ? (
                                         <img
                                             key={avatarTimestamp}
-                                            src={profile.avatarUrl ? `${profile.avatarUrl}?t=${avatarTimestamp}` : resolveAvatarUrl(profile.avatar) || ''}
+                                            src={`/api/users/${profile.id}/avatar?t=${avatarTimestamp}`}
                                             alt={profile.name}
                                             className="w-full h-full object-cover"
                                         />
