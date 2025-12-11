@@ -112,11 +112,14 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const outputSize = 256; // Output size for avatar
+        // Use original image dimensions to maintain quality
+        const img = imageRef.current;
+        const maxSize = Math.max(img.naturalWidth, img.naturalHeight);
+        const outputSize = Math.min(maxSize, 1024); // Cap at 1024px for performance
+        
         canvas.width = outputSize;
         canvas.height = outputSize;
 
-        const img = imageRef.current;
         const cropArea = containerRef.current?.getBoundingClientRect();
         
         if (!cropArea) return;
@@ -169,12 +172,12 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
 
         ctx.restore();
 
-        // Convert to blob
+        // Convert to blob with high quality to prevent blurriness
         canvas.toBlob((blob) => {
             if (blob) {
                 onCrop(blob);
             }
-        }, 'image/jpeg', 0.9);
+        }, 'image/jpeg', 0.95);
     };
 
     return (

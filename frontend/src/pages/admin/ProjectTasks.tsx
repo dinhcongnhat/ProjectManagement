@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
@@ -15,16 +15,19 @@ interface Project {
     id: number;
     code: string;
     name: string;
-    manager: { id: number, name: string };
-    implementers: { id: number, name: string }[];
-    followers: { id: number, name: string }[];
-    startDate: string;
-    endDate: string;
-    duration: string;
+    manager?: { id: number, name: string };
+    implementers?: { id: number, name: string }[];
+    followers?: { id: number, name: string }[];
+    startDate: string | null;
+    endDate: string | null;
+    duration: number;
     group: string;
     value: string;
     progressMethod: string;
     description: string;
+    managerId: number;
+    parentId?: number | null;
+    children?: Project[];
 }
 
 interface UserMultiSelectProps {
@@ -62,6 +65,8 @@ const ProjectTasks = () => {
     const [users, setUsers] = useState<UserData[]>([]);
     const { token } = useAuth();
     const { showConfirm, showSuccess, showError } = useDialog();
+    const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+    const [expandedChildDetails, setExpandedChildDetails] = useState<Set<number>>(new Set());
 
     // Edit Modal State
     const [showEditModal, setShowEditModal] = useState(false);
@@ -137,7 +142,7 @@ const ProjectTasks = () => {
             name: project.name,
             startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : '',
             endDate: project.endDate ? new Date(project.endDate).toISOString().split('T')[0] : '',
-            duration: project.duration || '',
+            duration: String(project.duration || ''),
             group: project.group || '',
             value: project.value || '',
             progressMethod: project.progressMethod,
@@ -232,45 +237,257 @@ const ProjectTasks = () => {
                             Chưa có dự án nào. Hãy tạo dự án mới.
                         </div>
                     ) : (
-                        projects.map((project) => (
-                            <div key={project.id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between group">
-                                <Link to={`/admin/projects/${project.id}`} className="flex items-center gap-4 flex-1">
-                                    <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
-                                        <Briefcase size={24} />
-                                    </div>
-                                    <div>
-                                        <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
-                                            {project.name} <span className="text-gray-500 font-normal">({project.code})</span>
-                                        </h3>
-                                        <div className="flex items-center gap-3 mt-1">
-                                            <span className="flex items-center gap-1 text-xs text-gray-500">
-                                                <Calendar size={12} />
-                                                {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
-                                                {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </Link>
+                        (() => {
+                            const parentProjects = projects.filter(p => !p.parentId);
+                            
+                            const toggleExpand = (projectId: number) => {
+                                setExpandedProjects(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(projectId)) {
+                                        newSet.delete(projectId);
+                                    } else {
+                                        newSet.add(projectId);
+                                    }
+                                    return newSet;
+                                });
+                            };
 
-                                <div className="flex items-center gap-6">
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-xs text-gray-600">
-                                            {project.manager?.name?.charAt(0) || '?'}
-                                        </div>
-                                        <span className="text-sm text-gray-600 hidden md:block">{project.manager?.name || 'Chưa gán'}</span>
-                                    </div>
+                            const toggleChildDetail = (projectId: number, e: React.MouseEvent) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setExpandedChildDetails(prev => {
+                                    const newSet = new Set(prev);
+                                    if (newSet.has(projectId)) {
+                                        newSet.delete(projectId);
+                                    } else {
+                                        newSet.add(projectId);
+                                    }
+                                    return newSet;
+                                });
+                            };
 
-                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button title="Chỉnh sửa" onClick={() => openEditModal(project)} className="p-2 text-gray-400 hover:text-blue-600">
-                                            <Pencil size={18} />
-                                        </button>
-                                        <button title="Xóa" onClick={() => handleDelete(project.id)} className="p-2 text-gray-400 hover:text-red-600">
-                                            <Trash2 size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
+                            const renderProject = (project: Project, depth = 0, isChild = false) => {
+                                const hasChildren = project.children && project.children.length > 0;
+                                const isExpanded = expandedProjects.has(project.id);
+                                const isDetailExpanded = expandedChildDetails.has(project.id);
+                                const indentClass = depth === 0 ? '' : depth === 1 ? 'pl-8' : depth === 2 ? 'pl-16' : 'pl-24';
+
+                                return (
+                                    <React.Fragment key={project.id}>
+                                        {/* Project Row */}
+                                        <div className={`p-3 md:p-4 hover:bg-gray-50 transition-colors ${indentClass}`}>
+                                            <div className="flex items-start md:items-center justify-between gap-2 md:gap-4 group flex-wrap md:flex-nowrap">
+                                                {/* Left side: Expand + Project Info */}
+                                                <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+                                                    {/* Expand/Collapse button for children */}
+                                                    {hasChildren && (
+                                                        <button 
+                                                            onClick={() => toggleExpand(project.id)}
+                                                            className="p-1 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
+                                                            title={isExpanded ? "Thu gọn" : "Mở rộng"}
+                                                        >
+                                                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                                        </button>
+                                                    )}
+                                                    {!hasChildren && <div className="w-6 flex-shrink-0" />}
+                                                    
+                                                    {/* Project link or clickable area for child projects */}
+                                                    {isChild ? (
+                                                        <button
+                                                            onClick={(e) => toggleChildDetail(project.id, e)}
+                                                            className="flex items-center gap-2 md:gap-4 flex-1 min-w-0 text-left"
+                                                        >
+                                                            <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0">
+                                                                <Briefcase size={20} className="md:w-6 md:h-6" />
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors truncate">
+                                                                    {project.name} <span className="text-gray-500 font-normal">({project.code})</span>
+                                                                </h3>
+                                                                <div className="flex items-center gap-2 md:gap-3 mt-1 flex-wrap">
+                                                                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                                                                        <Calendar size={12} />
+                                                                        <span className="hidden sm:inline">
+                                                                            {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
+                                                                            {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                                                        </span>
+                                                                        <span className="sm:hidden">
+                                                                            {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : 'N/A'}
+                                                                        </span>
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                    ) : (
+                                                        <Link to={`/admin/projects/${project.id}`} className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+                                                            <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0">
+                                                                <Briefcase size={20} className="md:w-6 md:h-6" />
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <h3 className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors truncate">
+                                                                    {project.name} <span className="text-gray-500 font-normal">({project.code})</span>
+                                                                </h3>
+                                                                <div className="flex items-center gap-2 md:gap-3 mt-1 flex-wrap">
+                                                                    <span className="flex items-center gap-1 text-xs text-gray-500">
+                                                                        <Calendar size={12} />
+                                                                        <span className="hidden sm:inline">
+                                                                            {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
+                                                                            {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                                                        </span>
+                                                                        <span className="sm:hidden">
+                                                                            {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : 'N/A'}
+                                                                        </span>
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </Link>
+                                                    )}
+                                                </div>
+
+                                                {/* Right side: Manager + Actions */}
+                                                <div className="flex items-center gap-2 md:gap-6 ml-auto">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-xs text-gray-600 flex-shrink-0">
+                                                            {project.manager?.name?.charAt(0) || '?'}
+                                                        </div>
+                                                        <span className="text-sm text-gray-600 hidden lg:block">{project.manager?.name || 'Chưa gán'}</span>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-1 md:gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                                        <button title="Chỉnh sửa" onClick={() => openEditModal(project)} className="p-2 text-gray-400 hover:text-blue-600">
+                                                            <Pencil size={16} className="md:w-[18px] md:h-[18px]" />
+                                                        </button>
+                                                        <button title="Xóa" onClick={() => handleDelete(project.id)} className="p-2 text-gray-400 hover:text-red-600">
+                                                            <Trash2 size={16} className="md:w-[18px] md:h-[18px]" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Inline Detail View for Child Projects */}
+                                        {isChild && isDetailExpanded && (
+                                            <div className={`bg-blue-50 border-l-4 border-blue-400 ${indentClass}`}>
+                                                <div className="p-4 space-y-4">
+                                                    {/* Header */}
+                                                    <div className="flex items-center justify-between">
+                                                        <h4 className="font-semibold text-gray-900 text-sm md:text-base">Chi tiết dự án con</h4>
+                                                        <button 
+                                                            onClick={(e) => toggleChildDetail(project.id, e)}
+                                                            className="text-gray-400 hover:text-gray-600"
+                                                            title="Đóng"
+                                                        >
+                                                            <X size={20} />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Project Details Grid - Responsive */}
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 text-sm">
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Mã dự án:</span>
+                                                            <p className="text-gray-900 mt-1">{project.code}</p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Tên dự án:</span>
+                                                            <p className="text-gray-900 mt-1">{project.name}</p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Ngày bắt đầu:</span>
+                                                            <p className="text-gray-900 mt-1">
+                                                                {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'Chưa xác định'}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Ngày kết thúc:</span>
+                                                            <p className="text-gray-900 mt-1">
+                                                                {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'Chưa xác định'}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Thời hạn:</span>
+                                                            <p className="text-gray-900 mt-1">{project.duration || 0} ngày</p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Nhóm dự án:</span>
+                                                            <p className="text-gray-900 mt-1">{project.group || 'N/A'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Giá trị:</span>
+                                                            <p className="text-gray-900 mt-1">{project.value || 'N/A'}</p>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium">Quản trị:</span>
+                                                            <p className="text-gray-900 mt-1">{project.manager?.name || 'Chưa gán'}</p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Team Members */}
+                                                    <div className="space-y-2">
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium text-sm">Người thực hiện:</span>
+                                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                                {project.implementers && project.implementers.length > 0 ? (
+                                                                    project.implementers.map(impl => (
+                                                                        <span key={impl.id} className="px-2 py-1 bg-white rounded-full text-xs border border-gray-300">
+                                                                            {impl.name}
+                                                                        </span>
+                                                                    ))
+                                                                ) : (
+                                                                    <span className="text-gray-500 text-xs">Chưa có</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium text-sm">Người theo dõi:</span>
+                                                            <div className="flex flex-wrap gap-2 mt-2">
+                                                                {project.followers && project.followers.length > 0 ? (
+                                                                    project.followers.map(fol => (
+                                                                        <span key={fol.id} className="px-2 py-1 bg-white rounded-full text-xs border border-gray-300">
+                                                                            {fol.name}
+                                                                        </span>
+                                                                    ))
+                                                                ) : (
+                                                                    <span className="text-gray-500 text-xs">Chưa có</span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Description */}
+                                                    {project.description && (
+                                                        <div>
+                                                            <span className="text-gray-600 font-medium text-sm">Mô tả:</span>
+                                                            <p className="text-gray-900 mt-1 text-sm leading-relaxed">{project.description}</p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Actions */}
+                                                    <div className="flex gap-2 pt-2 border-t border-blue-200">
+                                                        <Link 
+                                                            to={`/admin/projects/${project.id}`}
+                                                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors"
+                                                        >
+                                                            Xem chi tiết đầy đủ
+                                                        </Link>
+                                                        <button
+                                                            onClick={() => openEditModal(project)}
+                                                            className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm transition-colors"
+                                                        >
+                                                            Chỉnh sửa
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Render children recursively */}
+                                        {hasChildren && isExpanded && project.children!.map(child => renderProject(child, depth + 1, true))}
+                                    </React.Fragment>
+                                );
+                            };
+
+                            return parentProjects.map(project => renderProject(project));
+                        })()
                     )}
                 </div>
             </div>
