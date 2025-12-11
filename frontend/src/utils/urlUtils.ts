@@ -13,6 +13,7 @@ export const getApiBaseUrl = (): string => {
  * Resolve a relative URL to an absolute URL
  * Handles both avatar URLs and attachment URLs
  * Works correctly on both web and PWA mobile
+ * Also handles avatar endpoint redirects
  */
 export const resolveUrl = (url: string | null | undefined): string | null => {
     if (!url) return null;
@@ -30,6 +31,14 @@ export const resolveUrl = (url: string | null | undefined): string | null => {
     // If it's a blob URL, return as is
     if (url.startsWith('blob:')) {
         return url;
+    }
+    
+    // If it's an avatar path from Minio, construct avatar endpoint URL
+    if (url.includes('avatars/') || url.startsWith('avatars/')) {
+        // Extract user ID from avatar path if possible, otherwise use the URL
+        const baseUrl = getApiBaseUrl();
+        // For now, return the full path and let backend handle redirect
+        return `${baseUrl}${url.startsWith('/') ? url : '/' + url}`;
     }
     
     // For relative URLs starting with /, prepend API base URL

@@ -5,9 +5,32 @@
     @apply bg-gray-50 text-gray-900;
   }
   
-  /* Safe area insets for mobile */
+  /* Safe area insets for mobile - Fixed for all device types */
   html {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  
+  /* Prevent zoom on input focus (iOS Safari) */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+  
+  /* Fix for iPhone notch */
+  @supports (padding: max(0px)) {
+    body {
+      padding-top: max(0px, env(safe-area-inset-top));
+      padding-bottom: max(0px, env(safe-area-inset-bottom));
+    }
+  }
+  
+  /* Samsung devices specific */
+  @media screen and (max-width: 768px) and (orientation: portrait) {
+    body {
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+    }
   }
 }
 

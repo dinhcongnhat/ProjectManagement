@@ -24,7 +24,7 @@ const getDefaultApiUrl = () => {
         return 'https://ai.jtsc.io.vn/api';
     }
     // Development mode - use env or IP default
-    return import.meta.env.VITE_API_URL || 'http://171.237.138.176:3001/api';
+    return import.meta.env.VITE_API_URL || 'https://ai.jtsc.io.vn/api';
 };
 
 const getDefaultWsUrl = () => {
@@ -33,7 +33,7 @@ const getDefaultWsUrl = () => {
         return 'wss://ai.jtsc.io.vn';
     }
     // Development mode - use env or IP default
-    return import.meta.env.VITE_WS_URL || 'ws://171.237.138.176:3001';
+    return import.meta.env.VITE_WS_URL || 'ws://ai.jtsc.io.vn/api';
 };
 
 export const API_URL = getDefaultApiUrl();

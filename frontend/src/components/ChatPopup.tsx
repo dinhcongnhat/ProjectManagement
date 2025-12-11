@@ -994,13 +994,29 @@ const ChatPopup: React.FC = () => {
         socketRef.current.on('chat:reaction_removed', handleReactionRemoved);
 
         // Listen for new conversation (when someone creates a chat with you)
-        const handleNewConversation = (data: { conversation: Conversation }) => {
+        const handleNewConversation = (data: { conversation: any }) => {
+            console.log('[ChatPopup] New conversation received:', data.conversation);
             setConversations(prev => {
                 // Check if already exists
                 if (prev.some(c => c.id === data.conversation.id)) {
                     return prev;
                 }
-                return [data.conversation, ...prev];
+                
+                // Find the other member's name for private chats
+                const otherMember = data.conversation.members?.find((m: any) => m.userId !== user?.id);
+                
+                // Process conversation to match format
+                const newConv: Conversation = {
+                    ...data.conversation,
+                    displayName: data.conversation.type === 'GROUP' 
+                        ? (data.conversation.name || 'Group Chat')
+                        : (otherMember?.user?.name || 'Unknown'),
+                    displayAvatar: resolveAttachmentUrl(data.conversation.avatarUrl || null) || null,
+                    avatarUrl: resolveAttachmentUrl(data.conversation.avatarUrl || null) || null,
+                    unreadCount: 0
+                };
+                
+                return [newConv, ...prev];
             });
         };
         
@@ -1901,7 +1917,10 @@ const ChatPopup: React.FC = () => {
     };
 
     // ==================== AUDIO PLAYBACK ====================
-    const toggleAudioPlayback = (messageId: number, audioUrl: string) => {
+    const toggleAudioPlayback = (e: React.MouseEvent, messageId: number, audioUrl: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
         if (playingAudio === messageId) {
             if (audioRef.current) {
                 audioRef.current.pause();
@@ -1937,7 +1956,7 @@ const ChatPopup: React.FC = () => {
                 return (
                     <div className="flex items-center gap-2 min-w-[180px]">
                         <button
-                            onClick={() => resolvedAttachmentUrl && toggleAudioPlayback(msg.id, resolvedAttachmentUrl)}
+                            onClick={(e) => resolvedAttachmentUrl && toggleAudioPlayback(e, msg.id, resolvedAttachmentUrl)}
                             className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
                                 isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-blue-500 hover:bg-blue-600 text-white'
                             }`}

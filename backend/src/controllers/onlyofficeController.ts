@@ -2,11 +2,11 @@ import type { Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { isOfficeFile, getFileStream, getFileStats } from '../services/minioService.js';
-import jwt from 'jsonwebtoken';
 
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://171.237.138.176:3001';
+const BACKEND_URL = process.env.BACKEND_URL || 'http:////ai.jtsc.io.vn/api';
+
+// JWT disabled for OnlyOffice to avoid authentication issues
 
 // Get document type based on file extension
 const getDocumentType = (filename: string): string => {
@@ -37,10 +37,7 @@ const getFileType = (filename: string): string => {
     return filename.split('.').pop()?.toLowerCase() || 'docx';
 };
 
-// Generate OnlyOffice JWT token
-const generateOnlyOfficeToken = (payload: object): string => {
-    return jwt.sign(payload, ONLYOFFICE_JWT_SECRET, { algorithm: 'HS256' });
-};
+// JWT token generation removed - OnlyOffice JWT disabled
 
 // Get OnlyOffice editor configuration for a project attachment
 export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
@@ -152,12 +149,10 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
             type: 'desktop',
         };
 
-        // Generate JWT token for OnlyOffice
-        const token = generateOnlyOfficeToken(config);
-        
+        // JWT disabled - send config without token
         res.json({
             config,
-            token,
+            token: null, // JWT disabled
             onlyofficeUrl: ONLYOFFICE_URL,
             canEdit,
         });
@@ -403,12 +398,9 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             },
         };
 
-        // Sign the config with JWT
-        const token = jwt.sign(config, JWT_SECRET);
-        const signedConfig = { ...config, token };
-
+        // JWT disabled for OnlyOffice
         res.json({
-            config: signedConfig,
+            config,
             onlyofficeUrl: ONLYOFFICE_URL,
         });
     } catch (error) {
@@ -684,12 +676,9 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
             },
         };
 
-        // Sign the config with JWT
-        const token = jwt.sign(config, ONLYOFFICE_JWT_SECRET);
-        const signedConfig = { ...config, token };
-
+        // JWT disabled for OnlyOffice
         res.json({
-            config: signedConfig,
+            config,
             onlyofficeUrl: ONLYOFFICE_URL,
         });
     } catch (error) {
