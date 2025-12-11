@@ -641,7 +641,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-180px)] sm:h-[calc(100vh-220px)] min-h-[350px] max-h-[800px]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-180px)] sm:h-[calc(100vh-220px)] min-h-[350px] max-h-[800px] isolate overscroll-none">
             {/* Header */}
             <div className="p-3 sm:p-4 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -675,8 +675,21 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 )}
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            {/* Messages - Isolated scroll container */}
+            <div 
+                className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 overscroll-contain"
+                style={{ overscrollBehaviorY: 'contain' }}
+                onWheel={(e) => {
+                    // Prevent parent scroll when at boundaries
+                    const element = e.currentTarget;
+                    const atTop = element.scrollTop === 0;
+                    const atBottom = element.scrollHeight - element.scrollTop === element.clientHeight;
+                    
+                    if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0)) {
+                        e.stopPropagation();
+                    }
+                }}
+            >
                 {messages.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                         <MessageSquare size={48} className="mx-auto mb-4 text-gray-300" />

@@ -88,7 +88,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
     };
 
     return (
-        <header className="h-14 lg:h-16 bg-white border-b border-gray-200 flex items-center px-4 lg:px-6 sticky top-0 z-30 safe-top">
+        <header className="h-14 lg:h-16 bg-white border-b border-gray-200 flex items-center px-4 lg:px-6 sticky top-0 z-30 pwa-safe-top">
             {/* Mobile Menu Button */}
             <button 
                 onClick={onMenuClick}

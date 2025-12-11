@@ -6,7 +6,7 @@ dotenv.config();
 
 const endPoint = process.env.MINIO_ENDPOINT || 'apiminiojtsc.duckdns.org';
 const port = parseInt(process.env.MINIO_PORT || '443');
-const useSSL = process.env.MINIO_USE_SSL === 'true';
+const useSSL = process.env.MINIO_USE_SSL !== 'false'; // Default true for HTTPS
 const accessKey = process.env.MINIO_ACCESS_KEY || 'jtsc';
 const secretKey = process.env.MINIO_SECRET_KEY || 'jtsc12345';
 const bucketName = process.env.MINIO_BUCKET_NAME || 'projectmanagement';
