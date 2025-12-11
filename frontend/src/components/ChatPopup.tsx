@@ -1992,6 +1992,18 @@ const ChatPopup: React.FC = () => {
         const filename = msg.attachmentName || extractFilename(msg.attachment || '');
         // Resolve attachment URL to absolute URL
         const resolvedAttachmentUrl = resolveAttachmentUrl(msg.attachmentUrl);
+        
+        // Debug logging for file messages
+        if (msg.messageType === 'IMAGE' || msg.messageType === 'FILE') {
+            console.log('[ChatPopup] Rendering file message:', {
+                messageId: msg.id,
+                messageType: msg.messageType,
+                attachment: msg.attachment,
+                attachmentUrl: msg.attachmentUrl,
+                resolvedAttachmentUrl,
+                filename
+            });
+        }
 
         switch (msg.messageType) {
             case 'VOICE':

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import { User, Settings, LogOut } from 'lucide-react';
-import { resolveAvatarUrl } from '../utils/urlUtils';
 
 interface UserProfileData {
     id: number;
@@ -70,9 +69,9 @@ export default function UserProfilePopup() {
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 transition-colors"
             >
-                {profile?.avatarUrl ? (
+                {profile?.avatar ? (
                     <img
-                        src={resolveAvatarUrl(profile.avatarUrl) || ''}
+                        src={`/api/users/${profile.id}/avatar`}
                         alt={profile.name}
                         className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
                     />
@@ -89,9 +88,9 @@ export default function UserProfilePopup() {
                     {/* User Info */}
                     <div className="p-4 border-b bg-gray-50">
                         <div className="flex items-center gap-3">
-                            {profile?.avatarUrl ? (
+                            {profile?.avatar ? (
                                 <img
-                                    src={resolveAvatarUrl(profile.avatarUrl) || ''}
+                                    src={`/api/users/${profile.id}/avatar`}
                                     alt={profile.name}
                                     className="w-12 h-12 rounded-full object-cover"
                                 />
