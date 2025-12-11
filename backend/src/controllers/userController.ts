@@ -284,9 +284,10 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'File size must be less than 5MB' });
         }
 
-        // Upload to MinIO with original filename
-        const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `avatars/${normalizedFilename}`;
+        // Create unique filename for this user: user-{userId}.{extension}
+        const fileExtension = req.file.originalname.split('.').pop() || 'jpg';
+        const uniqueFilename = `user-${userId}.${fileExtension}`;
+        const fileName = `avatars/${uniqueFilename}`;
         console.log('[uploadAvatar] Uploading to MinIO:', fileName);
         
         const avatarPath = await uploadFile(fileName, req.file.buffer, {

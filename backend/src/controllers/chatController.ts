@@ -5,6 +5,31 @@ import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../ser
 import { getIO } from '../index.js';
 import { notifyNewChatMessage, notifyMention } from '../services/pushNotificationService.js';
 
+// ==================== FILENAME ENCODING ====================
+// Helper function to decode filename from various encodings
+const decodeFilename = (filename: string): string => {
+    // Check if the filename appears to be incorrectly decoded from UTF-8 as latin1
+    if (/[\xC0-\xFF]/.test(filename)) {
+        try {
+            // Convert from latin1 bytes back to UTF-8
+            return Buffer.from(filename, 'latin1').toString('utf8');
+        } catch {
+            return filename;
+        }
+    }
+    
+    // Try URL decoding
+    try {
+        if (filename.includes('%')) {
+            return decodeURIComponent(filename);
+        }
+    } catch {
+        // Keep as is
+    }
+    
+    return filename;
+};
+
 // ==================== ENCRYPTION UTILITIES ====================
 const ENCRYPTION_KEY = 'JTSC_CHAT_2025';
 
@@ -577,9 +602,15 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: 'Access denied' });
         }
 
-        // Upload file
-        const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-        const fileName = `chat/${id}/${normalizedFilename}`;
+        // Upload file - decode UTF-8 filename properly
+        let originalFilename = decodeFilename(req.file.originalname);
+        // Normalize to NFC form for Vietnamese characters
+        originalFilename = originalFilename.normalize('NFC');
+        
+        console.log('[sendFileMessage] Original filename from multer:', req.file.originalname);
+        console.log('[sendFileMessage] Decoded filename:', originalFilename);
+        
+        const fileName = `chat/${id}/${originalFilename}`;
         console.log('[sendFileMessage] Uploading file:', fileName);
         const filePath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': req.file.mimetype,

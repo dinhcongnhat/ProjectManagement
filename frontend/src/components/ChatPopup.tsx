@@ -189,7 +189,18 @@ const isDifferentDay = (date1: string, date2: string): boolean => {
 const isOfficeFile = (filename: string | null): boolean => {
     if (!filename) return false;
     const ext = filename.split('.').pop()?.toLowerCase() || '';
-    return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv', 'txt', 'pdf'].includes(ext);
+    // OnlyOffice Document Server supported formats
+    const officeExts = [
+        // Word documents
+        'doc', 'docx', 'docm', 'dot', 'dotx', 'dotm', 'odt', 'fodt', 'ott', 'rtf', 'txt',
+        // Excel spreadsheets
+        'xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv',
+        // PowerPoint presentations
+        'ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp',
+        // PDF and HTML
+        'pdf', 'mht', 'html', 'htm'
+    ];
+    return officeExts.includes(ext);
 };
 
 const extractFilename = (path: string): string => {

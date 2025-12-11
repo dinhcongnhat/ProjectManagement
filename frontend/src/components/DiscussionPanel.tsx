@@ -29,11 +29,22 @@ const isStandalonePWA = typeof window !== 'undefined' && (
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true
 );
 
-// Check if file is an Office document
+// Check if file is an Office document that OnlyOffice can open
 const isOfficeFile = (filename: string | null): boolean => {
     if (!filename) return false;
     const ext = filename.split('.').pop()?.toLowerCase() || '';
-    return ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv', 'txt', 'pdf'].includes(ext);
+    // OnlyOffice Document Server supported formats
+    const officeExts = [
+        // Word documents
+        'doc', 'docx', 'docm', 'dot', 'dotx', 'dotm', 'odt', 'fodt', 'ott', 'rtf', 'txt',
+        // Excel spreadsheets
+        'xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv',
+        // PowerPoint presentations
+        'ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp',
+        // PDF and HTML
+        'pdf', 'mht', 'html', 'htm'
+    ];
+    return officeExts.includes(ext);
 };
 
 // Check if file is an image

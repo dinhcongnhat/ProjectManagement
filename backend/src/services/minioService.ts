@@ -7,8 +7,20 @@ export const audioPrefix = 'audio/';
 export const discussionPrefix = 'discussions/';
 export const onlyofficePrefix = 'onlyoffice/';
 
-// Office file extensions that should be opened with OnlyOffice
-export const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
+// Office file extensions that OnlyOffice Document Server can open
+// Includes: Word, Excel, PowerPoint, OpenDocument, plain text, and PDF
+export const officeExtensions = [
+    // Microsoft Word
+    'doc', 'docx', 'docm', 'dot', 'dotx', 'dotm', 'odt', 'fodt', 'ott', 'rtf', 'txt',
+    // Microsoft Excel  
+    'xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv',
+    // Microsoft PowerPoint
+    'ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp',
+    // PDF (view-only in OnlyOffice)
+    'pdf',
+    // Other text formats
+    'mht', 'html', 'htm'
+];
 
 // Check if file is an Office document
 export const isOfficeFile = (fileName: string): boolean => {
@@ -86,14 +98,10 @@ export const uploadFile = async (
         console.log(`[MinIO] uploadFile starting for: ${fileName}`);
         await ensureBucketExists();
         
-        // Normalize Vietnamese filename
-        const normalizedFileName = normalizeVietnameseFilename(fileName);
-        console.log(`[MinIO] Normalized filename: ${normalizedFileName}`);
-        
-        // Determine if file should go to onlyoffice folder
-        const isOffice = isOfficeFile(normalizedFileName);
-        const finalFileName = isOffice ? `${onlyofficePrefix}${normalizedFileName}` : normalizedFileName;
-        console.log(`[MinIO] Final filename: ${finalFileName}, isOffice: ${isOffice}`);
+        // Keep original UTF-8 filename - DO NOT normalize
+        // Just ensure NFC normalization for Vietnamese characters
+        const finalFileName = fileName.normalize('NFC');
+        console.log(`[MinIO] Final filename (UTF-8): ${finalFileName}`);
         
         // Ensure Content-Type header includes charset for text-based files
         const finalMetaData: Record<string, string> = { ...metaData };
@@ -106,8 +114,11 @@ export const uploadFile = async (
             }
         }
         
-        // Add custom metadata for original filename with proper encoding
-        finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(normalizedFileName);
+        // Add custom metadata for original filename with UTF-8 encoding
+        // Extract just the filename part (without folder path)
+        const fileNameOnly = finalFileName.split('/').pop() || finalFileName;
+        finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
+        finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
         
         // Check if file exists and delete it first (to ensure fresh upload)
         try {
@@ -136,12 +147,15 @@ export const uploadAudioFile = async (
 ): Promise<string> => {
     try {
         await ensureBucketExists();
-        const normalizedFileName = normalizeVietnameseFilename(fileName);
+        // Keep UTF-8 filename, just normalize to NFC
+        const normalizedFileName = fileName.normalize('NFC');
         const audioFileName = `${audioPrefix}${normalizedFileName}`;
         
-        // Add original filename metadata
+        // Add original filename metadata with UTF-8
         const finalMetaData = { ...metaData };
-        finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(normalizedFileName);
+        const fileNameOnly = normalizedFileName.split('/').pop() || normalizedFileName;
+        finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
+        finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
         
         await minioClient.putObject(audioBucketName, audioFileName, fileStream, undefined, finalMetaData);
         console.log(`Audio file '${audioFileName}' uploaded successfully.`);
@@ -188,12 +202,15 @@ export const uploadDiscussionFile = async (
 ): Promise<string> => {
     try {
         await ensureBucketExists();
-        const normalizedFileName = normalizeVietnameseFilename(fileName);
+        // Keep UTF-8 filename, just normalize to NFC
+        const normalizedFileName = fileName.normalize('NFC');
         const discussionFileName = `${discussionPrefix}${normalizedFileName}`;
         
-        // Add original filename metadata
+        // Add original filename metadata with UTF-8
         const finalMetaData = { ...metaData };
-        finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(normalizedFileName);
+        const fileNameOnly = normalizedFileName.split('/').pop() || normalizedFileName;
+        finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
+        finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
         
         await minioClient.putObject(bucketName, discussionFileName, fileStream, undefined, finalMetaData);
         console.log(`Discussion file '${discussionFileName}' uploaded successfully.`);
