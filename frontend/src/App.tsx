@@ -13,6 +13,7 @@ import UserProjects from './pages/UserProjects';
 import ProjectDetails from './pages/ProjectDetails';
 import UserWorkflow from './pages/UserWorkflow';
 import UserProfile from './pages/UserProfile';
+import UserFolders from './pages/UserFolders';
 import Login from './pages/Login';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/ui/Dialog';
@@ -24,35 +25,37 @@ function App() {
     <AuthProvider>
       <DialogProvider>
         <PushNotificationProvider>
-        <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
 
-          {/* Admin Routes */}
-          <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-            <Route path="/admin" element={<AdminLayout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="projects" element={<ProjectTasks />} />
-              <Route path="projects/:id" element={<ProjectDetailsAdmin />} />
-              <Route path="users" element={<Users />} />
-              <Route path="workflow" element={<Workflow />} />
-              <Route path="create-project" element={<CreateProject />} />
-            </Route>
-          </Route>
+              {/* Admin Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="projects" element={<ProjectTasks />} />
+                  <Route path="projects/:id" element={<ProjectDetailsAdmin />} />
+                  <Route path="users" element={<Users />} />
+                  <Route path="folders" element={<UserFolders />} />
+                  <Route path="workflow" element={<Workflow />} />
+                  <Route path="create-project" element={<CreateProject />} />
+                </Route>
+              </Route>
 
-          {/* User Routes */}
-          <Route element={<ProtectedRoute allowedRoles={['USER', 'ADMIN']} />}>
-            <Route path="/" element={<MainLayout />}>
-              <Route index element={<UserDashboard />} />
-              <Route path="projects" element={<UserProjects />} />
-              <Route path="projects/:id" element={<ProjectDetails />} />
-              <Route path="my-tasks" element={<MyTasks />} />
-              <Route path="workflow" element={<UserWorkflow />} />
-              <Route path="profile" element={<UserProfile />} />
-            </Route>
-          </Route>
-        </Routes>
-        </BrowserRouter>
+              {/* User Routes */}
+              <Route element={<ProtectedRoute allowedRoles={['USER', 'ADMIN']} />}>
+                <Route path="/" element={<MainLayout />}>
+                  <Route index element={<UserDashboard />} />
+                  <Route path="projects" element={<UserProjects />} />
+                  <Route path="projects/:id" element={<ProjectDetails />} />
+                  <Route path="my-tasks" element={<MyTasks />} />
+                  <Route path="folders" element={<UserFolders />} />
+                  <Route path="workflow" element={<UserWorkflow />} />
+                  <Route path="profile" element={<UserProfile />} />
+                </Route>
+              </Route>
+            </Routes>
+          </BrowserRouter>
         </PushNotificationProvider>
       </DialogProvider>
     </AuthProvider>
@@ -60,3 +63,4 @@ function App() {
 }
 
 export default App;
+

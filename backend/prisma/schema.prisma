@@ -79,6 +79,10 @@ model User {
   // Push notifications
   pushSubscriptions    PushSubscription[]
   notificationSettings NotificationSettings?
+  
+  // Personal folders
+  userFolders UserFolder[] @relation("UserFolders")
+  userFiles   UserFile[]   @relation("UserFiles")
 }
 
 model Task {
@@ -265,4 +269,51 @@ model NotificationSettings {
 
   userId Int    @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==================== USER PERSONAL FOLDERS ====================
+
+model UserFolder {
+  id          Int      @id @default(autoincrement())
+  name        String   // Tên thư mục
+  minioPath   String   // Đường dẫn trong MinIO (e.g., "users/nhatdc/Documents")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // User sở hữu thư mục
+  userId Int
+  user   User @relation("UserFolders", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Nested folders - parent/child relationship
+  parentId Int?
+  parent   UserFolder?  @relation("SubFolders", fields: [parentId], references: [id], onDelete: Cascade)
+  children UserFolder[] @relation("SubFolders")
+
+  // Files trong thư mục này
+  files UserFile[]
+
+  @@unique([userId, parentId, name]) // Tên thư mục unique trong cùng parent
+  @@index([userId])
+  @@index([parentId])
+}
+
+model UserFile {
+  id          Int      @id @default(autoincrement())
+  name        String   // Tên file gốc
+  minioPath   String   // Đường dẫn trong MinIO
+  fileType    String   // MIME type
+  fileSize    Int      // Kích thước file (bytes)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // User sở hữu file
+  userId Int
+  user   User @relation("UserFiles", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Thư mục chứa file (null = root folder)
+  folderId Int?
+  folder   UserFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([folderId])
 }

@@ -238,11 +238,17 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
             }
         }
 
+
         // Upload avatar nếu có
         let avatarPath = null;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `chat-avatars/${normalizedFilename}`;
+            // Add timestamp and random ID to ensure unique filename for each group
+            const timestamp = Date.now();
+            const randomId = Math.random().toString(36).substring(2, 8);
+            const ext = normalizedFilename.split('.').pop() || 'jpg';
+            const uniqueFilename = `group-avatar-${timestamp}-${randomId}.${ext}`;
+            const fileName = `chat-avatars/${uniqueFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });
@@ -927,7 +933,12 @@ export const updateConversation = async (req: AuthRequest, res: Response) => {
         let avatarPath = undefined;
         if (req.file) {
             const normalizedFilename = normalizeVietnameseFilename(req.file.originalname);
-            const fileName = `chat-avatars/${Date.now()}-${normalizedFilename}`;
+            // Add timestamp and random ID to ensure unique filename
+            const timestamp = Date.now();
+            const randomId = Math.random().toString(36).substring(2, 8);
+            const ext = normalizedFilename.split('.').pop() || 'jpg';
+            const uniqueFilename = `group-avatar-${timestamp}-${randomId}.${ext}`;
+            const fileName = `chat-avatars/${uniqueFilename}`;
             avatarPath = await uploadFile(fileName, req.file.buffer, {
                 'Content-Type': req.file.mimetype,
             });

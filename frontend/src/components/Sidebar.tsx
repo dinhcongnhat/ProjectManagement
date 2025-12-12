@@ -1,6 +1,6 @@
 
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X, FolderOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,6 +17,7 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
         { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
         { icon: CheckSquare, label: 'Quản lý công việc', path: '/projects' },
         { icon: ListTodo, label: 'Công việc cá nhân', path: '/my-tasks' },
+        { icon: FolderOpen, label: 'Thư mục', path: '/folders' },
         { icon: GitGraph, label: 'Quy trình', path: '/workflow' },
     ];
 
@@ -36,14 +37,14 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
         <>
             {/* Mobile Overlay */}
             {isOpen && (
-                <div 
+                <div
                     className="lg:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
                     onClick={onClose}
                 />
             )}
-            
+
             {/* Sidebar */}
-            <aside 
+            <aside
                 className={clsx(
                     'bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out',
                     // Mobile styles
@@ -57,7 +58,7 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
                         <img src="/Logo.png" alt="Logo" className="h-16 lg:h-18 w-auto" />
                     </div>
                     {/* Close button for mobile */}
-                    <button 
+                    <button
                         onClick={onClose}
                         className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors touch-target"
                     >

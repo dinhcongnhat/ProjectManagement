@@ -154,7 +154,7 @@ const formatMessageTime = (dateStr: string): string => {
     const date = new Date(dateStr);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
-    
+
     if (isToday) {
         return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     }
@@ -169,7 +169,7 @@ const formatDateSeparator = (dateStr: string): string => {
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     const isYesterday = date.toDateString() === yesterday.toDateString();
-    
+
     if (isToday) {
         return 'Hôm nay';
     }
@@ -232,12 +232,12 @@ const ChatImage: React.FC<{
     const [error, setError] = useState(false);
     const [retryCount, setRetryCount] = useState(0);
     const imgRef = useRef<HTMLImageElement>(null);
-    
+
     // Preload image
     useEffect(() => {
         setLoading(true);
         setError(false);
-        
+
         const img = new Image();
         img.onload = () => {
             setLoading(false);
@@ -255,16 +255,16 @@ const ChatImage: React.FC<{
             }
         };
         img.src = src;
-        
+
         return () => {
             img.onload = null;
             img.onerror = null;
         };
     }, [src, retryCount]);
-    
+
     if (loading) {
         return (
-            <div 
+            <div
                 className={`flex items-center justify-center rounded-lg ${isOwn ? 'bg-white/10' : 'bg-gray-100'}`}
                 style={{ width: '200px', height: '150px' }}
             >
@@ -275,10 +275,10 @@ const ChatImage: React.FC<{
             </div>
         );
     }
-    
+
     if (error) {
         return (
-            <div 
+            <div
                 className={`flex items-center justify-center rounded-lg cursor-pointer ${isOwn ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200'}`}
                 style={{ width: '200px', height: '150px' }}
                 onClick={onClick}
@@ -290,7 +290,7 @@ const ChatImage: React.FC<{
             </div>
         );
     }
-    
+
     return (
         <img
             ref={imgRef}
@@ -315,39 +315,39 @@ const ImageViewer: React.FC<{
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const containerRef = useRef<HTMLDivElement>(null);
-    
+
     const MIN_SCALE = 0.5;
     const MAX_SCALE = 5;
     const ZOOM_STEP = 0.25;
-    
+
     const handleZoomIn = () => {
         setScale(prev => Math.min(prev + ZOOM_STEP, MAX_SCALE));
     };
-    
+
     const handleZoomOut = () => {
         setScale(prev => Math.max(prev - ZOOM_STEP, MIN_SCALE));
     };
-    
+
     const handleRotate = () => {
         setRotation(prev => (prev + 90) % 360);
     };
-    
+
     const handleReset = () => {
         setScale(1);
         setRotation(0);
         setPosition({ x: 0, y: 0 });
     };
-    
+
     // Mouse wheel zoom
     const handleWheel = (e: React.WheelEvent) => {
         e.preventDefault();
         const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
         setScale(prev => Math.max(MIN_SCALE, Math.min(prev + delta, MAX_SCALE)));
     };
-    
+
     // Touch pinch zoom
     const lastTouchDistance = useRef<number | null>(null);
-    
+
     const handleTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length === 2) {
             const distance = Math.hypot(
@@ -363,7 +363,7 @@ const ImageViewer: React.FC<{
             });
         }
     };
-    
+
     const handleTouchMove = (e: React.TouchEvent) => {
         if (e.touches.length === 2 && lastTouchDistance.current !== null) {
             e.preventDefault();
@@ -381,12 +381,12 @@ const ImageViewer: React.FC<{
             });
         }
     };
-    
+
     const handleTouchEnd = () => {
         lastTouchDistance.current = null;
         setIsDragging(false);
     };
-    
+
     // Mouse drag for panning
     const handleMouseDown = (e: React.MouseEvent) => {
         if (scale > 1) {
@@ -397,7 +397,7 @@ const ImageViewer: React.FC<{
             });
         }
     };
-    
+
     const handleMouseMove = (e: React.MouseEvent) => {
         if (isDragging && scale > 1) {
             setPosition({
@@ -406,11 +406,11 @@ const ImageViewer: React.FC<{
             });
         }
     };
-    
+
     const handleMouseUp = () => {
         setIsDragging(false);
     };
-    
+
     // Double click to zoom
     const handleDoubleClick = () => {
         if (scale > 1) {
@@ -419,14 +419,14 @@ const ImageViewer: React.FC<{
             setScale(2);
         }
     };
-    
+
     // Handle background click to close
     const handleBackgroundClick = (e: React.MouseEvent) => {
         if (e.target === containerRef.current) {
             onClose();
         }
     };
-    
+
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -450,11 +450,11 @@ const ImageViewer: React.FC<{
                     break;
             }
         };
-        
+
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
-    
+
     return (
         <div
             ref={containerRef}
@@ -466,16 +466,16 @@ const ImageViewer: React.FC<{
                 <div className="flex items-center gap-2 text-white/80 text-sm">
                     <span>{Math.round(scale * 100)}%</span>
                 </div>
-                <button 
+                <button
                     onClick={onClose}
                     className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
                 >
                     <X size={24} />
                 </button>
             </div>
-            
+
             {/* Image Container */}
-            <div 
+            <div
                 className="flex-1 flex items-center justify-center overflow-hidden"
                 onWheel={handleWheel}
                 onMouseDown={handleMouseDown}
@@ -488,9 +488,9 @@ const ImageViewer: React.FC<{
                 onDoubleClick={handleDoubleClick}
                 style={{ cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in' }}
             >
-                <img 
-                    src={src} 
-                    alt="Preview" 
+                <img
+                    src={src}
+                    alt="Preview"
                     className="max-w-none select-none"
                     style={{
                         transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotation}deg)`,
@@ -501,7 +501,7 @@ const ImageViewer: React.FC<{
                     draggable={false}
                 />
             </div>
-            
+
             {/* Bottom Controls */}
             <div className="absolute bottom-0 left-0 right-0 p-4 flex justify-center items-center gap-2 bg-gradient-to-t from-black/50 to-transparent">
                 <div className="flex items-center gap-1 bg-black/50 rounded-full p-1">
@@ -538,7 +538,7 @@ const ImageViewer: React.FC<{
                     </button>
                 </div>
             </div>
-            
+
             {/* Help text */}
             <div className="absolute bottom-20 left-0 right-0 text-center text-white/50 text-xs">
                 Cuộn chuột để zoom • Kéo để di chuyển • Double-click để phóng to/thu nhỏ • ESC để đóng
@@ -589,7 +589,7 @@ const compressImage = (file: File, maxWidth: number = 1200, maxHeight: number = 
                             type: 'image/jpeg',
                             lastModified: Date.now(),
                         });
-                        
+
                         console.log(`Image compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB (${Math.round((1 - compressedFile.size / file.size) * 100)}% reduction)`);
                         resolve(compressedFile);
                     } else {
@@ -620,14 +620,14 @@ const compressImage = (file: File, maxWidth: number = 1200, maxHeight: number = 
 const formatLastActive = (lastActive: string | undefined, isOnline: boolean | undefined): string => {
     if (isOnline) return 'Đang hoạt động';
     if (!lastActive) return 'Không xác định';
-    
+
     const now = new Date();
     const last = new Date(lastActive);
     const diffMs = now.getTime() - last.getTime();
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
+
     if (diffMinutes < 1) return 'Vừa mới truy cập';
     if (diffMinutes < 60) return `Truy cập ${diffMinutes} phút trước`;
     if (diffHours < 24) return `Truy cập ${diffHours} giờ trước`;
@@ -641,37 +641,37 @@ const ChatPopup: React.FC = () => {
     const { user, token } = useAuth();
     const { socketRef, connected } = useWebSocket(token);
     const { showConfirm, showError, showWarning } = useDialog();
-    
+
     // Panel state
     const [isOpen, setIsOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
     const [searchMode, setSearchMode] = useState<'conversations' | 'users'>('conversations');
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(false);
-    
+
     // Data state
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [pinnedConversations, setPinnedConversations] = useState<Set<number>>(new Set()); // Ghim conversations
     const [searchUsers, setSearchUsers] = useState<User[]>([]);
     const [chatWindows, setChatWindows] = useState<ChatWindow[]>([]);
     const [mobileActiveChat, setMobileActiveChat] = useState<ChatWindow | null>(null);
-    
+
     // Input state
     const [messageInputs, setMessageInputs] = useState<Record<number, string>>({});
     const [showReactionPicker, setShowReactionPicker] = useState<number | null>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState<number | null>(null); // Emoji picker for input
     const [conversationMenuOpen, setConversationMenuOpen] = useState<number | null>(null); // Menu 3 chấm cho conversation list
     const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
-    
+
     // Typing state
     const [typingUsers, setTypingUsers] = useState<Record<number, { userName: string; userId: number }[]>>({});
     const typingTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
     const typingEmitTimeoutRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
-    
+
     // Long press state for mobile
     const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [longPressMessageId, setLongPressMessageId] = useState<number | null>(null);
-    
+
     // Recording state
     const [isRecording, setIsRecording] = useState<number | null>(null);
     const [recordingTime, setRecordingTime] = useState(0);
@@ -680,24 +680,24 @@ const ChatPopup: React.FC = () => {
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const analyserRef = useRef<AnalyserNode | null>(null);
-    
+
     // Playback state
     const [playingAudio, setPlayingAudio] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
-    
+
     // File viewer state
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [showOnlyOffice, setShowOnlyOffice] = useState<{ messageId: number; filename: string } | null>(null);
-    
+
     // Group creation state
     const [showCreateGroup, setShowCreateGroup] = useState(false);
     const [groupName, setGroupName] = useState('');
     const [selectedMembers, setSelectedMembers] = useState<User[]>([]);
     const [allUsers, setAllUsers] = useState<User[]>([]);
-    
+
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    
+
     // Image cropper state
     const [showImageCropper, setShowImageCropper] = useState(false);
     const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
@@ -711,7 +711,7 @@ const ChatPopup: React.FC = () => {
 
     // Calculate total unread
     const totalUnread = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
-    
+
     // Filter and sort conversations (pinned first)
     const filteredConversations = conversations
         .filter(c => c.displayName?.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -756,12 +756,12 @@ const ChatPopup: React.FC = () => {
             const customEvent = event as CustomEvent<{ conversationId: number }>;
             const { conversationId } = customEvent.detail;
             console.log('[Chat] Opening conversation from notification:', conversationId);
-            
+
             // Fetch conversations if not loaded
             if (conversations.length === 0) {
                 await fetchConversations();
             }
-            
+
             // Find the conversation
             const conversation = conversations.find(c => c.id === conversationId);
             if (conversation) {
@@ -795,16 +795,16 @@ const ChatPopup: React.FC = () => {
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
         const openChatId = urlParams.get('openChat');
-        
+
         if (openChatId) {
             const conversationId = parseInt(openChatId, 10);
             if (!isNaN(conversationId)) {
                 console.log('[Chat] Opening conversation from URL param:', conversationId);
-                
+
                 // Remove the query param from URL without reload
                 const newUrl = window.location.pathname;
                 window.history.replaceState({}, '', newUrl);
-                
+
                 // Dispatch event to open chat (will be handled by the other useEffect)
                 setTimeout(() => {
                     window.dispatchEvent(new CustomEvent('openChatFromNotification', {
@@ -841,27 +841,27 @@ const ChatPopup: React.FC = () => {
                 audioRef.current.pause();
                 audioRef.current = null;
             }
-            
+
             // Stop any active recording
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
                 mediaRecorderRef.current.stop();
                 mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
             }
-            
+
             if (recordingIntervalRef.current) {
                 clearInterval(recordingIntervalRef.current);
             }
-            
+
             // Cleanup long press timer
             if (longPressTimerRef.current) {
                 clearTimeout(longPressTimerRef.current);
             }
-            
+
             // Cleanup typing emit timeouts
             Object.values(typingEmitTimeoutRef.current).forEach(timer => {
                 clearTimeout(timer);
             });
-            
+
             // Cleanup typing indicator timeouts
             Object.values(typingTimeoutRef.current).forEach(timer => {
                 clearTimeout(timer);
@@ -879,12 +879,12 @@ const ChatPopup: React.FC = () => {
             if (data.message.senderId === user?.id) {
                 return;
             }
-            
+
             // Check if user is currently viewing this conversation
-            const isViewingConversation = 
+            const isViewingConversation =
                 mobileActiveChat?.conversationId === data.conversationId ||
                 chatWindows.some(w => w.conversationId === data.conversationId && !w.isMinimized);
-            
+
             // Update chat windows
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === data.conversationId
@@ -914,18 +914,18 @@ const ChatPopup: React.FC = () => {
                 fetchConversations();
             }
         };
-        
+
         socketRef.current.on('chat:new_message', handleNewMessage);
 
         // Listen for typing indicator
         const handleTyping = (data: { conversationId: number; userName: string; userId: number }) => {
             if (data.userId === user?.id) return; // Ignore own typing
-            
+
             setTypingUsers(prev => {
                 const current = prev[data.conversationId] || [];
                 const exists = current.some(u => u.userId === data.userId);
                 if (exists) return prev;
-                
+
                 return {
                     ...prev,
                     [data.conversationId]: [...current, { userName: data.userName, userId: data.userId }]
@@ -946,7 +946,7 @@ const ChatPopup: React.FC = () => {
                 });
             }, 3000);
         };
-        
+
         socketRef.current.on('chat:typing', handleTyping);
 
         // Listen for stop typing
@@ -959,7 +959,7 @@ const ChatPopup: React.FC = () => {
                 };
             });
         };
-        
+
         socketRef.current.on('chat:stop_typing', handleStopTyping);
 
         // Listen for reaction added
@@ -980,7 +980,7 @@ const ChatPopup: React.FC = () => {
                 return prev;
             });
         };
-        
+
         socketRef.current.on('chat:reaction_added', handleReactionAdded);
 
         // Listen for reaction removed
@@ -1001,7 +1001,7 @@ const ChatPopup: React.FC = () => {
                 return prev;
             });
         };
-        
+
         socketRef.current.on('chat:reaction_removed', handleReactionRemoved);
 
         // Listen for new conversation (when someone creates a chat with you)
@@ -1012,25 +1012,25 @@ const ChatPopup: React.FC = () => {
                 if (prev.some(c => c.id === data.conversation.id)) {
                     return prev;
                 }
-                
+
                 // Find the other member's name for private chats
                 const otherMember = data.conversation.members?.find((m: any) => m.userId !== user?.id);
-                
+
                 // Process conversation to match format
                 const newConv: Conversation = {
                     ...data.conversation,
-                    displayName: data.conversation.type === 'GROUP' 
+                    displayName: data.conversation.type === 'GROUP'
                         ? (data.conversation.name || 'Group Chat')
                         : (otherMember?.user?.name || 'Unknown'),
                     displayAvatar: resolveAttachmentUrl(data.conversation.avatarUrl || null) || null,
                     avatarUrl: resolveAttachmentUrl(data.conversation.avatarUrl || null) || null,
                     unreadCount: 0
                 };
-                
+
                 return [newConv, ...prev];
             });
         };
-        
+
         socketRef.current.on('chat:new_conversation', handleNewConversation);
 
         // Listen for conversation updated (name, avatar changes)
@@ -1038,14 +1038,14 @@ const ChatPopup: React.FC = () => {
             setConversations(prev => prev.map(c =>
                 c.id === data.conversation.id ? { ...c, ...data.conversation } : c
             ));
-            
+
             // Update active chat windows
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === data.conversation.id
                     ? { ...w, conversation: { ...w.conversation, ...data.conversation } }
                     : w
             ));
-            
+
             setMobileActiveChat(prev => {
                 if (prev?.conversationId === data.conversation.id) {
                     return { ...prev, conversation: { ...prev.conversation, ...data.conversation } };
@@ -1053,7 +1053,7 @@ const ChatPopup: React.FC = () => {
                 return prev;
             });
         };
-        
+
         socketRef.current.on('chat:conversation_updated', handleConversationUpdated);
 
         // Listen for message deleted
@@ -1074,7 +1074,7 @@ const ChatPopup: React.FC = () => {
                 return prev;
             });
         };
-        
+
         socketRef.current.on('chat:message_deleted', handleMessageDeleted);
 
         return () => {
@@ -1097,8 +1097,8 @@ const ChatPopup: React.FC = () => {
         const handleUserOnline = (data: { userId: number }) => {
             setConversations(prev => prev.map(conv => ({
                 ...conv,
-                members: conv.members.map(m => 
-                    m.userId === data.userId 
+                members: conv.members.map(m =>
+                    m.userId === data.userId
                         ? { ...m, user: { ...m.user, isOnline: true } }
                         : m
                 )
@@ -1108,8 +1108,8 @@ const ChatPopup: React.FC = () => {
         const handleUserOffline = (data: { userId: number; lastActive: string }) => {
             setConversations(prev => prev.map(conv => ({
                 ...conv,
-                members: conv.members.map(m => 
-                    m.userId === data.userId 
+                members: conv.members.map(m =>
+                    m.userId === data.userId
                         ? { ...m, user: { ...m.user, isOnline: false, lastActive: data.lastActive } }
                         : m
                 )
@@ -1144,7 +1144,7 @@ const ChatPopup: React.FC = () => {
     // ==================== API FUNCTIONS ====================
     const fetchConversations = async () => {
         if (!user || !token) return;
-        
+
         try {
             setLoading(true);
             const response = await api.get('/chat/conversations');
@@ -1168,10 +1168,17 @@ const ChatPopup: React.FC = () => {
             setSearchUsers([]);
             return;
         }
-        
+
         try {
             const response = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
-            setSearchUsers(response.data.filter((u: User) => u.id !== user?.id));
+            // Add avatarUrl for each user
+            const usersWithAvatarUrl = response.data
+                .filter((u: User) => u.id !== user?.id)
+                .map((u: User) => ({
+                    ...u,
+                    avatarUrl: u.avatar ? `/api/users/${u.id}/avatar` : null
+                }));
+            setSearchUsers(usersWithAvatarUrl);
         } catch (error) {
             console.error('Error searching users:', error);
             setSearchUsers([]);
@@ -1182,7 +1189,14 @@ const ChatPopup: React.FC = () => {
     const fetchAllUsersForSearch = async () => {
         try {
             const response = await api.get('/users');
-            setSearchUsers(response.data.filter((u: User) => u.id !== user?.id));
+            // Add avatarUrl for each user
+            const usersWithAvatarUrl = response.data
+                .filter((u: User) => u.id !== user?.id)
+                .map((u: User) => ({
+                    ...u,
+                    avatarUrl: u.avatar ? `/api/users/${u.id}/avatar` : null
+                }));
+            setSearchUsers(usersWithAvatarUrl);
         } catch (error) {
             console.error('Error fetching all users:', error);
             setSearchUsers([]);
@@ -1192,7 +1206,14 @@ const ChatPopup: React.FC = () => {
     const fetchAllUsers = async () => {
         try {
             const response = await api.get('/users');
-            setAllUsers(response.data.filter((u: User) => u.id !== user?.id));
+            // Add avatarUrl for each user
+            const usersWithAvatarUrl = response.data
+                .filter((u: User) => u.id !== user?.id)
+                .map((u: User) => ({
+                    ...u,
+                    avatarUrl: u.avatar ? `/api/users/${u.id}/avatar` : null
+                }));
+            setAllUsers(usersWithAvatarUrl);
         } catch (error) {
             console.error('Error fetching users:', error);
         }
@@ -1240,7 +1261,7 @@ const ChatPopup: React.FC = () => {
                     type: 'PRIVATE',
                     memberIds: [targetUser.id]
                 });
-                
+
                 const newConv: Conversation = {
                     ...response.data,
                     displayName: targetUser.name || targetUser.username,
@@ -1248,11 +1269,11 @@ const ChatPopup: React.FC = () => {
                     avatarUrl: resolveAttachmentUrl(response.data.avatarUrl) || null,
                     unreadCount: 0
                 };
-                
+
                 setConversations(prev => [newConv, ...prev]);
                 openConversation(newConv);
             }
-            
+
             setSearchMode('conversations');
             setSearchQuery('');
         } catch (error) {
@@ -1262,13 +1283,13 @@ const ChatPopup: React.FC = () => {
 
     const createGroupChat = async () => {
         if (!groupName.trim() || selectedMembers.length === 0) return;
-        
+
         try {
             const description = (document.getElementById('group-description') as HTMLInputElement)?.value || '';
             const avatarFile = (window as any)._groupAvatarFile as File | null;
-            
+
             let response;
-            
+
             if (avatarFile) {
                 // Send with FormData for avatar upload
                 const formData = new FormData();
@@ -1277,7 +1298,7 @@ const ChatPopup: React.FC = () => {
                 formData.append('description', description);
                 formData.append('memberIds', JSON.stringify(selectedMembers.map(m => m.id)));
                 formData.append('avatar', avatarFile);
-                
+
                 response = await fetch(`${API_URL}/chat/conversations`, {
                     method: 'POST',
                     headers: {
@@ -1285,7 +1306,7 @@ const ChatPopup: React.FC = () => {
                     },
                     body: formData
                 });
-                
+
                 if (!response.ok) throw new Error('Failed to create group');
                 response = { data: await response.json() };
             } else {
@@ -1296,7 +1317,7 @@ const ChatPopup: React.FC = () => {
                     memberIds: selectedMembers.map(m => m.id)
                 });
             }
-            
+
             const newConv: Conversation = {
                 ...response.data,
                 displayName: groupName,
@@ -1304,7 +1325,7 @@ const ChatPopup: React.FC = () => {
                 avatarUrl: resolveAttachmentUrl(response.data.avatarUrl) || null,
                 unreadCount: 0
             };
-            
+
             setConversations(prev => [newConv, ...prev]);
             openConversation(newConv);
             setShowCreateGroup(false);
@@ -1319,13 +1340,13 @@ const ChatPopup: React.FC = () => {
 
     const openConversation = async (conversation: Conversation) => {
         const existingWindow = chatWindows.find(w => w.conversationId === conversation.id);
-        
+
         if (existingWindow) {
             // Join room if not already joined
             if (socketRef.current?.connected) {
                 socketRef.current.emit('join_conversation', String(conversation.id));
             }
-            
+
             if (isMobile) {
                 setMobileActiveChat(existingWindow);
                 setIsOpen(false);
@@ -1336,10 +1357,10 @@ const ChatPopup: React.FC = () => {
                 // Đóng popup khi mở conversation
                 setIsOpen(false);
             }
-            
+
             // Scroll to bottom after opening
             setTimeout(scrollToBottom, 150);
-            
+
             // Mark as read even for existing window
             try {
                 await api.put(`/chat/conversations/${conversation.id}/read`);
@@ -1360,7 +1381,7 @@ const ChatPopup: React.FC = () => {
         }
 
         const messages = await fetchMessages(conversation.id);
-        
+
         const newWindow: ChatWindow = {
             id: Date.now(),
             conversationId: conversation.id,
@@ -1380,7 +1401,7 @@ const ChatPopup: React.FC = () => {
             // Đóng popup khi mở conversation mới
             setIsOpen(false);
         }
-        
+
         // Scroll to bottom after setting messages
         setTimeout(scrollToBottom, 150);
 
@@ -1406,12 +1427,12 @@ const ChatPopup: React.FC = () => {
 
     const closeWindow = (windowId: number) => {
         const window = chatWindows.find(w => w.id === windowId);
-        
+
         // Leave conversation room
         if (window && socketRef.current?.connected) {
             socketRef.current.emit('leave_conversation', String(window.conversationId));
         }
-        
+
         setChatWindows(prev => prev.filter(w => w.id !== windowId));
         if (isMobile) setMobileActiveChat(null);
     };
@@ -1423,18 +1444,18 @@ const ChatPopup: React.FC = () => {
             confirmText: 'Xóa',
             cancelText: 'Hủy'
         });
-        
+
         if (!confirmed) return;
-        
+
         try {
             await api.delete(`/chat/conversations/${conversationId}`);
-            
+
             // Remove from conversations list
             setConversations(prev => prev.filter(c => c.id !== conversationId));
-            
+
             // Close any open window for this conversation
             setChatWindows(prev => prev.filter(w => w.conversationId !== conversationId));
-            
+
             if (mobileActiveChat?.conversationId === conversationId) {
                 setMobileActiveChat(null);
             }
@@ -1459,21 +1480,21 @@ const ChatPopup: React.FC = () => {
     // ==================== MESSAGE FUNCTIONS ====================
     const handleInputChange = (conversationId: number, value: string) => {
         setMessageInputs(prev => ({ ...prev, [conversationId]: value }));
-        
+
         // Debounce typing indicator emission to reduce WebSocket traffic
         if (typingEmitTimeoutRef.current[conversationId]) {
             clearTimeout(typingEmitTimeoutRef.current[conversationId]);
         }
-        
+
         typingEmitTimeoutRef.current[conversationId] = setTimeout(() => {
             if (socketRef.current?.connected && value.trim()) {
-                socketRef.current.emit('chat:typing', { 
-                    conversationId, 
+                socketRef.current.emit('chat:typing', {
+                    conversationId,
                     userName: user?.name || 'User',
                     userId: user?.id
                 });
             } else if (socketRef.current?.connected && !value.trim()) {
-                socketRef.current.emit('chat:stop_typing', { 
+                socketRef.current.emit('chat:stop_typing', {
                     conversationId,
                     userId: user?.id
                 });
@@ -1484,7 +1505,7 @@ const ChatPopup: React.FC = () => {
         const cursorPos = (document.activeElement as HTMLInputElement)?.selectionStart || value.length;
         const textBeforeCursor = value.substring(0, cursorPos);
         const atMatch = textBeforeCursor.match(/@(\w*)$/);
-        
+
         if (atMatch) {
             setMentionQuery(atMatch[1]);
             setMentionStartPos(cursorPos - atMatch[0].length);
@@ -1503,11 +1524,11 @@ const ChatPopup: React.FC = () => {
         // Use bracket format for names with spaces: @[Tên Đầy Đủ]
         const formattedMention = userName.includes(' ') ? `@[${userName}]` : `@${userName}`;
         const newValue = `${beforeMention}${formattedMention} ${afterMention}`;
-        
+
         setMessageInputs(prev => ({ ...prev, [conversationId]: newValue }));
         setShowMentionPopup(null);
         setMentionQuery('');
-        
+
         // Focus back to input
         inputRefs.current[conversationId]?.focus();
     };
@@ -1517,13 +1538,13 @@ const ChatPopup: React.FC = () => {
         const window = chatWindows.find(w => w.conversationId === conversationId);
         const mobileChat = mobileActiveChat;
         const members = window?.conversation.members || mobileChat?.conversation.members || [];
-        
+
         if (!mentionQuery) {
             return members.filter(m => m.user.id !== user?.id).slice(0, 5);
         }
-        
+
         return members
-            .filter(m => 
+            .filter(m =>
                 m.user.id !== user?.id &&
                 m.user.name.toLowerCase().includes(mentionQuery.toLowerCase())
             )
@@ -1533,7 +1554,7 @@ const ChatPopup: React.FC = () => {
     // Render message content with mentions highlighted
     const renderMessageWithMentions = (content: string | null): React.ReactNode => {
         if (!content) return null;
-        
+
         // Pattern to find @[Full Name] or @username mentions
         // First pattern: @[Name With Spaces] - names in brackets
         // Second pattern: @username - single word without spaces
@@ -1541,35 +1562,35 @@ const ChatPopup: React.FC = () => {
         const parts: React.ReactNode[] = [];
         let lastIndex = 0;
         let match;
-        
+
         while ((match = mentionPattern.exec(content)) !== null) {
             // Add text before mention
             if (match.index > lastIndex) {
                 parts.push(content.substring(lastIndex, match.index));
             }
-            
+
             // match[1] is for @[Name] format, match[2] is for @username format
             const mentionName = match[1] || match[2];
-            
+
             // Add highlighted mention
             parts.push(
-                <span 
-                    key={match.index} 
+                <span
+                    key={match.index}
                     className="bg-blue-100 text-blue-700 px-1 rounded font-medium cursor-pointer hover:bg-blue-200"
                     title={`Tag: ${mentionName}`}
                 >
                     @{mentionName}
                 </span>
             );
-            
+
             lastIndex = match.index + match[0].length;
         }
-        
+
         // Add remaining text
         if (lastIndex < content.length) {
             parts.push(content.substring(lastIndex));
         }
-        
+
         return parts.length > 0 ? <>{parts}</> : content;
     };
 
@@ -1581,7 +1602,7 @@ const ChatPopup: React.FC = () => {
 
         // Stop typing indicator
         if (socketRef.current?.connected) {
-            socketRef.current.emit('chat:stop_typing', { 
+            socketRef.current.emit('chat:stop_typing', {
                 conversationId,
                 userId: user?.id
             });
@@ -1631,7 +1652,7 @@ const ChatPopup: React.FC = () => {
             });
 
             const realMessage = { ...response.data, content: content.trim() }; // Keep original content for display
-            
+
             // Replace optimistic message with real one from server
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === conversationId
@@ -1640,8 +1661,8 @@ const ChatPopup: React.FC = () => {
             ));
 
             if (mobileActiveChat?.conversationId === conversationId) {
-                setMobileActiveChat(prev => prev ? { 
-                    ...prev, 
+                setMobileActiveChat(prev => prev ? {
+                    ...prev,
                     messages: prev.messages.map(m => m.id === optimisticMessage.id ? realMessage : m)
                 } : null);
             }
@@ -1657,12 +1678,12 @@ const ChatPopup: React.FC = () => {
             ));
 
             if (mobileActiveChat?.conversationId === conversationId) {
-                setMobileActiveChat(prev => prev ? { 
-                    ...prev, 
+                setMobileActiveChat(prev => prev ? {
+                    ...prev,
                     messages: prev.messages.filter(m => m.id !== optimisticMessage.id)
                 } : null);
             }
-            
+
             showError('Không thể gửi tin nhắn. Vui lòng thử lại.');
         }
     };
@@ -1674,12 +1695,12 @@ const ChatPopup: React.FC = () => {
             confirmText: 'Xóa',
             cancelText: 'Hủy'
         });
-        
+
         if (!confirmed) return;
-        
+
         try {
             await api.delete(`/chat/messages/${messageId}`);
-            
+
             // Optimistic update
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === conversationId
@@ -1688,8 +1709,8 @@ const ChatPopup: React.FC = () => {
             ));
 
             if (mobileActiveChat?.conversationId === conversationId) {
-                setMobileActiveChat(prev => prev ? { 
-                    ...prev, 
+                setMobileActiveChat(prev => prev ? {
+                    ...prev,
                     messages: prev.messages.filter(m => m.id !== messageId)
                 } : null);
             }
@@ -1747,16 +1768,16 @@ const ChatPopup: React.FC = () => {
 
     const handleFileUpload = async (conversationId: number, file: File) => {
         if (!file) return;
-        
+
         console.log('[ChatPopup] Starting file upload:', {
             fileName: file.name,
             fileSize: file.size,
             fileType: file.type,
             conversationId
         });
-        
+
         const isImage = file.type.startsWith('image/');
-        
+
         // Compress image before upload if it's an image
         let fileToUpload = file;
         if (isImage) {
@@ -1772,25 +1793,25 @@ const ChatPopup: React.FC = () => {
                 // Continue with original file if compression fails
             }
         }
-        
+
         const formData = new FormData();
         formData.append('file', fileToUpload);
         formData.append('messageType', isImage ? 'IMAGE' : 'FILE');
-        
+
         console.log('[ChatPopup] FormData created, uploading to:', `${API_URL}/chat/conversations/${conversationId}/messages/file`);
 
         try {
             if (!isImage) {
                 setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
             }
-            
+
             // Use XMLHttpRequest for upload progress tracking
             const token = localStorage.getItem('token');
             console.log('[ChatPopup] Token exists:', !!token);
-            
+
             const response = await new Promise<any>((resolve, reject) => {
                 const xhr = new XMLHttpRequest();
-                
+
                 xhr.upload.addEventListener('progress', (e) => {
                     if (e.lengthComputable) {
                         const percentCompleted = Math.round((e.loaded * 100) / e.total);
@@ -1798,7 +1819,7 @@ const ChatPopup: React.FC = () => {
                         console.log('[ChatPopup] Upload progress:', percentCompleted + '%');
                     }
                 });
-                
+
                 xhr.addEventListener('load', () => {
                     console.log('[ChatPopup] Upload completed with status:', xhr.status);
                     console.log('[ChatPopup] Response text:', xhr.responseText);
@@ -1813,7 +1834,7 @@ const ChatPopup: React.FC = () => {
                         reject(new Error(`Upload failed: ${xhr.status} - ${xhr.responseText}`));
                     }
                 });
-                
+
                 xhr.addEventListener('error', () => {
                     console.error('[ChatPopup] Upload error event');
                     reject(new Error('Upload failed'));
@@ -1822,18 +1843,18 @@ const ChatPopup: React.FC = () => {
                     console.error('[ChatPopup] Upload aborted');
                     reject(new Error('Upload cancelled'));
                 });
-                
+
                 xhr.open('POST', `${API_URL}/chat/conversations/${conversationId}/messages/file`);
                 if (token) {
                     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
                 }
                 xhr.send(formData);
             });
-            
+
             console.log('[ChatPopup] File uploaded successfully:', response);
-            
+
             const newMessage = response;
-            
+
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === conversationId
                     ? { ...w, messages: [...w.messages, newMessage] }
@@ -1864,7 +1885,7 @@ const ChatPopup: React.FC = () => {
                 showWarning('Trình duyệt không hỗ trợ ghi âm');
                 return;
             }
-            
+
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mediaRecorder = new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
@@ -1887,7 +1908,7 @@ const ChatPopup: React.FC = () => {
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 stream.getTracks().forEach(track => track.stop());
-                
+
                 // Upload voice message - use the correct endpoint with multer
                 const formData = new FormData();
                 formData.append('audio', audioBlob, 'voice.webm');
@@ -1901,13 +1922,13 @@ const ChatPopup: React.FC = () => {
                         },
                         body: formData
                     });
-                    
+
                     if (!response.ok) {
                         throw new Error('Failed to send voice message');
                     }
 
                     const newMessage = await response.json();
-                    
+
                     setChatWindows(prev => prev.map(w =>
                         w.conversationId === conversationId
                             ? { ...w, messages: [...w.messages, newMessage] }
@@ -1931,7 +1952,7 @@ const ChatPopup: React.FC = () => {
             // Update recording time and audio level
             recordingIntervalRef.current = setInterval(() => {
                 setRecordingTime(prev => prev + 1);
-                
+
                 if (analyserRef.current) {
                     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
                     analyserRef.current.getByteFrequencyData(dataArray);
@@ -1962,7 +1983,7 @@ const ChatPopup: React.FC = () => {
     const toggleAudioPlayback = (e: React.MouseEvent, messageId: number, audioUrl: string) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         if (playingAudio === messageId) {
             if (audioRef.current) {
                 audioRef.current.pause();
@@ -1992,7 +2013,7 @@ const ChatPopup: React.FC = () => {
         const filename = msg.attachmentName || extractFilename(msg.attachment || '');
         // Resolve attachment URL to absolute URL
         const resolvedAttachmentUrl = resolveAttachmentUrl(msg.attachmentUrl);
-        
+
         // Debug logging for file messages
         if (msg.messageType === 'IMAGE' || msg.messageType === 'FILE') {
             console.log('[ChatPopup] Rendering file message:', {
@@ -2011,9 +2032,8 @@ const ChatPopup: React.FC = () => {
                     <div className="flex items-center gap-2 min-w-[180px]">
                         <button
                             onClick={(e) => resolvedAttachmentUrl && toggleAudioPlayback(e, msg.id, resolvedAttachmentUrl)}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                                isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-blue-500 hover:bg-blue-600 text-white'
-                            }`}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-blue-500 hover:bg-blue-600 text-white'
+                                }`}
                         >
                             {playingAudio === msg.id ? <Pause size={16} /> : <Play size={16} />}
                         </button>
@@ -2046,20 +2066,19 @@ const ChatPopup: React.FC = () => {
             case 'FILE':
             case 'TEXT_WITH_FILE':
                 // Truncate long filenames
-                const displayFilename = filename.length > 25 
+                const displayFilename = filename.length > 25
                     ? filename.substring(0, 20) + '...' + filename.substring(filename.lastIndexOf('.'))
                     : filename;
-                
+
                 return (
                     <div className="max-w-[220px]">
                         {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>}
                         {resolvedAttachmentUrl && (
-                            <div 
-                                className={`flex items-center gap-2 p-2.5 rounded-xl cursor-pointer transition-all ${
-                                    isOwn 
-                                        ? 'bg-white/10 hover:bg-white/20' 
-                                        : 'bg-white border border-gray-200 hover:border-gray-300 shadow-sm'
-                                }`}
+                            <div
+                                className={`flex items-center gap-2 p-2.5 rounded-xl cursor-pointer transition-all ${isOwn
+                                    ? 'bg-white/10 hover:bg-white/20'
+                                    : 'bg-white border border-gray-200 hover:border-gray-300 shadow-sm'
+                                    }`}
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (isOfficeFile(filename)) {
@@ -2073,7 +2092,7 @@ const ChatPopup: React.FC = () => {
                                     <FileText size={18} />
                                 </div>
                                 <div className="flex-1 min-w-0 overflow-hidden">
-                                    <p 
+                                    <p
                                         className={`text-sm font-medium truncate ${isOwn ? 'text-white' : 'text-gray-800'}`}
                                         title={filename}
                                     >
@@ -2088,11 +2107,10 @@ const ChatPopup: React.FC = () => {
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={(e) => e.stopPropagation()}
-                                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                                        isOwn 
-                                            ? 'hover:bg-white/20 text-white' 
-                                            : 'hover:bg-gray-100 text-gray-500'
-                                    }`}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${isOwn
+                                        ? 'hover:bg-white/20 text-white'
+                                        : 'hover:bg-gray-100 text-gray-500'
+                                        }`}
                                     title="Tải xuống"
                                 >
                                     <Download size={16} />
@@ -2161,23 +2179,25 @@ const ChatPopup: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                    <div className="flex items-center shrink-0">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); toggleMinimize(window.id); }} 
-                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700"
-                            title="Thu nhỏ"
-                        >
-                            <Minimize2 size={16} />
-                        </button>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); toggleMaximize(window.id); }} 
+                    <div className="flex items-center shrink-0 gap-0.5">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.isMaximized) {
+                                    toggleMaximize(window.id);
+                                } else if (window.isMinimized) {
+                                    toggleMinimize(window.id);
+                                } else {
+                                    toggleMaximize(window.id);
+                                }
+                            }}
                             className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500 hover:text-gray-700"
                             title={window.isMaximized ? "Thu nhỏ" : "Phóng to"}
                         >
-                            <Maximize2 size={16} />
+                            {window.isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
                         </button>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); closeWindow(window.id); }} 
+                        <button
+                            onClick={(e) => { e.stopPropagation(); closeWindow(window.id); }}
                             className="w-8 h-8 flex items-center justify-center hover:bg-red-50 rounded-full transition-colors text-gray-500 hover:text-red-500"
                             title="Đóng"
                         >
@@ -2206,17 +2226,17 @@ const ChatPopup: React.FC = () => {
                                             return acc;
                                         }, {} as Record<string, Reaction[]>) || {};
                                         const displayContent = msg.messageType === 'TEXT' && msg.content ? decryptMessage(msg.content) : msg.content;
-                                        
+
                                         // Check if this is a new sender group (different sender from previous message)
                                         const prevMsg = window.messages[msgIndex - 1];
                                         const isNewSenderGroup = !prevMsg || prevMsg.sender.id !== msg.sender.id;
                                         // Check if next message is from same sender
                                         const nextMsg = window.messages[msgIndex + 1];
                                         const isLastInGroup = !nextMsg || nextMsg.sender.id !== msg.sender.id;
-                                        
+
                                         // Check if we need date separator
                                         const showDateSeparator = !prevMsg || isDifferentDay(prevMsg.createdAt, msg.createdAt);
-                                        
+
                                         return (
                                             <React.Fragment key={msg.id}>
                                                 {/* Date separator */}
@@ -2227,132 +2247,135 @@ const ChatPopup: React.FC = () => {
                                                         </div>
                                                     </div>
                                                 )}
-                                                
+
                                                 <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group ${!isNewSenderGroup ? 'mt-0.5' : 'mt-3'}`}>
-                                                {/* Avatar for other users - only show on last message in group */}
-                                                {!isOwn && (
-                                                    <div className="w-8 h-8 mr-2 shrink-0">
-                                                        {isLastInGroup ? (
-                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
-                                                                {msg.sender.id ? (
-                                                                    <img 
-                                                                        src={`/api/users/${msg.sender.id}/avatar`} 
-                                                                        alt="" 
-                                                                        className="w-full h-full object-cover" 
-                                                                        onError={(e) => {
-                                                                            const target = e.target as HTMLImageElement;
-                                                                            target.style.display = 'none';
-                                                                            const sibling = target.nextElementSibling as HTMLElement;
-                                                                            if (sibling) sibling.classList.remove('hidden');
-                                                                        }} 
-                                                                    />
-                                                                ) : null}
-                                                                <span className="text-white font-semibold text-xs hidden">{msg.sender.name.charAt(0).toUpperCase()}</span>
+                                                    {/* Avatar for other users - only show on last message in group */}
+                                                    {!isOwn && (
+                                                        <div className="w-8 h-8 mr-2 shrink-0">
+                                                            {isLastInGroup ? (
+                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
+                                                                    {msg.sender.avatar ? (
+                                                                        <img
+                                                                            src={resolveAttachmentUrl(msg.sender.avatar) || ''}
+                                                                            alt=""
+                                                                            className="w-full h-full object-cover"
+                                                                            onError={(e) => {
+                                                                                const target = e.target as HTMLImageElement;
+                                                                                target.style.display = 'none';
+                                                                                const sibling = target.nextElementSibling as HTMLElement;
+                                                                                if (sibling) sibling.style.display = 'block';
+                                                                            }}
+                                                                        />
+                                                                    ) : null}
+                                                                    <span
+                                                                        className="text-white font-semibold text-xs"
+                                                                        style={{ display: msg.sender.avatar ? 'none' : 'block' }}
+                                                                    >
+                                                                        {msg.sender.name.charAt(0).toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    )}
+
+                                                    <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
+                                                        {/* Sender name with time - only show on first message in group */}
+                                                        {!isOwn && isNewSenderGroup && (
+                                                            <div className="flex items-center gap-1.5 mb-0.5 ml-1">
+                                                                <span className="text-xs text-gray-600 font-medium">{msg.sender.name}</span>
+                                                                <span className="text-xs text-gray-300">•</span>
+                                                                <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
                                                             </div>
-                                                        ) : null}
-                                                    </div>
-                                                )}
-                                                
-                                                <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
-                                                    {/* Sender name with time - only show on first message in group */}
-                                                    {!isOwn && isNewSenderGroup && (
-                                                        <div className="flex items-center gap-1.5 mb-0.5 ml-1">
-                                                            <span className="text-xs text-gray-600 font-medium">{msg.sender.name}</span>
-                                                            <span className="text-xs text-gray-300">•</span>
-                                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
-                                                        </div>
-                                                    )}
-                                                    {/* Time for own messages - show on first of group */}
-                                                    {isOwn && isNewSenderGroup && (
-                                                        <div className="flex justify-end mb-0.5 mr-1">
-                                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
-                                                        </div>
-                                                    )}
-                                                    <div className="relative">
-                                                        <div className={`px-3 py-2 rounded-2xl shadow-sm ${
-                                                            isOwn 
-                                                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white' 
+                                                        )}
+                                                        {/* Time for own messages - show on first of group */}
+                                                        {isOwn && isNewSenderGroup && (
+                                                            <div className="flex justify-end mb-0.5 mr-1">
+                                                                <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="relative">
+                                                            <div className={`px-3 py-2 rounded-2xl shadow-sm ${isOwn
+                                                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
                                                                 : 'bg-white text-gray-800 border border-gray-100'
-                                                        } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
-                                                            {renderMessage({ ...msg, content: displayContent }, isOwn)}
-                                                        </div>
-                                                        
-                                                        {/* Reaction buttons - Show on hover for desktop */}
-                                                        <div className={`absolute ${isOwn ? '-left-24' : '-right-24'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white rounded-full shadow-md border px-1 py-0.5`}>
-                                                            {REACTION_EMOJIS.slice(0, 3).map(emoji => (
+                                                                } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
+                                                                {renderMessage({ ...msg, content: displayContent }, isOwn)}
+                                                            </div>
+
+                                                            {/* Reaction buttons - Show on hover for desktop */}
+                                                            <div className={`absolute ${isOwn ? '-left-24' : '-right-24'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white rounded-full shadow-md border px-1 py-0.5`}>
+                                                                {REACTION_EMOJIS.slice(0, 3).map(emoji => (
+                                                                    <button
+                                                                        key={emoji}
+                                                                        onClick={() => toggleReaction(msg, emoji)}
+                                                                        className="text-sm hover:scale-125 transition-transform p-0.5"
+                                                                        title={emoji}
+                                                                    >
+                                                                        {emoji}
+                                                                    </button>
+                                                                ))}
                                                                 <button
-                                                                    key={emoji}
-                                                                    onClick={() => toggleReaction(msg, emoji)}
-                                                                    className="text-sm hover:scale-125 transition-transform p-0.5"
-                                                                    title={emoji}
+                                                                    onClick={() => setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id)}
+                                                                    className="p-0.5 text-gray-400 hover:text-gray-600"
+                                                                    title="Thêm reaction"
                                                                 >
-                                                                    {emoji}
+                                                                    <Plus size={12} />
                                                                 </button>
-                                                            ))}
-                                                            <button
-                                                                onClick={() => setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id)}
-                                                                className="p-0.5 text-gray-400 hover:text-gray-600"
-                                                                title="Thêm reaction"
-                                                            >
-                                                                <Plus size={12} />
-                                                            </button>
-                                                            {isOwn && (
-                                                                <button
-                                                                    onClick={() => deleteMessage(msg.id, conversationId)}
-                                                                    className="p-0.5 text-gray-400 hover:text-red-500"
-                                                                    title="Xóa tin nhắn"
-                                                                >
-                                                                    <Trash2 size={12} />
-                                                                </button>
+                                                                {isOwn && (
+                                                                    <button
+                                                                        onClick={() => deleteMessage(msg.id, conversationId)}
+                                                                        className="p-0.5 text-gray-400 hover:text-red-500"
+                                                                        title="Xóa tin nhắn"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Full Reaction Picker - shown when clicking Plus */}
+                                                            {showReactionPicker === msg.id && (
+                                                                <>
+                                                                    <div className="fixed inset-0 z-[9998]" onClick={() => setShowReactionPicker(null)} />
+                                                                    <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-10 bg-white rounded-full shadow-lg border px-2 py-1 flex gap-1 z-[9999]`}>
+                                                                        {REACTION_EMOJIS.map(emoji => (
+                                                                            <button
+                                                                                key={emoji}
+                                                                                onClick={() => {
+                                                                                    toggleReaction(msg, emoji);
+                                                                                    setShowReactionPicker(null);
+                                                                                }}
+                                                                                className="text-base hover:scale-125 transition-transform p-0.5"
+                                                                            >
+                                                                                {emoji}
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </>
                                                             )}
                                                         </div>
-                                                        
-                                                        {/* Full Reaction Picker - shown when clicking Plus */}
-                                                        {showReactionPicker === msg.id && (
-                                                            <>
-                                                                <div className="fixed inset-0 z-[9998]" onClick={() => setShowReactionPicker(null)} />
-                                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-10 bg-white rounded-full shadow-lg border px-2 py-1 flex gap-1 z-[9999]`}>
-                                                                    {REACTION_EMOJIS.map(emoji => (
-                                                                        <button
-                                                                            key={emoji}
-                                                                            onClick={() => {
-                                                                                toggleReaction(msg, emoji);
-                                                                                setShowReactionPicker(null);
-                                                                            }}
-                                                                            className="text-base hover:scale-125 transition-transform p-0.5"
-                                                                        >
-                                                                            {emoji}
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                            </>
+
+                                                        {/* Reactions */}
+                                                        {Object.keys(groupedReactions).length > 0 && (
+                                                            <div className={`flex gap-0.5 mt-0.5 ${isOwn ? 'justify-end' : ''}`}>
+                                                                {Object.entries(groupedReactions).map(([emoji, reactions]) => (
+                                                                    <button
+                                                                        key={emoji}
+                                                                        onClick={() => toggleReaction(msg, emoji)}
+                                                                        className={`text-xs px-1 py-0.5 rounded-full ${reactions.some(r => r.userId === user?.id)
+                                                                            ? 'bg-blue-100'
+                                                                            : 'bg-gray-100'
+                                                                            }`}
+                                                                    >
+                                                                        {emoji}{reactions.length > 1 && reactions.length}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
                                                         )}
                                                     </div>
-                                                    
-                                                    {/* Reactions */}
-                                                    {Object.keys(groupedReactions).length > 0 && (
-                                                        <div className={`flex gap-0.5 mt-0.5 ${isOwn ? 'justify-end' : ''}`}>
-                                                            {Object.entries(groupedReactions).map(([emoji, reactions]) => (
-                                                                <button
-                                                                    key={emoji}
-                                                                    onClick={() => toggleReaction(msg, emoji)}
-                                                                    className={`text-xs px-1 py-0.5 rounded-full ${
-                                                                        reactions.some(r => r.userId === user?.id) 
-                                                                            ? 'bg-blue-100' 
-                                                                            : 'bg-gray-100'
-                                                                    }`}
-                                                                >
-                                                                    {emoji}{reactions.length > 1 && reactions.length}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    )}
                                                 </div>
-                                            </div>
                                             </React.Fragment>
                                         );
                                     })}
-                                    
+
                                     {/* Typing indicator */}
                                     {typingUsers[conversationId] && typingUsers[conversationId].length > 0 && (
                                         <div className="flex justify-start animate-fadeIn">
@@ -2372,17 +2395,17 @@ const ChatPopup: React.FC = () => {
                                     )}
                                 </>
                             )}
-                            
+
                             {/* Read receipt indicator - show if last message is mine and read by others */}
                             {(() => {
                                 const myLastMsg = [...window.messages].reverse().find(m => m.sender.id === user?.id);
                                 const otherMembers = window.conversation.members.filter((m: ConversationMember) => m.user.id !== user?.id);
                                 const hasOtherMembersRead = window.readBy && Object.keys(window.readBy).some(
-                                    uid => parseInt(uid) !== user?.id && 
-                                    myLastMsg && 
-                                    new Date(window.readBy![parseInt(uid)]) >= new Date(myLastMsg.createdAt)
+                                    uid => parseInt(uid) !== user?.id &&
+                                        myLastMsg &&
+                                        new Date(window.readBy![parseInt(uid)]) >= new Date(myLastMsg.createdAt)
                                 );
-                                
+
                                 if (myLastMsg && otherMembers.length > 0) {
                                     return (
                                         <div className="flex justify-end px-4 py-1">
@@ -2404,7 +2427,7 @@ const ChatPopup: React.FC = () => {
                                 }
                                 return null;
                             })()}
-                            
+
                             <div ref={messagesEndRef} />
                         </div>
 
@@ -2419,9 +2442,9 @@ const ChatPopup: React.FC = () => {
                                             <span className="text-xs text-blue-600 font-bold">{progress}%</span>
                                         </div>
                                         <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
-                                            <div 
-                                                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-300" 
-                                                style={{ width: `${progress}%` }} 
+                                            <div
+                                                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-300"
+                                                style={{ width: `${progress}%` }}
                                             />
                                         </div>
                                     </div>
@@ -2450,7 +2473,7 @@ const ChatPopup: React.FC = () => {
                                         ))}
                                     </div>
                                     {/* Nút hủy ghi âm */}
-                                    <button 
+                                    <button
                                         onClick={() => {
                                             if (mediaRecorderRef.current) {
                                                 mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
@@ -2463,15 +2486,15 @@ const ChatPopup: React.FC = () => {
                                             setIsRecording(null);
                                             setRecordingTime(0);
                                             setAudioLevel(0);
-                                        }} 
+                                        }}
                                         className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors shrink-0"
                                         title="Hủy"
                                     >
                                         <X size={16} className="text-gray-600" />
                                     </button>
                                     {/* Nút gửi tin nhắn thoại */}
-                                    <button 
-                                        onClick={stopRecording} 
+                                    <button
+                                        onClick={stopRecording}
                                         className="p-1.5 bg-blue-500 hover:bg-blue-600 rounded-full transition-colors shrink-0"
                                         title="Gửi tin nhắn thoại"
                                     >
@@ -2489,7 +2512,7 @@ const ChatPopup: React.FC = () => {
                                         >
                                             <Smile size={18} />
                                         </button>
-                                        
+
                                         {/* Emoji Picker Popup */}
                                         {showEmojiPicker === conversationId && (
                                             <>
@@ -2564,7 +2587,7 @@ const ChatPopup: React.FC = () => {
                                             className="w-full px-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             data-conversation-id={conversationId}
                                         />
-                                        
+
                                         {/* Mention Popup */}
                                         {showMentionPopup === conversationId && (
                                             <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-56 max-h-48 overflow-y-auto">
@@ -2608,11 +2631,10 @@ const ChatPopup: React.FC = () => {
                                     <button
                                         onClick={() => sendMessage(conversationId, messageInput)}
                                         disabled={!messageInput.trim()}
-                                        className={`p-1.5 rounded-full transition-all shrink-0 ${
-                                            messageInput.trim() 
-                                                ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                        }`}
+                                        className={`p-1.5 rounded-full transition-all shrink-0 ${messageInput.trim()
+                                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                            }`}
                                         title="Gửi"
                                     >
                                         <Send size={18} />
@@ -2650,8 +2672,8 @@ const ChatPopup: React.FC = () => {
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
                 {/* Header - Clean White Design */}
                 <div className="flex items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100 shrink-0 safe-area-top">
-                    <button 
-                        onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} 
+                    <button
+                        onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
                         className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors"
                     >
                         <ArrowLeft size={20} className="text-gray-600" />
@@ -2683,22 +2705,22 @@ const ChatPopup: React.FC = () => {
                     </div>
                     {/* 3 Control Buttons */}
                     <div className="flex items-center">
-                        <button 
-                            onClick={() => { setMobileActiveChat(null); setIsOpen(true); }} 
+                        <button
+                            onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
                             className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500"
                             title="Thu nhỏ"
                         >
                             <Minimize2 size={18} />
                         </button>
-                        <button 
-                            onClick={() => {}} 
+                        <button
+                            onClick={() => { }}
                             className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500"
                             title="Phóng to"
                         >
                             <Maximize2 size={18} />
                         </button>
-                        <button 
-                            onClick={() => setMobileActiveChat(null)} 
+                        <button
+                            onClick={() => setMobileActiveChat(null)}
                             className="w-8 h-8 flex items-center justify-center hover:bg-red-50 rounded-full transition-colors text-gray-500 hover:text-red-500"
                             title="Đóng"
                         >
@@ -2717,16 +2739,16 @@ const ChatPopup: React.FC = () => {
                             return acc;
                         }, {} as Record<string, Reaction[]>) || {};
                         const displayContent = msg.messageType === 'TEXT' && msg.content ? decryptMessage(msg.content) : msg.content;
-                        
+
                         // Check if this is a new sender group
                         const prevMsg = mobileActiveChat.messages[msgIndex - 1];
                         const isNewSenderGroup = !prevMsg || prevMsg.sender.id !== msg.sender.id;
                         const nextMsg = mobileActiveChat.messages[msgIndex + 1];
                         const isLastInGroup = !nextMsg || nextMsg.sender.id !== msg.sender.id;
-                        
+
                         // Check if we need date separator
                         const showDateSeparator = !prevMsg || isDifferentDay(prevMsg.createdAt, msg.createdAt);
-                        
+
                         return (
                             <React.Fragment key={msg.id}>
                                 {/* Date separator */}
@@ -2737,135 +2759,133 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-                            <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isNewSenderGroup ? 'mt-3' : 'mt-0.5'}`}>
-                                {/* Avatar for other users */}
-                                {!isOwn && (
-                                    <div className="w-8 h-8 mr-2 shrink-0">
-                                        {isLastInGroup ? (
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
-                                                {msg.sender.id ? (
-                                                    <img 
-                                                        src={`/api/users/${msg.sender.id}/avatar`} 
-                                                        alt="" 
-                                                        className="w-full h-full object-cover" 
-                                                        onError={(e) => {
-                                                            const target = e.target as HTMLImageElement;
-                                                            target.style.display = 'none';
-                                                            const sibling = target.nextElementSibling as HTMLElement;
-                                                            if (sibling) sibling.classList.remove('hidden');
-                                                        }} 
-                                                    />
-                                                ) : null}
-                                                <span className="text-white font-semibold text-xs hidden">{msg.sender.name.charAt(0).toUpperCase()}</span>
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                )}
-                                
-                                <div className="max-w-[75%]">
-                                    {/* Sender name with time */}
-                                    {!isOwn && isNewSenderGroup && (
-                                        <div className="flex items-center gap-2 mb-1 ml-1">
-                                            <span className="text-xs text-gray-700 font-medium">{msg.sender.name}</span>
-                                            <span className="text-xs text-gray-400">•</span>
-                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
-                                        </div>
-                                    )}
-                                    {/* Time for own messages */}
-                                    {isOwn && isNewSenderGroup && (
-                                        <div className="flex justify-end mb-1 mr-1">
-                                            <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
-                                        </div>
-                                    )}
-                                    <div className="relative">
-                                        <div 
-                                            className={`px-3 py-2 rounded-2xl ${
-                                                isOwn ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
-                                            } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''} ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
-                                            onTouchStart={(e) => {
-                                                const target = e.target as HTMLElement;
-                                                if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.tagName === 'A') return;
-                                                longPressTimerRef.current = setTimeout(() => {
-                                                    setLongPressMessageId(msg.id);
-                                                    setShowReactionPicker(msg.id);
-                                                    if (navigator.vibrate) navigator.vibrate(50);
-                                                }, 500);
-                                            }}
-                                            onTouchEnd={() => {
-                                                if (longPressTimerRef.current) {
-                                                    clearTimeout(longPressTimerRef.current);
-                                                    longPressTimerRef.current = null;
-                                                }
-                                                setLongPressMessageId(null);
-                                            }}
-                                            onTouchMove={() => {
-                                                if (longPressTimerRef.current) {
-                                                    clearTimeout(longPressTimerRef.current);
-                                                    longPressTimerRef.current = null;
-                                                }
-                                                setLongPressMessageId(null);
-                                            }}
-                                        >
-                                            {renderMessage({ ...msg, content: displayContent }, isOwn)}
-                                        </div>
-                                        
-                                        {/* Reaction Picker with delete */}
-                                        {showReactionPicker === msg.id && (
-                                            <>
-                                                <div className="fixed inset-0 z-[9998] bg-black/10" onClick={() => setShowReactionPicker(null)} />
-                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 bg-white rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 z-[9999]`}>
-                                                    {REACTION_EMOJIS.map(emoji => (
-                                                        <button
-                                                            key={emoji}
-                                                            onClick={(e) => { 
-                                                                e.stopPropagation(); 
-                                                                toggleReaction(msg, emoji); 
-                                                                setShowReactionPicker(null);
+                                <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isNewSenderGroup ? 'mt-3' : 'mt-0.5'}`}>
+                                    {/* Avatar for other users */}
+                                    {!isOwn && (
+                                        <div className="w-8 h-8 mr-2 shrink-0">
+                                            {isLastInGroup ? (
+                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
+                                                    {msg.sender.id ? (
+                                                        <img
+                                                            src={`/api/users/${msg.sender.id}/avatar`}
+                                                            alt=""
+                                                            className="w-full h-full object-cover"
+                                                            onError={(e) => {
+                                                                const target = e.target as HTMLImageElement;
+                                                                target.style.display = 'none';
+                                                                const sibling = target.nextElementSibling as HTMLElement;
+                                                                if (sibling) sibling.classList.remove('hidden');
                                                             }}
-                                                            className="text-xl p-1 active:scale-125"
-                                                        >
-                                                            {emoji}
-                                                        </button>
-                                                    ))}
-                                                    {isOwn && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setShowReactionPicker(null);
-                                                                deleteMessage(msg.id, conversationId);
-                                                            }}
-                                                            className="p-1 text-red-500"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    )}
+                                                        />
+                                                    ) : null}
+                                                    <span className="text-white font-semibold text-xs hidden">{msg.sender.name.charAt(0).toUpperCase()}</span>
                                                 </div>
-                                            </>
+                                            ) : null}
+                                        </div>
+                                    )}
+
+                                    <div className="max-w-[75%]">
+                                        {/* Sender name with time */}
+                                        {!isOwn && isNewSenderGroup && (
+                                            <div className="flex items-center gap-2 mb-1 ml-1">
+                                                <span className="text-xs text-gray-700 font-medium">{msg.sender.name}</span>
+                                                <span className="text-xs text-gray-400">•</span>
+                                                <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                            </div>
+                                        )}
+                                        {/* Time for own messages */}
+                                        {isOwn && isNewSenderGroup && (
+                                            <div className="flex justify-end mb-1 mr-1">
+                                                <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                            </div>
+                                        )}
+                                        <div className="relative">
+                                            <div
+                                                className={`px-3 py-2 rounded-2xl ${isOwn ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+                                                    } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''} ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
+                                                onTouchStart={(e) => {
+                                                    const target = e.target as HTMLElement;
+                                                    if (target.tagName === 'IMG' || target.tagName === 'BUTTON' || target.tagName === 'A') return;
+                                                    longPressTimerRef.current = setTimeout(() => {
+                                                        setLongPressMessageId(msg.id);
+                                                        setShowReactionPicker(msg.id);
+                                                        if (navigator.vibrate) navigator.vibrate(50);
+                                                    }, 500);
+                                                }}
+                                                onTouchEnd={() => {
+                                                    if (longPressTimerRef.current) {
+                                                        clearTimeout(longPressTimerRef.current);
+                                                        longPressTimerRef.current = null;
+                                                    }
+                                                    setLongPressMessageId(null);
+                                                }}
+                                                onTouchMove={() => {
+                                                    if (longPressTimerRef.current) {
+                                                        clearTimeout(longPressTimerRef.current);
+                                                        longPressTimerRef.current = null;
+                                                    }
+                                                    setLongPressMessageId(null);
+                                                }}
+                                            >
+                                                {renderMessage({ ...msg, content: displayContent }, isOwn)}
+                                            </div>
+
+                                            {/* Reaction Picker with delete */}
+                                            {showReactionPicker === msg.id && (
+                                                <>
+                                                    <div className="fixed inset-0 z-[9998] bg-black/10" onClick={() => setShowReactionPicker(null)} />
+                                                    <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 bg-white rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 z-[9999]`}>
+                                                        {REACTION_EMOJIS.map(emoji => (
+                                                            <button
+                                                                key={emoji}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleReaction(msg, emoji);
+                                                                    setShowReactionPicker(null);
+                                                                }}
+                                                                className="text-xl p-1 active:scale-125"
+                                                            >
+                                                                {emoji}
+                                                            </button>
+                                                        ))}
+                                                        {isOwn && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setShowReactionPicker(null);
+                                                                    deleteMessage(msg.id, conversationId);
+                                                                }}
+                                                                className="p-1 text-red-500"
+                                                            >
+                                                                <Trash2 size={18} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+
+                                        {/* Reactions */}
+                                        {Object.keys(groupedReactions).length > 0 && (
+                                            <div className={`flex gap-0.5 mt-0.5 ${isOwn ? 'justify-end' : ''}`}>
+                                                {Object.entries(groupedReactions).map(([emoji, reactions]) => (
+                                                    <button
+                                                        key={emoji}
+                                                        onClick={(e) => { e.stopPropagation(); toggleReaction(msg, emoji); }}
+                                                        className={`text-xs px-1 py-0.5 rounded-full ${reactions.some(r => r.userId === user?.id) ? 'bg-blue-100' : 'bg-gray-100'
+                                                            }`}
+                                                    >
+                                                        {emoji}{reactions.length > 1 && reactions.length}
+                                                    </button>
+                                                ))}
+                                            </div>
                                         )}
                                     </div>
-                                    
-                                    {/* Reactions */}
-                                    {Object.keys(groupedReactions).length > 0 && (
-                                        <div className={`flex gap-0.5 mt-0.5 ${isOwn ? 'justify-end' : ''}`}>
-                                            {Object.entries(groupedReactions).map(([emoji, reactions]) => (
-                                                <button
-                                                    key={emoji}
-                                                    onClick={(e) => { e.stopPropagation(); toggleReaction(msg, emoji); }}
-                                                    className={`text-xs px-1 py-0.5 rounded-full ${
-                                                        reactions.some(r => r.userId === user?.id) ? 'bg-blue-100' : 'bg-gray-100'
-                                                    }`}
-                                                >
-                                                    {emoji}{reactions.length > 1 && reactions.length}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
-                            </div>
                             </React.Fragment>
                         );
                     })}
-                    
+
                     {/* Typing indicator */}
                     {typingUsers[conversationId] && typingUsers[conversationId].length > 0 && (
                         <div className="flex justify-start">
@@ -2878,18 +2898,18 @@ const ChatPopup: React.FC = () => {
                             </div>
                         </div>
                     )}
-                    
+
                     {/* Read receipt indicator - mobile version */}
                     {(() => {
                         const win = chatWindows.find(w => w.conversationId === conversationId);
                         const myLastMsg = [...mobileActiveChat.messages].reverse().find(m => m.sender.id === user?.id);
                         const otherMembers = mobileActiveChat.conversation.members.filter((m: ConversationMember) => m.user.id !== user?.id);
                         const hasOtherMembersRead = win?.readBy && Object.keys(win.readBy).some(
-                            uid => parseInt(uid) !== user?.id && 
-                            myLastMsg && 
-                            new Date(win.readBy![parseInt(uid)]) >= new Date(myLastMsg.createdAt)
+                            uid => parseInt(uid) !== user?.id &&
+                                myLastMsg &&
+                                new Date(win.readBy![parseInt(uid)]) >= new Date(myLastMsg.createdAt)
                         );
-                        
+
                         if (myLastMsg && otherMembers.length > 0) {
                             return (
                                 <div className="flex justify-end px-4 py-1">
@@ -2911,7 +2931,7 @@ const ChatPopup: React.FC = () => {
                         }
                         return null;
                     })()}
-                    
+
                     <div ref={messagesEndRef} />
                 </div>
 
@@ -2931,7 +2951,7 @@ const ChatPopup: React.FC = () => {
                 <div className="p-3 border-t bg-white shrink-0 safe-area-bottom">
                     {isRecording === conversationId ? (
                         <div className="flex items-center gap-3 px-3 py-2">
-                            <div 
+                            <div
                                 className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center animate-pulse"
                                 style={{ transform: `scale(${1 + audioLevel * 0.2})` }}
                             >
@@ -2948,7 +2968,7 @@ const ChatPopup: React.FC = () => {
                                 ))}
                             </div>
                             {/* Nút hủy ghi âm */}
-                            <button 
+                            <button
                                 onClick={() => {
                                     if (mediaRecorderRef.current) {
                                         mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
@@ -2961,15 +2981,15 @@ const ChatPopup: React.FC = () => {
                                     setIsRecording(null);
                                     setRecordingTime(0);
                                     setAudioLevel(0);
-                                }} 
+                                }}
                                 className="p-3 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-full transition-colors"
                                 title="Hủy"
                             >
                                 <X size={24} className="text-gray-600" />
                             </button>
                             {/* Nút gửi tin nhắn thoại */}
-                            <button 
-                                onClick={stopRecording} 
+                            <button
+                                onClick={stopRecording}
                                 className="p-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 rounded-full transition-colors"
                                 title="Gửi"
                             >
@@ -3005,21 +3025,21 @@ const ChatPopup: React.FC = () => {
                                 }}
                                 className="hidden"
                             />
-                            <button 
-                                onClick={() => document.getElementById(`mobile-file-input-${conversationId}`)?.click()} 
+                            <button
+                                onClick={() => document.getElementById(`mobile-file-input-${conversationId}`)?.click()}
                                 className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
                                 title="Đính kèm file/ảnh/video"
                             >
                                 <Paperclip size={20} />
                             </button>
-                            <button 
-                                onClick={() => document.getElementById(`mobile-camera-input-${conversationId}`)?.click()} 
+                            <button
+                                onClick={() => document.getElementById(`mobile-camera-input-${conversationId}`)?.click()}
                                 className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
                                 title="Chụp ảnh từ camera"
                             >
                                 <Camera size={20} />
                             </button>
-                            
+
                             {/* Mobile Text Input with Mention Popup */}
                             <div className="relative flex-1 min-w-0">
                                 <input
@@ -3046,7 +3066,7 @@ const ChatPopup: React.FC = () => {
                                     className="w-full px-3 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                     data-mobile-conversation-id={conversationId}
                                 />
-                                
+
                                 {/* Mobile Mention Popup */}
                                 {showMentionPopup === conversationId && (
                                     <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-64 max-h-48 overflow-y-auto">
@@ -3080,17 +3100,16 @@ const ChatPopup: React.FC = () => {
                             <button
                                 onClick={() => sendMessage(conversationId, messageInput)}
                                 disabled={!messageInput.trim()}
-                                className={`p-2.5 rounded-full transition-colors shrink-0 ${
-                                    messageInput.trim() 
-                                        ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white' 
-                                        : 'bg-gray-200 text-gray-400'
-                                }`}
+                                className={`p-2.5 rounded-full transition-colors shrink-0 ${messageInput.trim()
+                                    ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white'
+                                    : 'bg-gray-200 text-gray-400'
+                                    }`}
                             >
                                 <Send size={20} />
                             </button>
                             {/* Mic Button - Always visible */}
-                            <button 
-                                onClick={() => startRecording(conversationId)} 
+                            <button
+                                onClick={() => startRecording(conversationId)}
                                 className="p-2.5 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
                                 title="Ghi âm"
                             >
@@ -3125,7 +3144,7 @@ const ChatPopup: React.FC = () => {
                             <X size={20} />
                         </button>
                     </div>
-                    
+
                     <div className="p-5 space-y-5 overflow-y-auto flex-1">
                         {/* Avatar Upload & Info */}
                         <div className="flex items-start gap-4">
@@ -3181,7 +3200,7 @@ const ChatPopup: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                        
+
                         {/* Members Selection */}
                         <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3195,7 +3214,7 @@ const ChatPopup: React.FC = () => {
                                     className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
                                 />
                             </div>
-                            
+
                             {/* Selected members chips */}
                             {selectedMembers.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mb-3">
@@ -3212,7 +3231,7 @@ const ChatPopup: React.FC = () => {
                                     ))}
                                 </div>
                             )}
-                            
+
                             <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100">
                                 {allUsers.length === 0 ? (
                                     <div className="p-4 text-center text-gray-500 text-sm">
@@ -3229,11 +3248,10 @@ const ChatPopup: React.FC = () => {
                                                 setSelectedMembers(prev => [...prev, u]);
                                             }
                                         }}
-                                        className={`flex items-center gap-3 p-3 cursor-pointer transition-all ${
-                                            selectedMembers.some(m => m.id === u.id) 
-                                                ? 'bg-blue-50 border-l-4 border-l-blue-500' 
-                                                : 'hover:bg-gray-50 border-l-4 border-l-transparent'
-                                        }`}
+                                        className={`flex items-center gap-3 p-3 cursor-pointer transition-all ${selectedMembers.some(m => m.id === u.id)
+                                            ? 'bg-blue-50 border-l-4 border-l-blue-500'
+                                            : 'hover:bg-gray-50 border-l-4 border-l-transparent'
+                                            }`}
                                     >
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center overflow-hidden shadow-sm">
                                             {u.avatarUrl || u.avatar ? (
@@ -3246,11 +3264,10 @@ const ChatPopup: React.FC = () => {
                                             <p className="font-medium text-gray-800 truncate">{u.name}</p>
                                             <p className="text-xs text-gray-500 truncate">@{u.username}</p>
                                         </div>
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
-                                            selectedMembers.some(m => m.id === u.id)
-                                                ? 'bg-blue-500 border-blue-500'
-                                                : 'border-gray-300'
-                                        }`}>
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${selectedMembers.some(m => m.id === u.id)
+                                            ? 'bg-blue-500 border-blue-500'
+                                            : 'border-gray-300'
+                                            }`}>
                                             {selectedMembers.some(m => m.id === u.id) && (
                                                 <Check size={14} className="text-white" />
                                             )}
@@ -3258,7 +3275,7 @@ const ChatPopup: React.FC = () => {
                                     </div>
                                 ))}
                             </div>
-                            
+
                             {selectedMembers.length > 0 && (
                                 <p className="text-xs text-gray-500 mt-2 text-center">
                                     Đã chọn {selectedMembers.length} thành viên
@@ -3266,7 +3283,7 @@ const ChatPopup: React.FC = () => {
                             )}
                         </div>
                     </div>
-                    
+
                     <div className="p-4 border-t flex justify-end gap-2">
                         <button
                             onClick={() => {
@@ -3297,7 +3314,7 @@ const ChatPopup: React.FC = () => {
     if (!user || !token) {
         return null;
     }
-    
+
     return (
         <>
             {/* Chat Button */}
@@ -3330,8 +3347,8 @@ const ChatPopup: React.FC = () => {
                                             title="Cài đặt"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <circle cx="12" cy="12" r="3"/>
-                                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                                                <circle cx="12" cy="12" r="3" />
+                                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                                             </svg>
                                         </button>
                                         <button
@@ -3343,10 +3360,10 @@ const ChatPopup: React.FC = () => {
                                             title="Tạo nhóm mới"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                                                <circle cx="9" cy="7" r="4"/>
-                                                <line x1="19" y1="8" x2="19" y2="14"/>
-                                                <line x1="22" y1="11" x2="16" y2="11"/>
+                                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                                <circle cx="9" cy="7" r="4" />
+                                                <line x1="19" y1="8" x2="19" y2="14" />
+                                                <line x1="22" y1="11" x2="16" y2="11" />
                                             </svg>
                                         </button>
                                         {isMobile && (
@@ -3356,7 +3373,7 @@ const ChatPopup: React.FC = () => {
                                         )}
                                     </div>
                                 </div>
-                                
+
                                 {/* Search - Clean style */}
                                 <div className="relative">
                                     <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -3370,36 +3387,34 @@ const ChatPopup: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                        
+
                         {/* Recent conversations label */}
                         <div className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2 bg-white border-b border-gray-100">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12 6 12 12 16 14"/>
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
                             </svg>
                             Trò chuyện gần đây
                         </div>
-                        
+
                         {/* Hidden Tabs - keep for functionality */}
                         <div className="hidden">
                             <button
                                 onClick={() => setSearchMode('conversations')}
-                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${
-                                    searchMode === 'conversations' 
-                                        ? 'bg-white text-blue-600 shadow-sm' 
-                                        : 'text-gray-600 hover:bg-gray-100'
-                                }`}
+                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${searchMode === 'conversations'
+                                    ? 'bg-white text-blue-600 shadow-sm'
+                                    : 'text-gray-600 hover:bg-gray-100'
+                                    }`}
                             >
                                 <MessageSquare size={16} />
                                 Trò chuyện
                             </button>
                             <button
                                 onClick={() => setSearchMode('users')}
-                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${
-                                    searchMode === 'users' 
-                                        ? 'bg-white text-blue-600 shadow-sm' 
-                                        : 'text-gray-600 hover:bg-gray-100'
-                                }`}
+                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${searchMode === 'users'
+                                    ? 'bg-white text-blue-600 shadow-sm'
+                                    : 'text-gray-600 hover:bg-gray-100'
+                                    }`}
                             >
                                 <Users size={16} />
                                 Người dùng
@@ -3423,7 +3438,7 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                         <p className="text-base font-semibold text-gray-700 mb-1">Chưa có tin nhắn</p>
                                         <p className="text-sm text-gray-400">Bắt đầu trò chuyện với ai đó ngay nào!</p>
-                                        <button 
+                                        <button
                                             onClick={() => setSearchMode('users')}
                                             className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
                                         >
@@ -3435,26 +3450,24 @@ const ChatPopup: React.FC = () => {
                                         {filteredConversations.map(conv => (
                                             <div
                                                 key={conv.id}
-                                                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${
-                                                    conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
-                                                } ${pinnedConversations.has(conv.id) ? 'bg-amber-50/50' : ''}`}
+                                                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
+                                                    } ${pinnedConversations.has(conv.id) ? 'bg-amber-50/50' : ''}`}
                                             >
                                                 {/* Pin indicator */}
                                                 {pinnedConversations.has(conv.id) && (
                                                     <div className="absolute top-1 left-1">
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
-                                                            <line x1="12" y1="17" x2="12" y2="22"/>
-                                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                                                            <line x1="12" y1="17" x2="12" y2="22" />
+                                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
                                                         </svg>
                                                     </div>
                                                 )}
                                                 <div className="flex-1 flex items-center gap-3" onClick={() => openConversation(conv)}>
                                                     <div className="relative shrink-0">
-                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${
-                                                            conv.type === 'GROUP' 
-                                                                ? 'bg-gradient-to-br from-purple-500 to-indigo-600' 
-                                                                : 'bg-gradient-to-br from-blue-500 to-blue-600'
-                                                        }`}>
+                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${conv.type === 'GROUP'
+                                                            ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
+                                                            : 'bg-gradient-to-br from-blue-500 to-blue-600'
+                                                            }`}>
                                                             {conv.displayAvatar ? (
                                                                 <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
                                                             ) : conv.type === 'GROUP' ? (
@@ -3473,15 +3486,13 @@ const ChatPopup: React.FC = () => {
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center justify-between mb-0.5">
-                                                            <p className={`font-semibold truncate ${
-                                                                conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
-                                                            }`}>
+                                                            <p className={`font-semibold truncate ${conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
+                                                                }`}>
                                                                 {conv.displayName}
                                                             </p>
                                                             {conv.lastMessage && (
-                                                                <span className={`text-xs shrink-0 ml-2 ${
-                                                                    conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
-                                                                }`}>
+                                                                <span className={`text-xs shrink-0 ml-2 ${conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
+                                                                    }`}>
                                                                     {formatMessageTime(conv.lastMessage.createdAt)}
                                                                 </span>
                                                             )}
@@ -3499,16 +3510,16 @@ const ChatPopup: React.FC = () => {
                                                             <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
                                                                 {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
                                                                 {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
-                                                                 conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
-                                                                 conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
-                                                                 conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
+                                                                    conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
+                                                                        conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
+                                                                            conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
                                                             </p>
                                                         ) : (
                                                             <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
                                                         )}
                                                     </div>
                                                 </div>
-                                                
+
                                                 {/* Menu 3 chấm */}
                                                 <div className="relative shrink-0">
                                                     <button
@@ -3520,7 +3531,7 @@ const ChatPopup: React.FC = () => {
                                                     >
                                                         <MoreVertical size={18} />
                                                     </button>
-                                                    
+
                                                     {conversationMenuOpen === conv.id && (
                                                         <>
                                                             <div className="fixed inset-0 z-[9998]" onClick={() => setConversationMenuOpen(null)} />
@@ -3534,8 +3545,8 @@ const ChatPopup: React.FC = () => {
                                                                     className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-sm"
                                                                 >
                                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={pinnedConversations.has(conv.id) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                        <line x1="12" y1="17" x2="12" y2="22"/>
-                                                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+                                                                        <line x1="12" y1="17" x2="12" y2="22" />
+                                                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
                                                                     </svg>
                                                                     {pinnedConversations.has(conv.id) ? 'Bỏ ghim' : 'Ghim cuộc trò chuyện'}
                                                                 </button>
@@ -3556,7 +3567,7 @@ const ChatPopup: React.FC = () => {
                                                 </div>
                                             </div>
                                         ))}
-                                        
+
                                         {/* XEM TẤT CẢ button */}
                                         {filteredConversations.length > 0 && (
                                             <div className="py-3 text-center border-t border-gray-100">
@@ -3615,17 +3626,17 @@ const ChatPopup: React.FC = () => {
                                                             )}
                                                         </div>
                                                         <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
+                                                        <p className="text-sm text-gray-500 truncate">@{u.username}</p>
+                                                    </div>
+                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <MessageCircle size={18} className="text-emerald-500" />
+                                                    </div>
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
-                                                    <p className="text-sm text-gray-500 truncate">@{u.username}</p>
-                                                </div>
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <MessageCircle size={18} className="text-emerald-500" />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            ))}
+                                        </div>
                                     )}
                                 </>
                             )}
@@ -3645,9 +3656,9 @@ const ChatPopup: React.FC = () => {
 
             {/* Image Preview Modal with Zoom */}
             {imagePreview && (
-                <ImageViewer 
-                    src={imagePreview} 
-                    onClose={() => setImagePreview(null)} 
+                <ImageViewer
+                    src={imagePreview}
+                    onClose={() => setImagePreview(null)}
                 />
             )}
 
@@ -3671,7 +3682,7 @@ const ChatPopup: React.FC = () => {
                             // Convert blob to file for upload
                             const file = new File([croppedBlob], 'group-avatar.jpg', { type: 'image/jpeg' });
                             (window as any)._groupAvatarFile = file;
-                            
+
                             // Update preview
                             const url = URL.createObjectURL(croppedBlob);
                             const preview = document.getElementById('group-avatar-preview') as HTMLImageElement;

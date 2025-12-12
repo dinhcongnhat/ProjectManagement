@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, GitGraph, PlusCircle, LogOut, Users, X } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, GitGraph, PlusCircle, LogOut, Users, X, FolderOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,6 +16,7 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
         { icon: LayoutDashboard, label: 'Tổng quan', path: '/admin' },
         { icon: CheckSquare, label: 'Quản lý dự án', path: '/admin/projects' },
         { icon: Users, label: 'Quản lý nhân viên', path: '/admin/users' },
+        { icon: FolderOpen, label: 'Thư mục', path: '/admin/folders' },
         { icon: GitGraph, label: 'Quy trình', path: '/admin/workflow' },
         { icon: PlusCircle, label: 'Tạo dự án mới', path: '/admin/create-project' },
     ];
@@ -35,13 +36,13 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
         <>
             {/* Mobile Overlay */}
             {isOpen && (
-                <div 
+                <div
                     className="lg:hidden fixed inset-0 bg-black/50 z-40 transition-opacity"
                     onClick={onClose}
                 />
             )}
 
-            <aside 
+            <aside
                 className={clsx(
                     'bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50 shadow-lg transition-transform duration-300 ease-in-out',
                     'w-72',
@@ -52,7 +53,7 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
                     <div className="flex items-center gap-3 mt-3">
                         <img src="/Logo.png" alt="Logo" className="h-16 lg:h-18 w-auto" />
                     </div>
-                    <button 
+                    <button
                         onClick={onClose}
                         className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors touch-target"
                     >

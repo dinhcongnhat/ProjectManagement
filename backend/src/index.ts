@@ -59,6 +59,7 @@ import activityRoutes from './routes/activityRoutes.js';
 import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import folderRoutes from './routes/folderRoutes.js';
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -262,6 +263,39 @@ app.get('/api/onlyoffice/chat/download/:messageId', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+
+// OnlyOffice download for user folder files (NO AUTH - OnlyOffice needs direct access)
+app.get('/api/folders/files/:id/onlyoffice-download', async (req, res) => {
+    try {
+        const fileId = parseInt(req.params.id);
+        console.log('[OnlyOffice Folder Download] File ID:', fileId);
+
+        const file = await prisma.userFile.findUnique({
+            where: { id: fileId }
+        });
+
+        if (!file) {
+            console.log('[OnlyOffice Folder Download] File not found');
+            return res.status(404).json({ message: 'File not found' });
+        }
+
+        console.log('[OnlyOffice Folder Download] Found file:', file.name, 'at', file.minioPath);
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const fileStream = await getFileStream(file.minioPath);
+        const fileStats = await getFileStats(file.minioPath);
+
+        res.setHeader('Content-Type', file.fileType);
+        if (fileStats.size) res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Folder Download] Error:', error?.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
 // ==================== END PUBLIC ROUTES ====================
 
 // Public route for VAPID key (NO AUTH - must be before authenticated routes)
@@ -297,6 +331,7 @@ app.use('/api', activityRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/folders', folderRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');
