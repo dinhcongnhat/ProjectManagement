@@ -79,6 +79,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 progress: 0,
                 status: 'IN_PROGRESS',
                 managerId: Number(managerId),
+                createdById: req.user?.id, // Save the creator ID
                 parentId: parentId ? Number(parentId) : null,  // Add parentId
                 implementers: {
                     connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
@@ -104,7 +105,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 });
                 creatorName = creator?.name || 'Admin';
             }
-            
+
             // Notify manager
             if (Number(managerId) !== req.user?.id) {
                 await notifyProjectAssignment(
@@ -165,13 +166,14 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
         const userRole = req.user?.role;
         const { q } = req.query; // Search query
 
-        // Nếu là Admin, chỉ lấy dự án mà admin đó tạo ra, quản lý hoặc là người thực hiện/theo dõi
+        // Nếu là Admin, lấy dự án mà admin đó tạo ra, quản lý hoặc là người thực hiện/theo dõi
         // Nếu là User, lấy dự án mà user là người thực hiện hoặc theo dõi
         let whereClause: any = {};
-        
+
         if (userRole === 'ADMIN') {
             whereClause = {
                 OR: [
+                    { createdById: userId }, // Admin sees projects they created
                     { managerId: userId },
                     { implementers: { some: { id: userId } } },
                     { followers: { some: { id: userId } } },
@@ -211,16 +213,16 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
                 parent: { select: { id: true, name: true, code: true } },
-                children: { 
-                    select: { 
-                        id: true, 
-                        name: true, 
-                        code: true, 
-                        progress: true, 
+                children: {
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        progress: true,
                         status: true,
                         startDate: true,
                         endDate: true,
-                    } 
+                    }
                 },
             },
             orderBy: { createdAt: 'desc' },
@@ -242,12 +244,12 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
                 parent: { select: { id: true, name: true, code: true } },
-                children: { 
-                    select: { 
-                        id: true, 
-                        name: true, 
-                        code: true, 
-                        progress: true, 
+                children: {
+                    select: {
+                        id: true,
+                        name: true,
+                        code: true,
+                        progress: true,
                         status: true,
                         startDate: true,
                         endDate: true,
@@ -347,14 +349,14 @@ export const downloadAttachment = async (req: AuthRequest, res: Response) => {
 
         // Extract original filename and decode if needed
         let originalName = project.attachment.split('-').slice(1).join('-');
-        
+
         // Handle path with prefix (e.g., onlyoffice/timestamp-filename)
         if (project.attachment.includes('/')) {
             const pathParts = project.attachment.split('/');
             const fileName = pathParts[pathParts.length - 1] || '';
             originalName = fileName.split('-').slice(1).join('-');
         }
-        
+
         // Decode URI encoded filename
         try {
             originalName = decodeURIComponent(originalName);

@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import { CheckCircle, Clock, AlertCircle } from 'lucide-react';
 
 const UserDashboard = () => {
     const { user, token } = useAuth();
+    const navigate = useNavigate();
     const [stats, setStats] = useState({ todo: 0, inProgress: 0, completed: 0 });
+
+    // Redirect Admin to admin dashboard
+    useEffect(() => {
+        if (user?.role === 'ADMIN') {
+            navigate('/admin', { replace: true });
+        }
+    }, [user, navigate]);
 
     useEffect(() => {
         const fetchStats = async () => {

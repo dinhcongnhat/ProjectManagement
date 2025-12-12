@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, X, ChevronDown, Check, CloudUpload, FolderTree, ArrowLeft } from 'lucide-react';
+import { Calendar, X, ChevronDown, Check, CloudUpload, FolderTree, ArrowLeft, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -23,9 +23,10 @@ const CreateProject = () => {
     const [searchParams] = useSearchParams();
     const parentIdParam = searchParams.get('parentId');
     const { showSuccess, showError } = useDialog();
-    
+
     const [users, setUsers] = useState<UserData[]>([]);
     const [parentProject, setParentProject] = useState<ParentProject | null>(null);
+    const [isCreating, setIsCreating] = useState(false); // Loading state for creating project
 
     const [formData, setFormData] = useState({
         code: '',
@@ -128,6 +129,14 @@ const CreateProject = () => {
     };
 
     const handleSubmit = async () => {
+        // Validate required fields
+        if (!formData.code.trim() || !formData.name.trim() || !formData.managerId) {
+            showError('Vui lòng điền đầy đủ các trường bắt buộc: Mã dự án, Tên dự án và Quản trị dự án');
+            return;
+        }
+
+        setIsCreating(true); // Show loading
+
         try {
             const formDataToSend = new FormData();
 
@@ -172,6 +181,8 @@ const CreateProject = () => {
         } catch (error) {
             console.error('Error creating project:', error);
             showError('Có lỗi xảy ra khi tạo dự án');
+        } finally {
+            setIsCreating(false); // Hide loading
         }
     };
 
@@ -379,7 +390,7 @@ const CreateProject = () => {
             <div className="flex items-start sm:items-center justify-between gap-3">
                 <div className="flex items-start sm:items-center gap-2 lg:gap-3 flex-1 min-w-0">
                     {parentProject && (
-                        <Link 
+                        <Link
                             to={`/admin/projects/${parentProject.id}`}
                             className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors touch-target shrink-0"
                         >
@@ -559,18 +570,45 @@ const CreateProject = () => {
                 <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-gray-200">
                     <button
                         onClick={() => navigate('/admin/projects')}
-                        className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors touch-target"
+                        disabled={isCreating}
+                        className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors touch-target disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Hủy bỏ
                     </button>
                     <button
                         onClick={handleSubmit}
-                        className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm touch-target"
+                        disabled={isCreating}
+                        className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm touch-target disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                        Tạo dự án
+                        {isCreating ? (
+                            <>
+                                <Loader2 size={18} className="animate-spin" />
+                                <span>Đang tạo...</span>
+                            </>
+                        ) : (
+                            'Tạo dự án'
+                        )}
                     </button>
                 </div>
             </div>
+
+            {/* Loading Overlay Dialog */}
+            {isCreating && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+                    <div className="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4">
+                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                            <Loader2 size={32} className="text-blue-600 animate-spin" />
+                        </div>
+                        <div className="text-center">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-1">Đang tạo dự án</h3>
+                            <p className="text-sm text-gray-500">Vui lòng đợi trong giây lát...</p>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div className="bg-blue-600 h-full rounded-full animate-pulse" style={{ width: '60%' }}></div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
