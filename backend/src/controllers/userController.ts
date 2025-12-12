@@ -84,7 +84,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
         });
 
         if (managedProjects.length > 0) {
-            return res.status(400).json({ 
+            return res.status(400).json({
                 message: `Không thể xóa người dùng này vì đang quản lý ${managedProjects.length} dự án. Vui lòng chuyển quyền quản lý trước khi xóa.`,
                 projects: managedProjects
             });
@@ -209,7 +209,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
         if (user.avatar) {
             avatarUrl = `/api/users/${user.id}/avatar`;
         }
-        
+
         res.json({ ...user, avatarUrl });
     } catch (error) {
         console.error('Error getting profile:', error);
@@ -289,7 +289,7 @@ export const uploadAvatar = async (req: AuthRequest, res: Response) => {
         const uniqueFilename = `user-${userId}.${fileExtension}`;
         const fileName = `avatars/${uniqueFilename}`;
         console.log('[uploadAvatar] Uploading to MinIO:', fileName);
-        
+
         const avatarPath = await uploadFile(fileName, req.file.buffer, {
             'Content-Type': req.file.mimetype,
         });
@@ -435,7 +435,7 @@ export const getAllUsersWithAvatar = async (req: AuthRequest, res: Response) => 
 export const serveUserAvatar = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        
+
         const user = await prisma.user.findUnique({
             where: { id: Number(id) },
             select: { avatar: true }
@@ -453,7 +453,7 @@ export const serveUserAvatar = async (req: Request, res: Response) => {
                 const contentType = matches[1];
                 const base64Data = matches[2];
                 const buffer = Buffer.from(base64Data, 'base64');
-                
+
                 res.setHeader('Content-Type', contentType);
                 res.setHeader('Content-Length', buffer.length);
                 res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -464,18 +464,49 @@ export const serveUserAvatar = async (req: Request, res: Response) => {
 
         console.log('[serveUserAvatar] Avatar path:', user.avatar);
 
-        // Redirect to presigned URL from MinIO
-        const { getPresignedUrl } = await import('../services/minioService.js');
-        
+        const { getFileStream, getFileStats, proxyFileViaPresignedUrl } = await import('../services/minioService.js');
+
+        // Try direct stream first, then fallback to presigned URL proxy
         try {
-            const presignedUrl = await getPresignedUrl(user.avatar, 3600); // 1 hour expiry
-            console.log('[serveUserAvatar] Redirecting to presigned URL');
-            
-            // Redirect to presigned URL
-            res.redirect(presignedUrl);
-        } catch (minioError: any) {
-            console.error('[serveUserAvatar] MinIO error:', minioError?.message || minioError);
-            return res.status(404).json({ message: 'Avatar file not found in storage' });
+            console.log('[serveUserAvatar] Trying direct stream...');
+            const fileStream = await getFileStream(user.avatar);
+            const fileStats = await getFileStats(user.avatar);
+
+            const contentType = fileStats.metaData?.['content-type'] || 'image/jpeg';
+            console.log('[serveUserAvatar] Direct stream success:', contentType, fileStats.size);
+
+            res.setHeader('Content-Type', contentType);
+            if (fileStats.size) {
+                res.setHeader('Content-Length', fileStats.size);
+            }
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            res.setHeader('Content-Disposition', 'inline');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+
+            fileStream.pipe(res);
+        } catch (directError: any) {
+            console.log('[serveUserAvatar] Direct stream failed, trying presigned URL proxy...');
+            console.log('[serveUserAvatar] Direct error:', directError?.code || directError?.message);
+
+            // Fallback to presigned URL proxy
+            try {
+                const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(user.avatar);
+                console.log('[serveUserAvatar] Proxy success:', contentType, contentLength);
+
+                res.setHeader('Content-Type', contentType);
+                if (contentLength > 0) {
+                    res.setHeader('Content-Length', contentLength);
+                }
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                res.setHeader('Content-Disposition', 'inline');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+
+                stream.pipe(res);
+            } catch (proxyError: any) {
+                console.error('[serveUserAvatar] Both methods failed');
+                console.error('[serveUserAvatar] Proxy error:', proxyError?.message || proxyError);
+                return res.status(404).json({ message: 'Avatar file not found in storage' });
+            }
         }
     } catch (error: any) {
         console.error('[serveUserAvatar] Error:', error?.message || error);

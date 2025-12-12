@@ -1,19 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import api from '../config/api';
 import { useDialog } from '../components/ui/Dialog';
-import { 
-    User as UserIcon, 
-    Camera, 
-    Pencil, 
-    Phone, 
-    Mail, 
-    Check, 
-    X, 
+import {
+    User as UserIcon,
+    Camera,
+    Pencil,
+    Phone,
+    Mail,
+    Check,
+    X,
     Key,
     Eye,
     EyeOff
 } from 'lucide-react';
 import ImageCropper from '../components/ImageCropper';
+import { resolveAvatarUrl } from '../utils/urlUtils';
 
 interface UserProfileData {
     id: number;
@@ -37,17 +38,17 @@ export default function UserProfile() {
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [avatarTimestamp, setAvatarTimestamp] = useState(Date.now());
-    
+
     // Image cropper state
     const [showCropper, setShowCropper] = useState(false);
     const [cropImageUrl, setCropImageUrl] = useState<string | null>(null);
-    
+
     // Form fields
     const [name, setName] = useState('');
     const [bio, setBio] = useState('');
     const [phone, setPhone] = useState('');
     const [email, setEmail] = useState('');
-    
+
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch profile
@@ -93,7 +94,7 @@ export default function UserProfile() {
         const url = URL.createObjectURL(file);
         setCropImageUrl(url);
         setShowCropper(true);
-        
+
         // Reset input
         e.target.value = '';
     };
@@ -166,7 +167,7 @@ export default function UserProfile() {
                 <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                     {/* Cover */}
                     <div className="h-32 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
-                    
+
                     {/* Avatar & Name */}
                     <div className="relative px-6 pb-6">
                         <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4 -mt-16 sm:-mt-12">
@@ -176,7 +177,7 @@ export default function UserProfile() {
                                     {profile?.avatar ? (
                                         <img
                                             key={avatarTimestamp}
-                                            src={`/api/users/${profile.id}/avatar?t=${avatarTimestamp}`}
+                                            src={resolveAvatarUrl(`/api/users/${profile.id}/avatar?t=${avatarTimestamp}`) || ''}
                                             alt={profile.name}
                                             className="w-full h-full object-cover"
                                         />
@@ -186,7 +187,7 @@ export default function UserProfile() {
                                         </div>
                                     )}
                                 </div>
-                                
+
                                 {/* Upload button */}
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
@@ -207,7 +208,7 @@ export default function UserProfile() {
                                     onChange={handleAvatarChange}
                                 />
                             </div>
-                            
+
                             {/* Name & Role */}
                             <div className="text-center sm:text-left sm:flex-1 sm:pb-2">
                                 <h1 className="text-2xl font-bold text-gray-900">{profile?.name}</h1>
@@ -215,8 +216,8 @@ export default function UserProfile() {
                                 <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
                                     <span className={`
                                         px-2 py-0.5 text-xs rounded-full
-                                        ${profile?.role === 'ADMIN' 
-                                            ? 'bg-purple-100 text-purple-700' 
+                                        ${profile?.role === 'ADMIN'
+                                            ? 'bg-purple-100 text-purple-700'
                                             : 'bg-blue-100 text-blue-700'
                                         }
                                     `}>
@@ -264,7 +265,7 @@ export default function UserProfile() {
                 {/* Profile Info */}
                 <div className="mt-6 bg-white rounded-xl shadow-sm p-6">
                     <h2 className="text-lg font-semibold mb-4">Thông tin cá nhân</h2>
-                    
+
                     <div className="space-y-4">
                         {/* Name */}
                         <div>
@@ -346,7 +347,7 @@ export default function UserProfile() {
                 {/* Security */}
                 <div className="mt-6 bg-white rounded-xl shadow-sm p-6">
                     <h2 className="text-lg font-semibold mb-4">Bảo mật</h2>
-                    
+
                     <button
                         onClick={() => setShowPasswordModal(true)}
                         className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
@@ -359,7 +360,7 @@ export default function UserProfile() {
                 {/* Account Info */}
                 <div className="mt-6 bg-white rounded-xl shadow-sm p-6">
                     <h2 className="text-lg font-semibold mb-4">Thông tin tài khoản</h2>
-                    
+
                     <div className="space-y-3 text-sm text-gray-600">
                         <div className="flex justify-between">
                             <span>Tên đăng nhập</span>

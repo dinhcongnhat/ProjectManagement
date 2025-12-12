@@ -76,8 +76,18 @@ router.get('/debug/minio', async (req, res) => {
 });
 
 // Public routes - serve files without authentication (for img src, audio src)
-router.get('/conversations/:conversationId/messages/:messageId/file', serveMessageAttachment);
-router.get('/conversations/:id/avatar', serveConversationAvatar);
+// IMPORTANT: These MUST be before authenticateToken middleware
+router.get('/conversations/:conversationId/messages/:messageId/file', (req, res, next) => {
+    console.log('[chatRoutes] Matched PUBLIC route for message attachment');
+    console.log('[chatRoutes] Params:', req.params);
+    next();
+}, serveMessageAttachment);
+
+router.get('/conversations/:id/avatar', (req, res, next) => {
+    console.log('[chatRoutes] Matched PUBLIC route for conversation avatar');
+    console.log('[chatRoutes] Params:', req.params);
+    next();
+}, serveConversationAvatar);
 
 // All other routes require authentication
 router.use(authenticateToken);

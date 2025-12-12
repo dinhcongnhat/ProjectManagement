@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../config/api';
 import { User, Settings, LogOut } from 'lucide-react';
+import { resolveAvatarUrl } from '../utils/urlUtils';
 
 interface UserProfileData {
     id: number;
@@ -71,7 +72,7 @@ export default function UserProfilePopup() {
             >
                 {profile?.avatar ? (
                     <img
-                        src={`/api/users/${profile.id}/avatar`}
+                        src={resolveAvatarUrl(`/api/users/${profile.id}/avatar`) || ''}
                         alt={profile.name}
                         className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
                     />
@@ -90,7 +91,7 @@ export default function UserProfilePopup() {
                         <div className="flex items-center gap-3">
                             {profile?.avatar ? (
                                 <img
-                                    src={`/api/users/${profile.id}/avatar`}
+                                    src={resolveAvatarUrl(`/api/users/${profile.id}/avatar`) || ''}
                                     alt={profile.name}
                                     className="w-12 h-12 rounded-full object-cover"
                                 />
@@ -119,7 +120,7 @@ export default function UserProfilePopup() {
                             <User size={20} className="text-gray-500" />
                             <span>Hồ sơ cá nhân</span>
                         </button>
-                        
+
                         <button
                             onClick={() => {
                                 setIsOpen(false);

@@ -17,7 +17,7 @@ const decodeFilename = (filename: string): string => {
             return filename;
         }
     }
-    
+
     // Try URL decoding
     try {
         if (filename.includes('%')) {
@@ -26,7 +26,7 @@ const decodeFilename = (filename: string): string => {
     } catch {
         // Keep as is
     }
-    
+
     return filename;
 };
 
@@ -106,7 +106,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
         // Get unread counts in batch - single query for all conversations
         const conversationIds = conversations.map(c => c.id);
         let unreadCounts: Array<{ conversationId: number; count: bigint }> = [];
-        
+
         if (conversationIds.length > 0) {
             unreadCounts = await prisma.$queryRawUnsafe<Array<{ conversationId: number; count: bigint }>>(
                 `SELECT "conversationId", COUNT(*) as count
@@ -126,7 +126,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
                 return [];
             });
         }
-        
+
         const unreadMap = new Map((unreadCounts as any[]).map(u => [u.conversationId, Number(u.count)]));
 
         // Format response - no more N+1 queries
@@ -196,7 +196,7 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const { name, type, description } = req.body;
-        
+
         // Parse memberIds - có thể là array hoặc JSON string (từ FormData)
         let memberIds = req.body.memberIds;
         if (typeof memberIds === 'string') {
@@ -277,7 +277,7 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
         // Emit WebSocket event to all members for realtime update
         const io = getIO();
         const allMemberIds = [userId, ...memberIds];
-        
+
         // Get avatar URL if uploaded - use relative URL
         let avatarUrl = null;
         if (avatarPath) {
@@ -412,17 +412,18 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             let attachmentUrl = null;
             if (msg.attachment) {
                 // Use relative URL - frontend will prepend the correct base URL
-                attachmentUrl = `/api/chat/messages/${msg.id}/file`;
+                // IMPORTANT: Must include conversationId in the path
+                attachmentUrl = `/api/chat/conversations/${id}/messages/${msg.id}/file`;
             }
-            
+
             // Add avatar URL for sender - use relative URL
             let senderAvatarUrl = null;
             if (msg.sender?.avatar) {
                 senderAvatarUrl = `/api/users/${msg.sender.id}/avatar`;
             }
-            
-            return { 
-                ...msg, 
+
+            return {
+                ...msg,
                 attachmentUrl,
                 sender: {
                     ...msg.sender,
@@ -446,13 +447,13 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const { id } = req.params;
-        
+
         // Handle undefined body - this can happen if body-parser middleware isn't applied correctly
         if (!req.body) {
             console.error('sendMessage - req.body is undefined! Content-Type:', req.headers['content-type']);
             return res.status(400).json({ message: 'Request body is missing' });
         }
-        
+
         const content = req.body.content;
 
         if (!content?.trim()) {
@@ -519,19 +520,19 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                     members: { select: { userId: true } }
                 }
             });
-            
+
             if (conversation) {
                 const memberIds = conversation.members.map(m => m.userId);
-                const displayName = conversation.type === 'GROUP' 
+                const displayName = conversation.type === 'GROUP'
                     ? (conversation.name || 'Nhóm chat')
                     : message.sender.name;
-                
+
                 // Decrypt message for push notification preview
                 const decryptedContent = decryptMessage(content.trim());
-                const messagePreview = decryptedContent.length > 50 
-                    ? decryptedContent.substring(0, 50) + '...' 
+                const messagePreview = decryptedContent.length > 50
+                    ? decryptedContent.substring(0, 50) + '...'
                     : decryptedContent;
-                
+
                 await notifyNewChatMessage(
                     memberIds,
                     userId,
@@ -606,10 +607,10 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
         let originalFilename = decodeFilename(req.file.originalname);
         // Normalize to NFC form for Vietnamese characters
         originalFilename = originalFilename.normalize('NFC');
-        
+
         console.log('[sendFileMessage] Original filename from multer:', req.file.originalname);
         console.log('[sendFileMessage] Decoded filename:', originalFilename);
-        
+
         const fileName = `chat/${id}/${originalFilename}`;
         console.log('[sendFileMessage] Uploading file:', fileName);
         const filePath = await uploadFile(fileName, req.file.buffer, {
@@ -655,8 +656,8 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
         });
 
         // Prepare response with attachmentUrl and avatar
-        const responseMessage = { 
-            ...message, 
+        const responseMessage = {
+            ...message,
             attachmentUrl,
             sender: { ...message.sender, avatar: senderAvatarUrl }
         };
@@ -720,7 +721,7 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        const attachmentUrl = `/api/chat/messages/${message.id}/file`;
+        const attachmentUrl = `/api/chat/conversations/${id}/messages/${message.id}/file`;
 
         // Add avatar URL for sender - use relative URL
         let senderAvatarUrl = null;
@@ -735,8 +736,8 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
         });
 
         // Prepare response with attachmentUrl and avatar
-        const responseMessage = { 
-            ...message, 
+        const responseMessage = {
+            ...message,
             attachmentUrl,
             sender: { ...message.sender, avatar: senderAvatarUrl }
         };
@@ -1311,7 +1312,7 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
     try {
         const { conversationId, messageId } = req.params;
         console.log('[serveMessageAttachment] Request for conversationId:', conversationId, 'messageId:', messageId);
-        
+
         const message = await prisma.chatMessage.findUnique({
             where: { id: Number(messageId) }
         });
@@ -1320,7 +1321,7 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
             console.log('[serveMessageAttachment] Message not found:', messageId);
             return res.status(404).json({ message: 'Message not found' });
         }
-        
+
         if (!message.attachment) {
             console.log('[serveMessageAttachment] Message has no attachment:', messageId);
             return res.status(404).json({ message: 'Attachment not found' });
@@ -1328,20 +1329,48 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
 
         console.log('[serveMessageAttachment] Attachment path:', message.attachment);
 
-        // Redirect to presigned URL from MinIO
-        const { getPresignedUrl } = await import('../services/minioService.js');
-        
+        const { getFileStream, getFileStats, proxyFileViaPresignedUrl } = await import('../services/minioService.js');
+
+        // Helper to set response headers and pipe stream
+        const sendFile = (stream: any, contentType: string, contentLength: number) => {
+            res.setHeader('Content-Type', contentType);
+            if (contentLength > 0) {
+                res.setHeader('Content-Length', contentLength);
+            }
+            res.setHeader('Cache-Control', 'public, max-age=31536000');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+
+            if (contentType.startsWith('image/') || contentType.startsWith('audio/') || contentType.startsWith('video/')) {
+                res.setHeader('Content-Disposition', 'inline');
+            } else {
+                const originalName = message.attachment!.split('/').pop() || 'file';
+                res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+            }
+
+            stream.pipe(res);
+        };
+
+        // Try direct stream first, then fallback to presigned URL proxy
         try {
-            console.log('[serveMessageAttachment] Generating presigned URL...');
-            const presignedUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
-            console.log('[serveMessageAttachment] Redirecting to presigned URL');
-            
-            // Redirect to presigned URL
-            res.redirect(presignedUrl);
-        } catch (minioError: any) {
-            console.error('[serveMessageAttachment] MinIO error:', minioError?.message || minioError);
-            console.error('[serveMessageAttachment] MinIO error code:', minioError?.code);
-            return res.status(404).json({ message: 'File not found in storage', error: minioError?.message });
+            console.log('[serveMessageAttachment] Trying direct stream...');
+            const fileStream = await getFileStream(message.attachment);
+            const fileStats = await getFileStats(message.attachment);
+            const contentType = fileStats.metaData?.['content-type'] || 'application/octet-stream';
+            console.log('[serveMessageAttachment] Direct stream success:', contentType, fileStats.size);
+            sendFile(fileStream, contentType, fileStats.size);
+        } catch (directError: any) {
+            console.log('[serveMessageAttachment] Direct stream failed, trying presigned URL proxy...');
+            console.log('[serveMessageAttachment] Direct error:', directError?.code || directError?.message);
+
+            try {
+                const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(message.attachment);
+                console.log('[serveMessageAttachment] Proxy success:', contentType, contentLength);
+                sendFile(stream, contentType, contentLength);
+            } catch (proxyError: any) {
+                console.error('[serveMessageAttachment] Both methods failed');
+                console.error('[serveMessageAttachment] Proxy error:', proxyError?.message || proxyError);
+                return res.status(404).json({ message: 'File not found in storage', error: proxyError?.message });
+            }
         }
     } catch (error: any) {
         console.error('[serveMessageAttachment] Error:', error?.message || error);
@@ -1354,7 +1383,7 @@ export const serveConversationAvatar = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         console.log('[serveConversationAvatar] Request for conversation:', id);
-        
+
         const conversation = await prisma.conversation.findUnique({
             where: { id: Number(id) }
         });
@@ -1366,24 +1395,48 @@ export const serveConversationAvatar = async (req: Request, res: Response) => {
 
         console.log('[serveConversationAvatar] Avatar path:', conversation.avatar);
 
-        const { getFileStream, getFileStats } = await import('../services/minioService.js');
-        
-        try {
-            const stats = await getFileStats(conversation.avatar);
-            const fileStream = await getFileStream(conversation.avatar);
+        const { getFileStream, getFileStats, proxyFileViaPresignedUrl } = await import('../services/minioService.js');
 
-            const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'image/jpeg';
-            
+        // Try direct stream first, then fallback to presigned URL proxy
+        try {
+            console.log('[serveConversationAvatar] Trying direct stream...');
+            const fileStream = await getFileStream(conversation.avatar);
+            const fileStats = await getFileStats(conversation.avatar);
+
+            const contentType = fileStats.metaData?.['content-type'] || 'image/jpeg';
+            console.log('[serveConversationAvatar] Direct stream success:', contentType, fileStats.size);
+
             res.setHeader('Content-Type', contentType);
-            res.setHeader('Content-Length', stats.size);
-            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+            if (fileStats.size) {
+                res.setHeader('Content-Length', fileStats.size);
+            }
+            res.setHeader('Cache-Control', 'public, max-age=86400');
             res.setHeader('Content-Disposition', 'inline');
             res.setHeader('Access-Control-Allow-Origin', '*');
 
             fileStream.pipe(res);
-        } catch (minioError: any) {
-            console.error('[serveConversationAvatar] MinIO error:', minioError?.message || minioError);
-            return res.status(404).json({ message: 'Avatar file not found in storage' });
+        } catch (directError: any) {
+            console.log('[serveConversationAvatar] Direct stream failed, trying presigned URL proxy...');
+            console.log('[serveConversationAvatar] Direct error:', directError?.code || directError?.message);
+
+            try {
+                const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(conversation.avatar);
+                console.log('[serveConversationAvatar] Proxy success:', contentType, contentLength);
+
+                res.setHeader('Content-Type', contentType);
+                if (contentLength > 0) {
+                    res.setHeader('Content-Length', contentLength);
+                }
+                res.setHeader('Cache-Control', 'public, max-age=86400');
+                res.setHeader('Content-Disposition', 'inline');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+
+                stream.pipe(res);
+            } catch (proxyError: any) {
+                console.error('[serveConversationAvatar] Both methods failed');
+                console.error('[serveConversationAvatar] Proxy error:', proxyError?.message || proxyError);
+                return res.status(404).json({ message: 'Avatar file not found in storage' });
+            }
         }
     } catch (error: any) {
         console.error('[serveConversationAvatar] Error:', error?.message || error);

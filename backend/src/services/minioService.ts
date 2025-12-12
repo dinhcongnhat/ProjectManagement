@@ -43,7 +43,7 @@ export const normalizeVietnameseFilename = (filename: string): string => {
                 console.warn('[normalizeFilename] UTF-8 conversion failed:', e);
             }
         }
-        
+
         // Try URL decoding if encoded
         try {
             if (filename.includes('%')) {
@@ -53,7 +53,7 @@ export const normalizeVietnameseFilename = (filename: string): string => {
         } catch {
             // Not URL encoded
         }
-        
+
         // Already clean, just normalize
         return filename.normalize('NFC').trim();
     } catch (error) {
@@ -80,7 +80,7 @@ export const ensureBucketExists = async (): Promise<void> => {
             console.log(`[MinIO] Bucket '${bucketName}' does not exist, creating...`);
             await minioClient.makeBucket(bucketName, 'us-east-1'); // Region is required but often ignored by MinIO standalone
             console.log(`[MinIO] Bucket '${bucketName}' created successfully.`);
-            
+
             // Set bucket policy to allow public read access
             try {
                 const policy = {
@@ -117,12 +117,12 @@ export const uploadFile = async (
     try {
         console.log(`[MinIO] uploadFile starting for: ${fileName}`);
         await ensureBucketExists();
-        
+
         // Keep original UTF-8 filename - DO NOT normalize
         // Just ensure NFC normalization for Vietnamese characters
         const finalFileName = fileName.normalize('NFC');
         console.log(`[MinIO] Final filename (UTF-8): ${finalFileName}`);
-        
+
         // Ensure Content-Type header includes charset for text-based files
         const finalMetaData: Record<string, string> = { ...metaData };
         const contentType = finalMetaData['Content-Type'];
@@ -133,13 +133,13 @@ export const uploadFile = async (
                 finalMetaData['Content-Type'] = `${contentType}; charset=utf-8`;
             }
         }
-        
+
         // Add custom metadata for original filename with UTF-8 encoding
         // Extract just the filename part (without folder path)
         const fileNameOnly = finalFileName.split('/').pop() || finalFileName;
         finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
         finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
-        
+
         // Check if file exists and delete it first (to ensure fresh upload)
         try {
             const exists = await minioClient.statObject(bucketName, finalFileName);
@@ -149,7 +149,7 @@ export const uploadFile = async (
         } catch (err) {
             // File doesn't exist, that's fine
         }
-        
+
         await minioClient.putObject(bucketName, finalFileName, fileStream, undefined, finalMetaData);
         console.log(`File '${finalFileName}' uploaded successfully.`);
         return finalFileName;
@@ -170,13 +170,13 @@ export const uploadAudioFile = async (
         // Keep UTF-8 filename, just normalize to NFC
         const normalizedFileName = fileName.normalize('NFC');
         const audioFileName = `${audioPrefix}${normalizedFileName}`;
-        
+
         // Add original filename metadata with UTF-8
         const finalMetaData = { ...metaData };
         const fileNameOnly = normalizedFileName.split('/').pop() || normalizedFileName;
         finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
         finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
-        
+
         await minioClient.putObject(audioBucketName, audioFileName, fileStream, undefined, finalMetaData);
         console.log(`Audio file '${audioFileName}' uploaded successfully.`);
         return audioFileName;
@@ -203,7 +203,7 @@ export const getFileStats = async (fileName: string): Promise<any> => {
     try {
         await ensureBucketExists();
         console.log(`[MinIO] Getting file stats for: ${fileName}`);
-        
+
         const stats = await minioClient.statObject(bucketName, fileName);
         console.log(`[MinIO] File stats obtained for: ${fileName}, size: ${stats.size}`);
         return stats;
@@ -225,13 +225,13 @@ export const uploadDiscussionFile = async (
         // Keep UTF-8 filename, just normalize to NFC
         const normalizedFileName = fileName.normalize('NFC');
         const discussionFileName = `${discussionPrefix}${normalizedFileName}`;
-        
+
         // Add original filename metadata with UTF-8
         const finalMetaData = { ...metaData };
         const fileNameOnly = normalizedFileName.split('/').pop() || normalizedFileName;
         finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
         finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
-        
+
         await minioClient.putObject(bucketName, discussionFileName, fileStream, undefined, finalMetaData);
         console.log(`Discussion file '${discussionFileName}' uploaded successfully.`);
         return discussionFileName;
@@ -245,7 +245,7 @@ export const uploadDiscussionFile = async (
 export const getPresignedUrl = async (fileName: string, expirySeconds: number = 3600): Promise<string> => {
     try {
         await ensureBucketExists();
-        
+
         // First check if file exists
         console.log(`[MinIO] Getting file stats for: ${fileName}`);
         try {
@@ -254,16 +254,16 @@ export const getPresignedUrl = async (fileName: string, expirySeconds: number = 
         } catch (statError: any) {
             console.log(`[MinIO] Error getting file stats for '${fileName}':`, statError?.message || statError);
             console.log(`[MinIO] Error code:`, statError?.code);
-            
+
             // If file doesn't exist, throw specific error
             if (statError?.code === 'NoSuchKey' || statError?.code === 'NotFound') {
                 throw new Error(`File not found: ${fileName}`);
             }
-            
+
             // For other errors (like AccessDenied), try to generate presigned URL anyway
             console.log(`[MinIO] Attempting to generate presigned URL despite stat error...`);
         }
-        
+
         // Generate presigned URL
         console.log(`[MinIO] Generating presigned URL for: ${fileName}`);
         const url = await minioClient.presignedGetObject(bucketName, fileName, expirySeconds);
@@ -285,6 +285,64 @@ export const deleteFile = async (fileName: string): Promise<void> => {
         console.log(`File '${fileName}' deleted successfully.`);
     } catch (error) {
         console.error(`Error deleting file '${fileName}':`, error);
+        throw error;
+    }
+};
+
+// Proxy file via presigned URL - bypasses browser SSL cert issues
+// Backend fetches from MinIO (with NODE_TLS_REJECT_UNAUTHORIZED=0) and streams to client
+export const proxyFileViaPresignedUrl = async (fileName: string): Promise<{
+    stream: Readable;
+    contentType: string;
+    contentLength: number;
+}> => {
+    try {
+        await ensureBucketExists();
+
+        console.log(`[MinIO Proxy] Getting presigned URL for: ${fileName}`);
+        const presignedUrl = await minioClient.presignedGetObject(bucketName, fileName, 3600);
+        console.log(`[MinIO Proxy] Presigned URL generated, fetching...`);
+
+        // Fetch the file using presigned URL
+        const response = await fetch(presignedUrl);
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch file: ${response.status} ${response.statusText}`);
+        }
+
+        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+        const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+
+        console.log(`[MinIO Proxy] File fetched successfully: ${contentType}, ${contentLength} bytes`);
+
+        // Convert Web API ReadableStream to Node.js Readable
+        const reader = response.body?.getReader();
+        if (!reader) {
+            throw new Error('No response body');
+        }
+
+        const nodeStream = new Readable({
+            async read() {
+                try {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        this.push(null);
+                    } else {
+                        this.push(Buffer.from(value));
+                    }
+                } catch (err) {
+                    this.destroy(err as Error);
+                }
+            }
+        });
+
+        return {
+            stream: nodeStream,
+            contentType,
+            contentLength
+        };
+    } catch (error: any) {
+        console.error(`[MinIO Proxy] Error proxying file '${fileName}':`, error?.message || error);
         throw error;
     }
 };

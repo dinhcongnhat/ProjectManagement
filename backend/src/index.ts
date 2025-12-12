@@ -104,64 +104,21 @@ app.use((req, res, next) => {
 });
 
 // ==================== PUBLIC ROUTES (NO AUTH) ====================
-// These must be defined BEFORE any authenticated routes
-// Serve chat message attachments (images, files, audio)
-app.get('/api/chat/messages/:messageId/file', async (req, res) => {
-    try {
-        const { messageId } = req.params;
-        const message = await prisma.chatMessage.findUnique({
-            where: { id: Number(messageId) }
-        });
+// These routes MUST be defined here (before any routers with auth middleware)
+// to ensure they're matched first
 
-        if (!message || !message.attachment) {
-            return res.status(404).json({ message: 'Attachment not found' });
-        }
-
-        const { getFileStream, getFileStats } = await import('./services/minioService.js');
-        const stats = await getFileStats(message.attachment);
-        const fileStream = await getFileStream(message.attachment);
-
-        const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'application/octet-stream';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=31536000');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        fileStream.pipe(res);
-    } catch (error: any) {
-        console.error('[serveMessageAttachment] Error:', error?.message);
-        res.status(404).json({ message: 'File not found' });
-    }
+// Serve chat message attachments (public - for img src)
+app.get('/api/chat/conversations/:conversationId/messages/:messageId/file', async (req, res) => {
+    console.log('[Index] Public route for chat attachment');
+    const { serveMessageAttachment } = await import('./controllers/chatController.js');
+    return serveMessageAttachment(req, res);
 });
 
-// NOTE: User avatar route is handled in userRoutes.ts
-
-// Serve conversation avatars
+// Serve conversation avatars (public - for img src)
 app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const conversation = await prisma.conversation.findUnique({
-            where: { id: Number(id) },
-            select: { avatar: true }
-        });
-
-        if (!conversation || !conversation.avatar) {
-            return res.status(404).json({ message: 'Avatar not found' });
-        }
-
-        const { getFileStream, getFileStats } = await import('./services/minioService.js');
-        const stats = await getFileStats(conversation.avatar);
-        const fileStream = await getFileStream(conversation.avatar);
-
-        const contentType = stats.metaData?.['content-type'] || 'image/jpeg';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        fileStream.pipe(res);
-    } catch (error: any) {
-        console.error('[serveConversationAvatar] Error:', error?.message);
-        res.status(404).json({ message: 'Avatar not found' });
-    }
+    console.log('[Index] Public route for conversation avatar');
+    const { serveConversationAvatar } = await import('./controllers/chatController.js');
+    return serveConversationAvatar(req, res);
 });
 
 // OnlyOffice download routes (NO AUTH - OnlyOffice server needs direct access)
