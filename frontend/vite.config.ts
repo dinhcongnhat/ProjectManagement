@@ -3,10 +3,10 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // Remove console.log and debugger in production
   esbuild: {
-    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
+    drop: mode === 'production' ? ['console', 'debugger'] : [],
   },
   plugins: [
     react(),
@@ -41,4 +41,4 @@ export default defineConfig({
     cors: true,
     allowedHosts: true,
   }
-})
+}))

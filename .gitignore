@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 build/
+vite.config.ts
 
 # Environment files
 .env
