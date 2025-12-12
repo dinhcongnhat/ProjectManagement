@@ -260,12 +260,28 @@ interface ImageViewerProps {
 }
 
 const ImageViewer = ({ imageUrl, fileName, onClose }: ImageViewerProps) => {
+    // Cleanup blob URL when component unmounts
+    useEffect(() => {
+        return () => {
+            if (imageUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(imageUrl);
+            }
+        };
+    }, [imageUrl]);
+
+    const handleClose = () => {
+        if (imageUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(imageUrl);
+        }
+        onClose();
+    };
+
     return (
         <div className="fixed inset-0 z-[9999] bg-black/90 flex flex-col">
             <div className="flex items-center justify-between px-4 py-2 bg-black/50">
                 <span className="text-white font-medium">{fileName}</span>
                 <button
-                    onClick={onClose}
+                    onClick={handleClose}
                     className="p-2 hover:bg-white/10 rounded transition-colors"
                 >
                     <X size={24} className="text-white" />
@@ -292,6 +308,12 @@ const UserFolders = () => {
     const [currentParentId, setCurrentParentId] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<{
+        currentFile: string;
+        currentIndex: number;
+        totalFiles: number;
+        percentage: number;
+    } | null>(null);
     const [showCreateFolder, setShowCreateFolder] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -382,10 +404,20 @@ const UserFolders = () => {
         if (!selectedFiles || selectedFiles.length === 0) return;
 
         setUploading(true);
+        const totalFiles = selectedFiles.length;
 
         try {
             for (let i = 0; i < selectedFiles.length; i++) {
                 const file = selectedFiles[i];
+
+                // Update progress state
+                setUploadProgress({
+                    currentFile: file.name,
+                    currentIndex: i + 1,
+                    totalFiles,
+                    percentage: Math.round(((i) / totalFiles) * 100)
+                });
+
                 const formData = new FormData();
                 formData.append('file', file);
                 if (currentParentId) {
@@ -402,6 +434,14 @@ const UserFolders = () => {
                     const error = await response.json();
                     throw new Error(error.message || 'Failed to upload file');
                 }
+
+                // Update progress to 100% for this file
+                setUploadProgress({
+                    currentFile: file.name,
+                    currentIndex: i + 1,
+                    totalFiles,
+                    percentage: Math.round(((i + 1) / totalFiles) * 100)
+                });
             }
 
             dialog.showSuccess(`Đã upload ${selectedFiles.length} file thành công!`, { title: 'Thành công' });
@@ -410,6 +450,7 @@ const UserFolders = () => {
             dialog.showError(error.message || 'Lỗi khi upload file', { title: 'Lỗi' });
         } finally {
             setUploading(false);
+            setUploadProgress(null);
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
@@ -464,6 +505,7 @@ const UserFolders = () => {
 
     const handleDownloadFile = async (fileId: number, fileName: string) => {
         try {
+            // Get presigned URL for download - no need to load entire file into memory
             const response = await fetch(`${API_URL}/folders/files/${fileId}/url`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -472,13 +514,17 @@ const UserFolders = () => {
 
             const { url } = await response.json();
 
+            // Open download in new tab - browser will handle the download
             const a = document.createElement('a');
             a.href = url;
             a.download = fileName;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
         } catch (error) {
+            console.error('Error downloading file:', error);
             dialog.showError('Lỗi khi tải file', { title: 'Lỗi' });
         }
     };
@@ -486,15 +532,18 @@ const UserFolders = () => {
     const handleViewFile = async (file: UserFile) => {
         if (isImageFile(file.name)) {
             try {
-                const response = await fetch(`${API_URL}/folders/files/${file.id}/url`, {
+                // Fetch image with auth token and create blob URL
+                const response = await fetch(`${API_URL}/folders/files/${file.id}/stream`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
-                if (!response.ok) throw new Error('Failed to get file URL');
+                if (!response.ok) throw new Error('Failed to get file');
 
-                const { url } = await response.json();
-                setViewingImage({ url, name: file.name });
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                setViewingImage({ url: blobUrl, name: file.name });
             } catch (error) {
+                console.error('Error viewing image:', error);
                 dialog.showError('Lỗi khi mở ảnh', { title: 'Lỗi' });
             }
         } else if (isOfficeFile(file.name)) {
@@ -565,14 +614,26 @@ const UserFolders = () => {
     };
 
     const navigateToFolder = (folderId: number | null) => {
+        // Optimistic update - immediately show loading state and clear old data
+        setLoading(true);
+        setFolders([]);
+        setFiles([]);
         setCurrentParentId(folderId);
     };
 
     const navigateToRoot = () => {
+        // Optimistic update
+        setLoading(true);
+        setFolders([]);
+        setFiles([]);
         setCurrentParentId(null);
     };
 
     const navigateBack = () => {
+        // Optimistic update
+        setLoading(true);
+        setFolders([]);
+        setFiles([]);
         if (breadcrumbs.length > 1) {
             const parentBreadcrumb = breadcrumbs[breadcrumbs.length - 2];
             setCurrentParentId(parentBreadcrumb.id);
@@ -584,16 +645,16 @@ const UserFolders = () => {
     // Grid View Item for Folder
     const FolderGridItem = ({ folder }: { folder: UserFolder }) => (
         <div
-            className="group relative bg-white border border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer"
+            className="group relative bg-white border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer active:scale-98 touch-manipulation"
             onClick={() => navigateToFolder(folder.id)}
             onContextMenu={(e) => handleContextMenu(e, 'folder', folder.id, folder.name)}
         >
             <div className="flex flex-col items-center">
-                <Folder className="w-16 h-16 text-yellow-500 mb-2" />
-                <span className="text-sm font-medium text-gray-700 text-center line-clamp-2">
+                <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-yellow-500 mb-1 sm:mb-2" />
+                <span className="text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2">
                     {folder.name}
                 </span>
-                <span className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                <span className="text-xs text-gray-400 mt-1 flex items-center gap-1 hidden sm:flex">
                     <Clock size={10} />
                     {formatDate(folder.createdAt)}
                 </span>
@@ -604,7 +665,7 @@ const UserFolders = () => {
                     e.stopPropagation();
                     handleContextMenu(e, 'folder', folder.id, folder.name);
                 }}
-                className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
             >
                 <MoreVertical size={16} className="text-gray-500" />
             </button>
@@ -614,19 +675,19 @@ const UserFolders = () => {
     // Grid View Item for File
     const FileGridItem = ({ file }: { file: UserFile }) => (
         <div
-            className="group relative bg-white border border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer"
-            onDoubleClick={() => handleViewFile(file)}
+            className="group relative bg-white border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer active:scale-98 touch-manipulation"
+            onClick={() => handleViewFile(file)}
             onContextMenu={(e) => handleContextMenu(e, 'file', file.id, file.name)}
         >
             <div className="flex flex-col items-center">
                 {getFileIcon(file.name)}
-                <span className="mt-2 text-sm font-medium text-gray-700 text-center line-clamp-2">
+                <span className="mt-1 sm:mt-2 text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2">
                     {file.name}
                 </span>
                 <span className="text-xs text-gray-400 mt-1">
                     {formatFileSize(file.fileSize)}
                 </span>
-                <span className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                <span className="text-xs text-gray-400 mt-0.5 hidden sm:flex items-center gap-1">
                     <Clock size={10} />
                     {formatDate(file.createdAt)}
                 </span>
@@ -637,7 +698,7 @@ const UserFolders = () => {
                     e.stopPropagation();
                     handleContextMenu(e, 'file', file.id, file.name);
                 }}
-                className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
             >
                 <MoreVertical size={16} className="text-gray-500" />
             </button>
@@ -647,11 +708,11 @@ const UserFolders = () => {
     // List View Item for Folder
     const FolderListItem = ({ folder }: { folder: UserFolder }) => (
         <div
-            className="group flex items-center gap-4 p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+            className="group flex items-center gap-3 sm:gap-4 p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer active:bg-gray-50 touch-manipulation"
             onClick={() => navigateToFolder(folder.id)}
             onContextMenu={(e) => handleContextMenu(e, 'folder', folder.id, folder.name)}
         >
-            <Folder className="w-8 h-8 text-yellow-500 flex-shrink-0" />
+            <Folder className="w-7 h-7 sm:w-8 sm:h-8 text-yellow-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
                 <span className="text-sm font-medium text-gray-700 block truncate">
                     {folder.name}
@@ -667,7 +728,7 @@ const UserFolders = () => {
                     e.stopPropagation();
                     handleContextMenu(e, 'folder', folder.id, folder.name);
                 }}
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                className="p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
             >
                 <MoreVertical size={16} className="text-gray-500" />
             </button>
@@ -677,8 +738,8 @@ const UserFolders = () => {
     // List View Item for File
     const FileListItem = ({ file }: { file: UserFile }) => (
         <div
-            className="group flex items-center gap-4 p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
-            onDoubleClick={() => handleViewFile(file)}
+            className="group flex items-center gap-3 sm:gap-4 p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer active:bg-gray-50 touch-manipulation"
+            onClick={() => handleViewFile(file)}
             onContextMenu={(e) => handleContextMenu(e, 'file', file.id, file.name)}
         >
             {getFileIcon(file.name, 'sm')}
@@ -697,7 +758,7 @@ const UserFolders = () => {
                     e.stopPropagation();
                     handleContextMenu(e, 'file', file.id, file.name);
                 }}
-                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                className="p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
             >
                 <MoreVertical size={16} className="text-gray-500" />
             </button>
@@ -1009,6 +1070,47 @@ const UserFolders = () => {
                     onClose={() => setViewingOffice(null)}
                     token={token || ''}
                 />
+            )}
+
+            {/* Upload Progress Dialog */}
+            {uploading && uploadProgress && (
+                <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                <Upload className="w-6 h-6 text-blue-600 animate-bounce" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Đang upload file...</h3>
+                                <p className="text-sm text-gray-500">
+                                    File {uploadProgress.currentIndex} / {uploadProgress.totalFiles}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mb-3">
+                            <p className="text-sm text-gray-700 truncate mb-2" title={uploadProgress.currentFile}>
+                                📄 {uploadProgress.currentFile}
+                            </p>
+
+                            {/* Progress bar */}
+                            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                <div
+                                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+                                    style={{ width: `${uploadProgress.percentage}%` }}
+                                />
+                            </div>
+
+                            <p className="text-sm text-gray-500 mt-2 text-center">
+                                {uploadProgress.percentage}% hoàn thành
+                            </p>
+                        </div>
+
+                        <p className="text-xs text-gray-400 text-center">
+                            Vui lòng không đóng trang này khi đang upload
+                        </p>
+                    </div>
+                </div>
             )}
         </div>
     );
