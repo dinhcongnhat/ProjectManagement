@@ -390,6 +390,9 @@ const CreateProject = () => {
 
     const FileAttachment = () => {
         const fileInputRef = useRef<HTMLInputElement>(null);
+        const [attachmentType, setAttachmentType] = useState<'url' | 'file'>('file');
+        const [urlInput, setUrlInput] = useState('');
+        const [urlList, setUrlList] = useState<string[]>([]);
 
         const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             if (e.target.files && e.target.files.length > 0) {
@@ -426,66 +429,165 @@ const CreateProject = () => {
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         };
 
-        return (
-            <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Đính kèm {selectedFiles.length > 0 && <span className="text-blue-600">({selectedFiles.length} tệp)</span>}
-                </label>
-                <div
-                    className="border-2 border-dashed border-red-200 rounded-lg p-6 lg:p-8 flex flex-col items-center justify-center gap-3 lg:gap-4 bg-white"
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                >
-                    <div className="w-12 h-12 lg:w-16 lg:h-16 bg-red-50 rounded-full flex items-center justify-center text-red-500">
-                        <CloudUpload size={24} className="lg:w-8 lg:h-8" />
-                    </div>
-                    <p className="text-gray-600 text-sm lg:text-base text-center px-4">Kéo thả file vào đây để tải lên hoặc</p>
-                    <div className="flex gap-3 lg:gap-4">
-                        <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="px-4 py-2.5 bg-red-500 text-white rounded-md hover:bg-red-600 active:bg-red-700 flex items-center gap-2 font-medium text-sm touch-target transition-colors"
-                        >
-                            <CloudUpload size={18} />
-                            <span>CHỌN TỪ MÁY</span>
-                        </button>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="hidden"
-                            aria-label="Chọn tệp đính kèm"
-                            onChange={handleFileChange}
-                            multiple
-                        />
-                    </div>
+        const handleAddUrl = () => {
+            if (urlInput.trim() && (urlInput.startsWith('http://') || urlInput.startsWith('https://'))) {
+                setUrlList(prev => [...prev, urlInput.trim()]);
+                setUrlInput('');
+            }
+        };
 
-                    {/* Display selected files */}
-                    {selectedFiles.length > 0 && (
-                        <div className="mt-3 w-full max-w-lg space-y-2">
-                            {selectedFiles.map((file, index) => (
-                                <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 px-3 py-2 rounded-lg">
-                                    <span className="flex-1 truncate">{file.name}</span>
-                                    <span className="text-gray-400 text-xs shrink-0">{formatFileSize(file.size)}</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeFile(index)}
-                                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
-                                        aria-label="Xóa tệp"
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                </div>
-                            ))}
+        const removeUrl = (index: number) => {
+            setUrlList(prev => prev.filter((_, i) => i !== index));
+        };
+
+        return (
+            <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Đính kèm
+                </label>
+
+                {/* Tab selection */}
+                <div className="flex rounded-lg bg-gray-100 p-1">
+                    <button
+                        type="button"
+                        onClick={() => setAttachmentType('file')}
+                        className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${attachmentType === 'file'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                    >
+                        <CloudUpload size={16} className="inline mr-2" />
+                        Tải lên file
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setAttachmentType('url')}
+                        className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${attachmentType === 'url'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                    >
+                        🔗 Nhập đường dẫn
+                    </button>
+                </div>
+
+                {attachmentType === 'file' ? (
+                    /* File Upload Section */
+                    <div>
+                        <div
+                            className="border-2 border-dashed border-blue-200 rounded-lg p-6 flex flex-col items-center justify-center gap-3 bg-blue-50/30 hover:bg-blue-50/50 transition-colors"
+                            onDragOver={handleDragOver}
+                            onDrop={handleDrop}
+                        >
+                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-500">
+                                <CloudUpload size={24} />
+                            </div>
+                            <p className="text-gray-600 text-sm text-center">Kéo thả file vào đây hoặc</p>
                             <button
                                 type="button"
-                                onClick={() => setSelectedFiles([])}
-                                className="text-xs text-red-500 hover:text-red-700 mt-1"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2 font-medium text-sm transition-colors"
                             >
-                                Xóa tất cả
+                                <CloudUpload size={18} />
+                                <span>Chọn file</span>
+                            </button>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                className="hidden"
+                                aria-label="Chọn tệp đính kèm"
+                                onChange={handleFileChange}
+                                multiple
+                            />
+                        </div>
+
+                        {/* Display selected files */}
+                        {selectedFiles.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                                <div className="text-xs text-gray-500">{selectedFiles.length} tệp đã chọn</div>
+                                {selectedFiles.map((file, index) => (
+                                    <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
+                                        <span className="flex-1 truncate">{file.name}</span>
+                                        <span className="text-gray-400 text-xs shrink-0">{formatFileSize(file.size)}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeFile(index)}
+                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                                            aria-label="Xóa tệp"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedFiles([])}
+                                    className="text-xs text-red-500 hover:text-red-700"
+                                >
+                                    Xóa tất cả
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    /* URL Input Section */
+                    <div>
+                        <div className="flex gap-2">
+                            <input
+                                type="url"
+                                value={urlInput}
+                                onChange={(e) => setUrlInput(e.target.value)}
+                                placeholder="Nhập URL (https://...)"
+                                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddUrl())}
+                            />
+                            <button
+                                type="button"
+                                onClick={handleAddUrl}
+                                disabled={!urlInput.trim() || (!urlInput.startsWith('http://') && !urlInput.startsWith('https://'))}
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
+                            >
+                                Thêm
                             </button>
                         </div>
-                    )}
-                </div>
+                        <p className="text-xs text-gray-500 mt-2">Nhập đường dẫn URL bắt đầu bằng http:// hoặc https://</p>
+
+                        {/* Display URL list */}
+                        {urlList.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                                <div className="text-xs text-gray-500">{urlList.length} đường dẫn</div>
+                                {urlList.map((url, index) => (
+                                    <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
+                                        <span className="text-blue-500">🔗</span>
+                                        <a
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-1 truncate text-blue-600 hover:underline"
+                                        >
+                                            {url}
+                                        </a>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeUrl(index)}
+                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                                            aria-label="Xóa URL"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                                <button
+                                    type="button"
+                                    onClick={() => setUrlList([])}
+                                    className="text-xs text-red-500 hover:text-red-700"
+                                >
+                                    Xóa tất cả
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         );
     };

@@ -88,9 +88,12 @@ const Header = ({ onMenuClick }: HeaderProps) => {
     };
 
     return (
-        <header className="h-14 lg:h-16 bg-white border-b border-gray-200 flex items-center px-4 lg:px-6 sticky top-0 z-30 pwa-safe-top">
+        <header
+            className="h-14 lg:h-16 bg-white border-b border-gray-200 flex items-center px-4 lg:px-6 sticky top-0 z-30"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+        >
             {/* Mobile Menu Button */}
-            <button 
+            <button
                 onClick={onMenuClick}
                 className="lg:hidden p-2 -ml-2 mr-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors touch-target"
             >
@@ -109,7 +112,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                         placeholder="Tìm kiếm dự án, công việc..."
                         className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
                     />
-                    
+
                     {/* Search Results Dropdown */}
                     {showResults && searchResults.length > 0 && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-80 overflow-y-auto z-50">
@@ -133,14 +136,14 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                             ))}
                         </div>
                     )}
-                    
+
                     {/* No results */}
                     {showResults && searchQuery && searchResults.length === 0 && !searching && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-4 text-center text-gray-500 z-50">
                             Không tìm thấy dự án
                         </div>
                     )}
-                    
+
                     {/* Searching */}
                     {searching && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-4 text-center text-gray-500 z-50">
@@ -159,10 +162,10 @@ const Header = ({ onMenuClick }: HeaderProps) => {
             <div className="flex items-center gap-1 lg:gap-2">
                 {/* Chat Popup */}
                 <ChatPopup />
-                
+
                 {/* Notifications */}
                 <div className="relative" ref={notificationRef}>
-                    <button 
+                    <button
                         onClick={() => setShowNotificationSettings(!showNotificationSettings)}
                         className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors relative touch-target"
                     >
@@ -174,13 +177,13 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                             <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
                         )}
                     </button>
-                    
+
                     {/* Notification Settings Popup */}
                     {showNotificationSettings && (
                         <>
                             {/* Backdrop */}
-                            <div 
-                                className="fixed inset-0 z-40 bg-black/20 md:bg-transparent" 
+                            <div
+                                className="fixed inset-0 z-40 bg-black/20 md:bg-transparent"
                                 onClick={() => setShowNotificationSettings(false)}
                             />
                             {/* Mobile: fullscreen bottom sheet, Desktop: dropdown */}

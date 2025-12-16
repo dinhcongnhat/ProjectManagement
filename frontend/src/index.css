@@ -26,38 +26,6 @@
     overscroll-behavior-y: contain;
   }
 
-  /* PWA Standalone Mode - Apply safe area ONLY in standalone */
-  @media (display-mode: standalone) {
-    body {
-      /* Only apply left/right/bottom safe area, not top - header handles top */
-      padding-top: 0;
-      padding-bottom: env(safe-area-inset-bottom, 34px);
-      padding-left: env(safe-area-inset-left, 0px);
-      padding-right: env(safe-area-inset-right, 0px);
-    }
-
-    /* Fix for root container in standalone mode */
-    #root {
-      min-height: calc(100dvh - env(safe-area-inset-bottom, 34px));
-    }
-  }
-
-  /* iPhone 16 Pro Max specific (2868x1320 @ 3x = 956x440 CSS pixels, ~430-440px logical width) */
-  @media screen and (min-width: 428px) and (max-width: 440px) and (-webkit-device-pixel-ratio: 3) and (display-mode: standalone) {
-    body {
-      /* iPhone 16 Pro Max has larger safe areas due to Dynamic Island */
-      padding-bottom: env(safe-area-inset-bottom, 34px);
-    }
-
-    /* Adjust header for Dynamic Island (~59px notch area) */
-    header,
-    .header,
-    [role="banner"] {
-      padding-top: env(safe-area-inset-top, 59px);
-      min-height: calc(3.5rem + env(safe-area-inset-top, 59px));
-    }
-  }
-
   /* Prevent zoom on input focus (iOS Safari & PWA) */
   input,
   textarea,
@@ -70,49 +38,84 @@
     border-radius: 0;
   }
 
-  /* Fix for iPhone notch/Dynamic Island in PWA - header handles the top safe area */
-  @supports (padding: max(0px)) {
-    @media (display-mode: standalone) {
-      body {
-        padding-top: 0;
-        /* Header handles this */
-        padding-bottom: max(0px, env(safe-area-inset-bottom, 34px));
-      }
+  /* PWA Standalone Mode - Apply safe areas */
+  @media (display-mode: standalone) {
+    body {
+      /* Only bottom/left/right - header handles top */
+      padding-top: 0;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
 
-      /* Header should include safe area in its height */
-      header,
-      .header,
-      [role="banner"] {
-        padding-top: env(safe-area-inset-top, 0px);
-        /* Increase min-height to account for safe area */
-        min-height: calc(3.5rem + env(safe-area-inset-top, 0px));
-        /* Ensure content stays below Dynamic Island */
-        background-clip: padding-box;
-      }
+    /* Root container in standalone mode */
+    #root {
+      min-height: 100dvh;
     }
   }
 
-  /* iOS PWA status bar adjustment */
+  /* iOS Safari standalone mode detection */
   @supports (-webkit-touch-callout: none) {
     @media (display-mode: standalone) {
 
-      /* Header should account for safe area */
-      header,
-      .header,
-      [role="banner"] {
-        padding-top: env(safe-area-inset-top, 0px);
-        box-sizing: border-box;
-      }
-
-      /* iPhone 16 Pro / Pro Max with Dynamic Island (taller aspect ratio) */
-      @media screen and (min-height: 800px) and (max-height: 960px) and (max-width: 450px) {
+      /* Fix for iPhone X/XS/11/12/13/14 (notch devices, ~47px safe area) */
+      @media screen and (max-width: 428px) and (min-height: 700px) {
 
         header,
         .header,
+        .chat-header,
         [role="banner"] {
-          /* Dynamic Island safe area is approximately 59px */
-          padding-top: max(env(safe-area-inset-top, 59px), 59px);
-          min-height: calc(3.5rem + max(env(safe-area-inset-top, 59px), 59px));
+          padding-top: env(safe-area-inset-top, 47px);
+          min-height: calc(3.5rem + env(safe-area-inset-top, 47px));
+          box-sizing: border-box;
+        }
+
+        /* Full screen modals should respect safe area */
+        .fixed.inset-0.z-50,
+        .fixed.inset-0.z-\[50\] {
+          padding-top: env(safe-area-inset-top, 47px);
+        }
+      }
+
+      /* iPhone 14 Pro / 15 / 16 series with Dynamic Island (~59px safe area) */
+      @media screen and (min-width: 390px) and (max-width: 450px) and (min-height: 800px) {
+
+        header,
+        .header,
+        .chat-header,
+        [role="banner"] {
+          padding-top: env(safe-area-inset-top, 59px);
+          min-height: calc(3.5rem + env(safe-area-inset-top, 59px));
+          box-sizing: border-box;
+        }
+
+        /* Full screen modals should respect safe area */
+        .fixed.inset-0.z-50,
+        .fixed.inset-0.z-\[50\] {
+          padding-top: env(safe-area-inset-top, 59px);
+        }
+      }
+
+      /* iPhone 16 Pro Max specific (430-440px logical width) */
+      @media screen and (min-width: 428px) and (max-width: 440px) and (min-height: 900px) {
+
+        header,
+        .header,
+        .chat-header,
+        [role="banner"] {
+          padding-top: env(safe-area-inset-top, 59px);
+          min-height: calc(3.5rem + env(safe-area-inset-top, 59px));
+          box-sizing: border-box;
+        }
+
+        body {
+          padding-bottom: env(safe-area-inset-bottom, 34px);
+        }
+
+        /* Full screen modals should respect safe area */
+        .fixed.inset-0.z-50,
+        .fixed.inset-0.z-\[50\] {
+          padding-top: env(safe-area-inset-top, 59px);
         }
       }
     }

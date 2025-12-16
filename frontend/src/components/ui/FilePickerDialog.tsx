@@ -100,7 +100,7 @@ export const FilePickerDialog: React.FC<FilePickerDialogProps> = ({
     const [folders, setFolders] = useState<Folder[]>([]);
     const [files, setFiles] = useState<FileItem[]>([]);
     const [loading, setLoading] = useState(false);
-    const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+    const [, setCurrentFolderId] = useState<number | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<FolderBreadcrumb[]>([{ id: null, name: 'Thư mục gốc' }]);
     const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
 
@@ -251,8 +251,8 @@ export const FilePickerDialog: React.FC<FilePickerDialogProps> = ({
                             <button
                                 onClick={() => handleNavigateToBreadcrumb(index)}
                                 className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${index === breadcrumbs.length - 1
-                                        ? 'bg-blue-100 text-blue-700 font-medium'
-                                        : 'hover:bg-gray-200 text-gray-600'
+                                    ? 'bg-blue-100 text-blue-700 font-medium'
+                                    : 'hover:bg-gray-200 text-gray-600'
                                     }`}
                             >
                                 {index === 0 ? <Home size={14} className="inline mr-1" /> : null}
@@ -296,8 +296,8 @@ export const FilePickerDialog: React.FC<FilePickerDialogProps> = ({
                                         key={`file-${file.id}`}
                                         onClick={() => handleToggleFile(file)}
                                         className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all hover:shadow-md ${isSelected
-                                                ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
-                                                : 'bg-white border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                                            ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
+                                            : 'bg-white border-gray-200 hover:border-blue-300 hover:bg-blue-50'
                                             }`}
                                     >
                                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isSelected ? 'bg-blue-100' : 'bg-gray-100'}`}>

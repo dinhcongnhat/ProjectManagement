@@ -2660,8 +2660,8 @@ const ChatPopup: React.FC = () => {
 
         return (
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
-                {/* Header - Clean White Design */}
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100 shrink-0 safe-area-top">
+                {/* Header - Clean White Design with safe area */}
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100 shrink-0 chat-header" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 10px)' }}>
                     <button
                         onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
                         className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors"
@@ -3316,8 +3316,8 @@ const ChatPopup: React.FC = () => {
                 {/* Chat List Panel */}
                 {isOpen && (
                     <div className={`absolute ${isMobile ? 'fixed inset-0 z-50' : 'top-full right-0 mt-2 w-96'} bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${isMobile ? '' : 'max-h-[580px]'}`}>
-                        {/* Header - Clean White Style */}
-                        <div className="bg-white border-b border-gray-100 shrink-0">
+                        {/* Header - Clean White Style with safe area for mobile */}
+                        <div className="bg-white border-b border-gray-100 shrink-0 chat-header" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' } : undefined}>
                             <div className="p-4 pb-3">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
@@ -3349,8 +3349,12 @@ const ChatPopup: React.FC = () => {
                                             </svg>
                                         </button>
                                         {isMobile && (
-                                            <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600">
-                                                <X size={20} />
+                                            <button
+                                                onClick={() => setIsOpen(false)}
+                                                className="w-11 h-11 flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors text-gray-600"
+                                                style={{ minWidth: '44px', minHeight: '44px' }}
+                                            >
+                                                <X size={24} />
                                             </button>
                                         )}
                                     </div>

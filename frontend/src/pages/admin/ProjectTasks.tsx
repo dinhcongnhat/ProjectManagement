@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useDialog } from '../../components/ui/Dialog';
+import ProjectImportExport from '../../components/ProjectImportExport';
 
 interface UserData {
     id: number;
@@ -67,6 +68,9 @@ const ProjectTasks = () => {
     const { showConfirm, showSuccess, showError } = useDialog();
     const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
     const [expandedChildDetails, setExpandedChildDetails] = useState<Set<number>>(new Set());
+
+    // Import/Export Modal State
+    const [showImportExport, setShowImportExport] = useState(false);
 
     // Edit Modal State
     const [showEditModal, setShowEditModal] = useState(false);
@@ -158,7 +162,7 @@ const ProjectTasks = () => {
         const { name, value } = e.target;
         setEditFormData(prev => {
             const newData = { ...prev, [name]: value };
-            
+
             // Auto-calculate duration when dates change
             if ((name === 'startDate' || name === 'endDate') && newData.startDate && newData.endDate) {
                 const start = new Date(newData.startDate);
@@ -167,7 +171,7 @@ const ProjectTasks = () => {
                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 newData.duration = diffDays.toString();
             }
-            
+
             return newData;
         });
     };
@@ -209,15 +213,24 @@ const ProjectTasks = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900">Quản lý dự án</h2>
                     <p className="text-gray-500 text-sm">Danh sách các dự án đang hoạt động</p>
                 </div>
-                <Link to="/admin/create-project" className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                    <Plus size={20} />
-                    <span>Thêm dự án mới</span>
-                </Link>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowImportExport(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                        <FileSpreadsheet size={20} />
+                        <span className="hidden sm:inline">Import/Export</span>
+                    </button>
+                    <Link to="/admin/create-project" className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        <Plus size={20} />
+                        <span>Thêm dự án mới</span>
+                    </Link>
+                </div>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -239,7 +252,7 @@ const ProjectTasks = () => {
                     ) : (
                         (() => {
                             const parentProjects = projects.filter(p => !p.parentId);
-                            
+
                             const toggleExpand = (projectId: number) => {
                                 setExpandedProjects(prev => {
                                     const newSet = new Set(prev);
@@ -281,7 +294,7 @@ const ProjectTasks = () => {
                                                 <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
                                                     {/* Expand/Collapse button for children */}
                                                     {hasChildren && (
-                                                        <button 
+                                                        <button
                                                             onClick={() => toggleExpand(project.id)}
                                                             className="p-1 hover:bg-gray-200 rounded transition-colors flex-shrink-0"
                                                             title={isExpanded ? "Thu gọn" : "Mở rộng"}
@@ -290,7 +303,7 @@ const ProjectTasks = () => {
                                                         </button>
                                                     )}
                                                     {!hasChildren && <div className="w-6 flex-shrink-0" />}
-                                                    
+
                                                     {/* Project link or clickable area for child projects */}
                                                     {isChild ? (
                                                         <button
@@ -372,7 +385,7 @@ const ProjectTasks = () => {
                                                     {/* Header */}
                                                     <div className="flex items-center justify-between">
                                                         <h4 className="font-semibold text-gray-900 text-sm md:text-base">Chi tiết dự án con</h4>
-                                                        <button 
+                                                        <button
                                                             onClick={(e) => toggleChildDetail(project.id, e)}
                                                             className="text-gray-400 hover:text-gray-600"
                                                             title="Đóng"
@@ -463,7 +476,7 @@ const ProjectTasks = () => {
 
                                                     {/* Actions */}
                                                     <div className="flex gap-2 pt-2 border-t border-blue-200">
-                                                        <Link 
+                                                        <Link
                                                             to={`/admin/projects/${project.id}`}
                                                             className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors"
                                                         >
@@ -566,11 +579,11 @@ const ProjectTasks = () => {
                         {/* Description - Full Width */}
                         <div className="mt-6">
                             <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả dự án</label>
-                            <textarea 
-                                name="description" 
-                                value={editFormData.description} 
-                                onChange={handleEditChange} 
-                                rows={4} 
+                            <textarea
+                                name="description"
+                                value={editFormData.description}
+                                onChange={handleEditChange}
+                                rows={4}
                                 placeholder="Nhập mô tả chi tiết về dự án..."
                                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                             ></textarea>
@@ -582,6 +595,17 @@ const ProjectTasks = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Import/Export Modal */}
+            {showImportExport && (
+                <ProjectImportExport
+                    onClose={() => setShowImportExport(false)}
+                    onSuccess={() => {
+                        fetchProjects();
+                        setShowImportExport(false);
+                    }}
+                />
             )}
         </div>
     );

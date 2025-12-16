@@ -78,12 +78,38 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         const fileUrl = await getPresignedUrl(project.attachment, 3600); // 1 hour expiry
 
         // Extract original filename from attachment path
-        const originalName = project.attachment.includes('/')
-            ? project.attachment.split('/').pop()?.split('-').slice(1).join('-') || project.attachment
-            : project.attachment.split('-').slice(1).join('-');
+        // Path format could be: "projects/123/filename.ext" or "projects/123/timestamp-filename.ext"
+        let originalName = project.attachment;
+
+        // Get the last part after the last slash
+        if (project.attachment.includes('/')) {
+            const pathParts = project.attachment.split('/');
+            originalName = pathParts[pathParts.length - 1] || project.attachment;
+        }
+
+        // If filename starts with timestamp (number followed by dash), remove it
+        // Pattern: 1702728000000-filename.ext
+        const timestampPattern = /^\d{10,}-/;
+        if (timestampPattern.test(originalName)) {
+            originalName = originalName.replace(timestampPattern, '');
+        }
 
         // Decode the filename if it was encoded
-        const decodedName = decodeURIComponent(originalName);
+        let decodedName = originalName;
+        try {
+            decodedName = decodeURIComponent(originalName);
+        } catch {
+            // If decoding fails, use as is
+        }
+
+        // Make sure we have a valid filename with extension
+        if (!decodedName || !decodedName.includes('.')) {
+            // Fallback: get from original attachment path
+            decodedName = project.attachment.split('/').pop() || 'document.docx';
+        }
+
+        console.log('[OnlyOffice Project] Attachment:', project.attachment);
+        console.log('[OnlyOffice Project] Extracted name:', decodedName);
 
         const documentType = getDocumentType(decodedName);
         const fileType = getFileType(decodedName);
@@ -335,12 +361,21 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Extract original filename
-        let originalName = message.attachment.split('-').slice(1).join('-');
+        // Extract original filename from attachment path
+        // Path format could be: "discussions/123/filename.ext" or "discussions/123/timestamp-filename.ext"
+        let originalName = message.attachment;
+
+        // Get the last part after the last slash
         if (message.attachment.includes('/')) {
             const pathParts = message.attachment.split('/');
-            const fileName = pathParts[pathParts.length - 1] || '';
-            originalName = fileName.split('-').slice(1).join('-');
+            originalName = pathParts[pathParts.length - 1] || message.attachment;
+        }
+
+        // If filename starts with timestamp (number followed by dash), remove it
+        // Pattern: 1702728000000-filename.ext
+        const timestampPattern = /^\d{10,}-/;
+        if (timestampPattern.test(originalName)) {
+            originalName = originalName.replace(timestampPattern, '');
         }
 
         try {
@@ -349,14 +384,27 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             // If decoding fails, use as is
         }
 
-        // Get file extension
+        // Make sure we have a valid filename with extension
+        if (!originalName || !originalName.includes('.')) {
+            // Fallback: get extension from original attachment path
+            originalName = message.attachment.split('/').pop() || 'document.docx';
+        }
+
+        // Get file extension - must come from the actual filename
         const ext = originalName.split('.').pop()?.toLowerCase() || '';
 
-        // Determine document type (pdf is its own type in OnlyOffice)
+        console.log('[OnlyOffice Discussion] Attachment:', message.attachment);
+        console.log('[OnlyOffice Discussion] Extracted name:', originalName);
+        console.log('[OnlyOffice Discussion] Extension:', ext);
+
+        // Determine document type based on extension
         let documentType: 'word' | 'cell' | 'slide' | 'pdf' = 'word';
-        if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
+        const cellExtensions = ['xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv'];
+        const slideExtensions = ['ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp'];
+
+        if (cellExtensions.includes(ext)) {
             documentType = 'cell';
-        } else if (['ppt', 'pptx', 'odp'].includes(ext)) {
+        } else if (slideExtensions.includes(ext)) {
             documentType = 'slide';
         } else if (ext === 'pdf') {
             documentType = 'pdf';
@@ -513,11 +561,16 @@ export const checkDiscussionOnlyOfficeSupport = async (req: AuthRequest, res: Re
         }
 
         const ext = message.attachment.split('.').pop()?.toLowerCase() || '';
+        // Full list of supported Office extensions
         const supportedExtensions = [
-            'doc', 'docx', 'odt', 'rtf', 'txt',
-            'xls', 'xlsx', 'ods', 'csv',
-            'ppt', 'pptx', 'odp',
-            'pdf' // Added PDF support
+            // Microsoft Word
+            'doc', 'docx', 'docm', 'dot', 'dotx', 'dotm', 'odt', 'fodt', 'ott', 'rtf', 'txt',
+            // Microsoft Excel
+            'xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv',
+            // Microsoft PowerPoint
+            'ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp',
+            // PDF
+            'pdf'
         ];
 
         const isSupported = supportedExtensions.includes(ext);
@@ -554,10 +607,15 @@ export const checkChatOnlyOfficeSupport = async (req: AuthRequest, res: Response
         }
 
         const ext = message.attachment.split('.').pop()?.toLowerCase() || '';
+        // Full list of supported Office extensions
         const supportedExtensions = [
-            'doc', 'docx', 'odt', 'rtf', 'txt',
-            'xls', 'xlsx', 'ods', 'csv',
-            'ppt', 'pptx', 'odp',
+            // Microsoft Word
+            'doc', 'docx', 'docm', 'dot', 'dotx', 'dotm', 'odt', 'fodt', 'ott', 'rtf', 'txt',
+            // Microsoft Excel
+            'xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv',
+            // Microsoft PowerPoint
+            'ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp',
+            // PDF
             'pdf'
         ];
 
@@ -613,12 +671,21 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
             return res.status(403).json({ message: 'Not authorized to view this file' });
         }
 
-        // Extract original filename
-        let originalName = message.attachment.split('-').slice(1).join('-');
+        // Extract original filename from attachment path
+        // Path format could be: "chat/123/filename.ext" or "chat/123/timestamp-filename.ext"
+        let originalName = message.attachment;
+
+        // Get the last part after the last slash
         if (message.attachment.includes('/')) {
             const pathParts = message.attachment.split('/');
-            const fileName = pathParts[pathParts.length - 1] || '';
-            originalName = fileName.split('-').slice(1).join('-');
+            originalName = pathParts[pathParts.length - 1] || message.attachment;
+        }
+
+        // If filename starts with timestamp (number followed by dash), remove it
+        // Pattern: 1702728000000-filename.ext
+        const timestampPattern = /^\d{10,}-/;
+        if (timestampPattern.test(originalName)) {
+            originalName = originalName.replace(timestampPattern, '');
         }
 
         try {
@@ -627,14 +694,27 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
             // If decoding fails, use as is
         }
 
-        // Get file extension
+        // Make sure we have a valid filename with extension
+        if (!originalName || !originalName.includes('.')) {
+            // Fallback: get extension from original attachment path
+            originalName = message.attachment.split('/').pop() || 'document.docx';
+        }
+
+        // Get file extension - must come from the actual filename
         const ext = originalName.split('.').pop()?.toLowerCase() || '';
 
-        // Determine document type
+        console.log('[OnlyOffice Chat] Attachment:', message.attachment);
+        console.log('[OnlyOffice Chat] Extracted name:', originalName);
+        console.log('[OnlyOffice Chat] Extension:', ext);
+
+        // Determine document type based on extension
         let documentType: 'word' | 'cell' | 'slide' | 'pdf' = 'word';
-        if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
+        const cellExtensions = ['xls', 'xlsx', 'xlsm', 'xlt', 'xltx', 'xltm', 'ods', 'fods', 'ots', 'csv'];
+        const slideExtensions = ['ppt', 'pptx', 'pptm', 'pot', 'potx', 'potm', 'odp', 'fodp', 'otp'];
+
+        if (cellExtensions.includes(ext)) {
             documentType = 'cell';
-        } else if (['ppt', 'pptx', 'odp'].includes(ext)) {
+        } else if (slideExtensions.includes(ext)) {
             documentType = 'slide';
         } else if (ext === 'pdf') {
             documentType = 'pdf';

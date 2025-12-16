@@ -74,7 +74,7 @@ const getProjectAssignmentEmailHtml = (
                             </p>
                             
                             <p style="color: #475569; font-size: 15px; line-height: 1.7; margin: 0 0 25px;">
-                                Chúng tôi xin thông báo rằng <strong>${assignerName}</strong> đã phân công bạn tham gia dự án mới với vai trò:
+                                Hệ thống JTSC xin thông báo <strong>${assignerName}</strong> đã phân công bạn tham gia dự án mới với vai trò:
                             </p>
                             
                             <!-- Role Badge -->
@@ -127,7 +127,7 @@ const getProjectAssignmentEmailHtml = (
                             </div>
 
                             <p style="color: #94a3b8; font-size: 13px; line-height: 1.6; margin: 30px 0 0; text-align: center;">
-                                Nếu bạn có bất kỳ thắc mắc nào, vui lòng liên hệ với quản lý trực tiếp hoặc phòng Dự án.
+                                Nếu có bất kỳ thắc mắc nào, vui lòng liên hệ với quản lý dự án trong phần nhắn tin.
                             </p>
                         </td>
                     </tr>

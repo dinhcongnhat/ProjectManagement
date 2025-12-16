@@ -49,7 +49,10 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
                     isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 )}
             >
-                <div className="p-4 lg:p-6 flex items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 safe-top">
+                <div
+                    className="p-4 lg:p-6 flex items-center justify-between gap-3 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-cyan-50/50"
+                    style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 1rem)' }}
+                >
                     <div className="flex items-center gap-3 mt-3">
                         <img src="/Logo.png" alt="Logo" className="h-16 lg:h-18 w-auto" />
                     </div>

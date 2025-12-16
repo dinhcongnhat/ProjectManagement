@@ -70,6 +70,7 @@ import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import folderRoutes from './routes/folderRoutes.js';
+import projectImportExportRoutes from './routes/projectImportExportRoutes.js';
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -336,6 +337,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/projects-io', projectImportExportRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', activityRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
