@@ -553,7 +553,15 @@ httpServer.listen(Number(port), host, () => {
     console.log(`Server is running on http://${host}:${port}`);
     console.log(`Socket.io server ready`);
     console.log(`Access from LAN: http://<your-ip>:${port}`);
+
+    // Start deadline scheduler for push notifications
+    import('./services/deadlineScheduler.js').then(({ startDeadlineScheduler }) => {
+        startDeadlineScheduler();
+    }).catch(err => {
+        console.error('[DeadlineScheduler] Failed to start:', err);
+    });
 });
 
 // Export io for use in controllers
 export const getIO = () => io;
+

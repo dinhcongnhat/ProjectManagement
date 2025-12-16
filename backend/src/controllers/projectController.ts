@@ -3,6 +3,7 @@ import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { createActivity } from './activityController.js';
 import { notifyProjectAssignment, notifyProjectUpdate } from '../services/pushNotificationService.js';
+import { sendProjectAssignmentEmail } from '../services/emailService.js';
 
 import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename } from '../services/minioService.js';
 
@@ -94,7 +95,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             },
         });
 
-        // Send push notifications to assigned users
+        // Send push notifications and emails to assigned users
         try {
             // Get creator name from database
             let creatorName = 'Admin';
@@ -106,28 +107,50 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 creatorName = creator?.name || 'Admin';
             }
 
-            // Notify manager
-            if (Number(managerId) !== req.user?.id) {
+            // Helper function to send notification and email
+            const notifyAndEmail = async (userId: number, role: 'manager' | 'implementer' | 'follower') => {
+                // Get user info for email
+                const user = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true, email: true }
+                });
+
+                // Send push notification
                 await notifyProjectAssignment(
-                    Number(managerId),
+                    userId,
                     project.id,
                     name,
                     creatorName,
-                    'manager'
+                    role
                 );
+
+                // Send email if user has email
+                if (user?.email) {
+                    await sendProjectAssignmentEmail(
+                        user.email,
+                        user.name,
+                        project.id,
+                        name,
+                        code,
+                        role,
+                        creatorName,
+                        startDate ? new Date(startDate) : null,
+                        endDate ? new Date(endDate) : null,
+                        description || null
+                    );
+                }
+            };
+
+            // Notify manager
+            if (Number(managerId) !== req.user?.id) {
+                await notifyAndEmail(Number(managerId), 'manager');
             }
 
             // Notify implementers
             if (Array.isArray(implementerIds)) {
                 for (const implId of implementerIds) {
                     if (Number(implId) !== req.user?.id) {
-                        await notifyProjectAssignment(
-                            Number(implId),
-                            project.id,
-                            name,
-                            creatorName,
-                            'implementer'
-                        );
+                        await notifyAndEmail(Number(implId), 'implementer');
                     }
                 }
             }
@@ -136,18 +159,12 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             if (Array.isArray(followerIds)) {
                 for (const followId of followerIds) {
                     if (Number(followId) !== req.user?.id) {
-                        await notifyProjectAssignment(
-                            Number(followId),
-                            project.id,
-                            name,
-                            creatorName,
-                            'follower'
-                        );
+                        await notifyAndEmail(Number(followId), 'follower');
                     }
                 }
             }
         } catch (pushError) {
-            console.error('[createProject] Push notification error:', pushError);
+            console.error('[createProject] Notification/Email error:', pushError);
         }
 
         res.status(201).json(project);

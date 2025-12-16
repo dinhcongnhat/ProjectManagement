@@ -19,6 +19,35 @@ router.get('/vapid-public-key', (req, res) => {
     res.json({ publicKey });
 });
 
+// DEV ONLY: Quick test email (NO AUTH - for development testing only)
+router.get('/dev-test-email/:email', async (req, res) => {
+    try {
+        const { email } = req.params;
+
+        if (!email || !email.includes('@')) {
+            return res.status(400).json({ message: 'Invalid email' });
+        }
+
+        const { sendTestEmail } = await import('../services/emailService.js');
+        const result = await sendTestEmail(email);
+
+        if (result) {
+            res.json({
+                success: true,
+                message: `Test email sent to ${email}`
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                message: 'Failed to send email'
+            });
+        }
+    } catch (error: any) {
+        console.error('[NotificationRoutes] Dev test email error:', error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Subscribe to push notifications
 router.post('/subscribe', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
@@ -70,7 +99,7 @@ router.get('/settings', authenticateToken, async (req: AuthRequest, res: Respons
         const user = await prisma.user.findUnique({
             where: { id: userId }
         });
-        
+
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -105,7 +134,7 @@ router.put('/settings', authenticateToken, async (req: AuthRequest, res: Respons
         const user = await prisma.user.findUnique({
             where: { id: userId }
         });
-        
+
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -182,7 +211,7 @@ router.post('/test', authenticateToken, async (req: AuthRequest, res: Response) 
         }
 
         const { sendPushToUser } = await import('../services/pushNotificationService.js');
-        
+
         const result = await sendPushToUser(userId, {
             title: 'Test Notification',
             body: 'Thông báo đẩy đang hoạt động! 🎉',
@@ -196,6 +225,155 @@ router.post('/test', authenticateToken, async (req: AuthRequest, res: Response) 
     } catch (error) {
         console.error('[NotificationRoutes] Test notification error:', error);
         res.status(500).json({ message: 'Failed to send test notification' });
+    }
+});
+
+// Trigger deadline check (Admin only)
+router.post('/check-deadlines', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const userRole = req.user?.role;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        // Only admin can trigger manual deadline check
+        if (userRole !== 'ADMIN') {
+            return res.status(403).json({ message: 'Chỉ Admin mới có thể thực hiện thao tác này' });
+        }
+
+        const { runDeadlineChecks } = await import('../services/deadlineScheduler.js');
+
+        // Run deadline checks asynchronously
+        runDeadlineChecks().then(() => {
+            console.log('[NotificationRoutes] Manual deadline check completed');
+        }).catch(err => {
+            console.error('[NotificationRoutes] Manual deadline check failed:', err);
+        });
+
+        res.json({
+            success: true,
+            message: 'Đã bắt đầu kiểm tra deadline. Thông báo sẽ được gửi cho những dự án/công việc quá hạn.'
+        });
+    } catch (error) {
+        console.error('[NotificationRoutes] Deadline check trigger error:', error);
+        res.status(500).json({ message: 'Lỗi khi kiểm tra deadline' });
+    }
+});
+
+// Get deadline status (for dashboard)
+router.get('/deadline-status', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Get user's overdue projects
+        const overdueProjects = await prisma.project.count({
+            where: {
+                OR: [
+                    { managerId: userId },
+                    { implementers: { some: { id: userId } } },
+                    { followers: { some: { id: userId } } }
+                ],
+                endDate: { lte: today },
+                status: { not: 'COMPLETED' }
+            }
+        });
+
+        // Get user's overdue personal tasks
+        const overdueTasks = await prisma.task.count({
+            where: {
+                creatorId: userId,
+                type: 'PERSONAL',
+                endDate: { lte: today },
+                status: { notIn: ['COMPLETED', 'CANCELLED'] }
+            }
+        });
+
+        // Get upcoming deadlines (next 7 days)
+        const nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+
+        const upcomingProjectDeadlines = await prisma.project.count({
+            where: {
+                OR: [
+                    { managerId: userId },
+                    { implementers: { some: { id: userId } } },
+                    { followers: { some: { id: userId } } }
+                ],
+                endDate: { gt: today, lte: nextWeek },
+                status: { not: 'COMPLETED' }
+            }
+        });
+
+        const upcomingTaskDeadlines = await prisma.task.count({
+            where: {
+                creatorId: userId,
+                type: 'PERSONAL',
+                endDate: { gt: today, lte: nextWeek },
+                status: { notIn: ['COMPLETED', 'CANCELLED'] }
+            }
+        });
+
+        res.json({
+            overdueProjects,
+            overdueTasks,
+            upcomingProjectDeadlines,
+            upcomingTaskDeadlines,
+            totalOverdue: overdueProjects + overdueTasks,
+            totalUpcoming: upcomingProjectDeadlines + upcomingTaskDeadlines
+        });
+    } catch (error) {
+        console.error('[NotificationRoutes] Deadline status error:', error);
+        res.status(500).json({ message: 'Lỗi khi lấy trạng thái deadline' });
+    }
+});
+
+// Test email sending
+router.post('/test-email', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const userRole = req.user?.role;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        // Only admin can test emails
+        if (userRole !== 'ADMIN') {
+            return res.status(403).json({ message: 'Chỉ Admin mới có thể test email' });
+        }
+
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: 'Email address is required' });
+        }
+
+        const { sendTestEmail } = await import('../services/emailService.js');
+
+        const result = await sendTestEmail(email);
+
+        if (result) {
+            res.json({
+                success: true,
+                message: `Email test đã được gửi thành công đến ${email}`
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                message: 'Gửi email thất bại. Kiểm tra cấu hình Resend.'
+            });
+        }
+    } catch (error) {
+        console.error('[NotificationRoutes] Test email error:', error);
+        res.status(500).json({ message: 'Lỗi khi gửi email test' });
     }
 });
 

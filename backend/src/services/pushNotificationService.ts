@@ -115,7 +115,7 @@ export const unsubscribePush = async (endpoint: string) => {
 // Send push notification to a specific user
 export const sendPushToUser = async (userId: number, payload: PushPayload) => {
     console.log(`[PushService] sendPushToUser called for userId: ${userId}, type: ${payload.data?.type}`);
-    
+
     try {
         // Check if VAPID is configured
         if (VAPID_PRIVATE_KEY === 'your-private-key-here') {
@@ -187,12 +187,12 @@ export const sendPushToUser = async (userId: number, payload: PushPayload) => {
             } catch (error: any) {
                 failed++;
                 console.error(`[PushService] Error sending to ${sub.endpoint}:`, error.message);
-                
+
                 // Remove expired/invalid subscriptions
                 if (error.statusCode === 410 || error.statusCode === 404) {
                     await prisma.pushSubscription.delete({
                         where: { id: sub.id }
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
         }
@@ -210,7 +210,7 @@ export const sendPushToUsers = async (userIds: number[], payload: PushPayload) =
     const results = await Promise.all(
         userIds.map(userId => sendPushToUser(userId, payload))
     );
-    
+
     return {
         success: results.reduce((sum, r) => sum + r.success, 0),
         failed: results.reduce((sum, r) => sum + r.failed, 0)
@@ -231,7 +231,7 @@ export const notifyNewChatMessage = async (
 ) => {
     // Don't notify the sender
     const recipients = recipientIds.filter(id => id !== senderId);
-    
+
     console.log('[PushService] notifyNewChatMessage called:', {
         recipientIds,
         senderId,
@@ -239,12 +239,12 @@ export const notifyNewChatMessage = async (
         conversationId,
         isVapidConfigured: VAPID_PRIVATE_KEY !== 'your-private-key-here'
     });
-    
+
     if (recipients.length === 0) {
         console.log('[PushService] No recipients to notify');
         return { success: 0, failed: 0 };
     }
-    
+
     const payload: PushPayload = {
         title: isGroup ? conversationName : senderName,
         body: isGroup ? `${senderName}: ${messagePreview}` : messagePreview,
@@ -334,7 +334,7 @@ export const notifyMention = async (
         type: 'mention',
         url: context === 'chat' ? '/' : `/projects/${contextId}`
     };
-    
+
     if (context === 'chat') {
         data.conversationId = contextId;
     } else {
@@ -399,6 +399,106 @@ export const notifyProjectUpdate = async (
     return sendPushToUsers(recipients, payload);
 };
 
+// ==================== DEADLINE REMINDER NOTIFICATIONS ====================
+
+// Notify project deadline overdue
+export const notifyProjectDeadlineOverdue = async (
+    userIds: number[],
+    projectId: number,
+    projectName: string,
+    daysOverdue: number
+) => {
+    const payload: PushPayload = {
+        title: '⚠️ Dự án quá hạn!',
+        body: daysOverdue === 0
+            ? `Dự án "${projectName}" đã đến hạn hoàn thành hôm nay!`
+            : `Dự án "${projectName}" đã quá hạn ${daysOverdue} ngày!`,
+        tag: `project-deadline-${projectId}`,
+        data: {
+            type: 'project',
+            url: `/projects/${projectId}`,
+            projectId
+        },
+        requireInteraction: true,
+        vibrate: [200, 100, 200, 100, 200]
+    };
+
+    return sendPushToUsers(userIds, payload);
+};
+
+// Notify project deadline upcoming (1 day before)
+export const notifyProjectDeadlineUpcoming = async (
+    userIds: number[],
+    projectId: number,
+    projectName: string,
+    daysUntilDeadline: number
+) => {
+    const payload: PushPayload = {
+        title: '📅 Nhắc nhở deadline dự án',
+        body: daysUntilDeadline === 1
+            ? `Dự án "${projectName}" sẽ đến hạn vào ngày mai!`
+            : `Dự án "${projectName}" sẽ đến hạn trong ${daysUntilDeadline} ngày nữa.`,
+        tag: `project-deadline-reminder-${projectId}`,
+        data: {
+            type: 'project',
+            url: `/projects/${projectId}`,
+            projectId
+        },
+        requireInteraction: false
+    };
+
+    return sendPushToUsers(userIds, payload);
+};
+
+// Notify personal task deadline overdue
+export const notifyTaskDeadlineOverdue = async (
+    userId: number,
+    taskId: number,
+    taskTitle: string,
+    daysOverdue: number
+) => {
+    const payload: PushPayload = {
+        title: '⚠️ Công việc quá hạn!',
+        body: daysOverdue === 0
+            ? `Công việc "${taskTitle}" đã đến hạn hoàn thành hôm nay!`
+            : `Công việc "${taskTitle}" đã quá hạn ${daysOverdue} ngày!`,
+        tag: `task-deadline-${taskId}`,
+        data: {
+            type: 'task',
+            url: '/my-tasks',
+            taskId
+        },
+        requireInteraction: true,
+        vibrate: [200, 100, 200, 100, 200]
+    };
+
+    return sendPushToUser(userId, payload);
+};
+
+// Notify personal task deadline upcoming (1 day before)
+export const notifyTaskDeadlineUpcoming = async (
+    userId: number,
+    taskId: number,
+    taskTitle: string,
+    daysUntilDeadline: number
+) => {
+    const payload: PushPayload = {
+        title: '📅 Nhắc nhở công việc',
+        body: daysUntilDeadline === 1
+            ? `Công việc "${taskTitle}" sẽ đến hạn vào ngày mai!`
+            : `Công việc "${taskTitle}" sẽ đến hạn trong ${daysUntilDeadline} ngày nữa.`,
+        tag: `task-deadline-reminder-${taskId}`,
+        data: {
+            type: 'task',
+            url: '/my-tasks',
+            taskId
+        },
+        requireInteraction: false
+    };
+
+    return sendPushToUser(userId, payload);
+};
+
 export default {
     getVapidPublicKey,
     subscribePush,
@@ -410,5 +510,9 @@ export default {
     notifyProjectDiscussion,
     notifyMention,
     notifyTaskAssignment,
-    notifyProjectUpdate
+    notifyProjectUpdate,
+    notifyProjectDeadlineOverdue,
+    notifyProjectDeadlineUpcoming,
+    notifyTaskDeadlineOverdue,
+    notifyTaskDeadlineUpcoming
 };
