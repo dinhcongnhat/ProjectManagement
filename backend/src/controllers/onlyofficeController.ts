@@ -1,17 +1,17 @@
 import type { Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
-import { isOfficeFile, getFileStream, getFileStats } from '../services/minioService.js';
+import { isOfficeFile, getFileStream, getFileStats, getPresignedUrl } from '../services/minioService.js';
 
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const BACKEND_URL = process.env.BACKEND_URL || 'http:////ai.jtsc.io.vn/api';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
 // JWT disabled for OnlyOffice to avoid authentication issues
 
 // Get document type based on file extension
 const getDocumentType = (filename: string): string => {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
-    
+
     // Word documents
     if (['doc', 'docx', 'odt', 'rtf', 'txt'].includes(ext)) {
         return 'word';
@@ -28,7 +28,7 @@ const getDocumentType = (filename: string): string => {
     if (ext === 'pdf') {
         return 'pdf';
     }
-    
+
     return 'word'; // default
 };
 
@@ -45,7 +45,7 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         const { id } = req.params;
         const userId = req.user?.id;
         const userRole = req.user?.role;
-        
+
         const project = await prisma.project.findUnique({
             where: { id: Number(id) },
             include: {
@@ -74,24 +74,24 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         const isImplementer = project.implementers.some(impl => impl.id === userId);
         const canEdit = isAdmin || isManager || isImplementer;
 
-        // Use backend proxy URL that OnlyOffice can access via LAN
-        const fileUrl = `${BACKEND_URL}/api/onlyoffice/download/${project.id}`;
-        
+        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
+        const fileUrl = await getPresignedUrl(project.attachment, 3600); // 1 hour expiry
+
         // Extract original filename from attachment path
         const originalName = project.attachment.includes('/')
             ? project.attachment.split('/').pop()?.split('-').slice(1).join('-') || project.attachment
             : project.attachment.split('-').slice(1).join('-');
-        
+
         // Decode the filename if it was encoded
         const decodedName = decodeURIComponent(originalName);
-        
+
         const documentType = getDocumentType(decodedName);
         const fileType = getFileType(decodedName);
-        
+
         // Create unique document key based on project id and attachment
         // Use stable key for editing session (without timestamp for same document)
         const documentKey = `project_${project.id}_v1`;
-        
+
         // OnlyOffice configuration
         const config = {
             document: {
@@ -113,7 +113,7 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
             },
             documentType: documentType,
             editorConfig: {
-                callbackUrl: `${BACKEND_URL}/api/onlyoffice/callback/${project.id}`,
+                callbackUrl: `${BACKEND_URL}/onlyoffice/callback/${project.id}`,
                 lang: 'en', // English language
                 mode: canEdit ? 'edit' : 'view',
                 user: {
@@ -167,7 +167,7 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const { status, url, key } = req.body;
-        
+
         // Status codes:
         // 0 - no document with the key identifier could be found
         // 1 - document is being edited
@@ -176,9 +176,9 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
         // 4 - document is closed with no changes
         // 6 - document is being edited, but the current document state is saved
         // 7 - error has occurred while force saving the document
-        
+
         console.log('OnlyOffice callback received:', { id, status, url, key });
-        
+
         // Status 2 or 6 means document needs to be saved
         if (status === 2 || status === 6) {
             try {
@@ -199,20 +199,20 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
                 }
 
                 const buffer = Buffer.from(await response.arrayBuffer());
-                
+
                 // Import uploadFile dynamically to avoid circular dependency
                 const { minioClient, bucketName } = await import('../config/minio.js');
-                
+
                 // Upload the updated file back to MinIO with the same path
                 await minioClient.putObject(bucketName, project.attachment, buffer);
-                
+
                 console.log(`File saved successfully: ${project.attachment}`);
             } catch (saveError) {
                 console.error('Error saving file:', saveError);
                 return res.json({ error: 1, message: 'Error saving file' });
             }
         }
-        
+
         res.json({ error: 0 });
     } catch (error) {
         console.error('Error in OnlyOffice callback:', error);
@@ -229,9 +229,9 @@ export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) =>
         });
 
         if (!project || !project.attachment) {
-            return res.status(404).json({ 
-                supported: false, 
-                message: 'Attachment not found' 
+            return res.status(404).json({
+                supported: false,
+                message: 'Attachment not found'
             });
         }
 
@@ -239,7 +239,7 @@ export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) =>
         const originalName = project.attachment.includes('/')
             ? project.attachment.split('/').pop()?.split('-').slice(1).join('-') || project.attachment
             : project.attachment.split('-').slice(1).join('-');
-        
+
         res.json({
             supported,
             fileName: decodeURIComponent(originalName),
@@ -258,12 +258,12 @@ export const downloadFileForOnlyOffice = async (req: Request, res: Response) => 
     try {
         const { id } = req.params;
         console.log('[OnlyOffice Download] Request for project:', id);
-        
+
         // Set CORS headers immediately
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-        
+
         const project = await prisma.project.findUnique({
             where: { id: Number(id) },
         });
@@ -272,13 +272,13 @@ export const downloadFileForOnlyOffice = async (req: Request, res: Response) => 
             console.log('[OnlyOffice Download] Attachment not found for project:', id);
             return res.status(404).json({ message: 'Attachment not found' });
         }
-        
+
         console.log('[OnlyOffice Download] Attachment path:', project.attachment);
 
         // Use presigned URL instead of streaming
         const { getPresignedUrl } = await import('../services/minioService.js');
         const presignedUrl = await getPresignedUrl(project.attachment, 3600); // 1 hour
-        
+
         console.log('[OnlyOffice Download] Redirecting to presigned URL');
         res.redirect(presignedUrl);
     } catch (error: any) {
@@ -294,18 +294,18 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
     try {
         const messageId = req.params.messageId;
         const userId = req.user?.id;
-        
+
         if (!messageId) {
             return res.status(400).json({ message: 'Message ID is required' });
         }
-        
+
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
         const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
         const JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
-        const BACKEND_URL = process.env.BACKEND_URL || 'https://ai.jtsc.io.vn/api';
+        const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
         // Find the message with attachment
         const message = await prisma.message.findUnique({
@@ -342,7 +342,7 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             const fileName = pathParts[pathParts.length - 1] || '';
             originalName = fileName.split('-').slice(1).join('-');
         }
-        
+
         try {
             originalName = decodeURIComponent(originalName);
         } catch {
@@ -351,7 +351,7 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
 
         // Get file extension
         const ext = originalName.split('.').pop()?.toLowerCase() || '';
-        
+
         // Determine document type (pdf is its own type in OnlyOffice)
         let documentType: 'word' | 'cell' | 'slide' | 'pdf' = 'word';
         if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
@@ -362,8 +362,8 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             documentType = 'pdf';
         }
 
-        // Use backend proxy URL for file access
-        const fileUrl = `${BACKEND_URL}/api/onlyoffice/discussion/download/${messageId}`;
+        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
+        const fileUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
 
         const config = {
             document: {
@@ -413,7 +413,7 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
 export const downloadDiscussionFileForOnlyOffice = async (req: Request, res: Response) => {
     try {
         const messageId = req.params.messageId;
-        
+
         if (!messageId) {
             return res.status(400).json({ message: 'Message ID is required' });
         }
@@ -426,7 +426,7 @@ export const downloadDiscussionFileForOnlyOffice = async (req: Request, res: Res
         if (!message || !message.attachment) {
             return res.status(404).json({ message: 'Message or attachment not found' });
         }
-        
+
         const fileStream = await getFileStream(message.attachment);
         const fileStats = await getFileStats(message.attachment);
 
@@ -437,7 +437,7 @@ export const downloadDiscussionFileForOnlyOffice = async (req: Request, res: Res
             const fileName = pathParts[pathParts.length - 1] || '';
             originalName = fileName.split('-').slice(1).join('-');
         }
-        
+
         try {
             originalName = decodeURIComponent(originalName);
         } catch {
@@ -455,7 +455,7 @@ export const downloadDiscussionFileForOnlyOffice = async (req: Request, res: Res
 
         // Set headers - use ASCII filename, UTF-8 encoded in filename*
         res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
-        
+
         if (fileStats.metaData && fileStats.metaData['content-type']) {
             res.setHeader('Content-Type', fileStats.metaData['content-type']);
         } else {
@@ -498,7 +498,7 @@ export const downloadDiscussionFileForOnlyOffice = async (req: Request, res: Res
 export const checkDiscussionOnlyOfficeSupport = async (req: AuthRequest, res: Response) => {
     try {
         const messageId = req.params.messageId;
-        
+
         if (!messageId) {
             return res.status(400).json({ message: 'Message ID is required' });
         }
@@ -539,7 +539,7 @@ export const checkDiscussionOnlyOfficeSupport = async (req: AuthRequest, res: Re
 export const checkChatOnlyOfficeSupport = async (req: AuthRequest, res: Response) => {
     try {
         const messageId = req.params.messageId;
-        
+
         if (!messageId) {
             return res.status(400).json({ message: 'Message ID is required' });
         }
@@ -579,7 +579,7 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
     try {
         const messageId = req.params.messageId;
         const user = req.user;
-        
+
         if (!messageId) {
             return res.status(400).json({ message: 'Message ID is required' });
         }
@@ -590,8 +590,8 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
 
         const message = await prisma.chatMessage.findUnique({
             where: { id: parseInt(messageId) },
-            select: { 
-                id: true, 
+            select: {
+                id: true,
                 attachment: true,
                 conversationId: true
             }
@@ -620,7 +620,7 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
             const fileName = pathParts[pathParts.length - 1] || '';
             originalName = fileName.split('-').slice(1).join('-');
         }
-        
+
         try {
             originalName = decodeURIComponent(originalName);
         } catch {
@@ -629,7 +629,7 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
 
         // Get file extension
         const ext = originalName.split('.').pop()?.toLowerCase() || '';
-        
+
         // Determine document type
         let documentType: 'word' | 'cell' | 'slide' | 'pdf' = 'word';
         if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
@@ -640,8 +640,8 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
             documentType = 'pdf';
         }
 
-        // Use backend proxy URL for file access
-        const fileUrl = `${BACKEND_URL}/api/onlyoffice/chat/download/${messageId}`;
+        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
+        const fileUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
 
         const config = {
             document: {
@@ -691,7 +691,7 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
 export const downloadChatFileForOnlyOffice = async (req: Request, res: Response) => {
     try {
         const messageId = req.params.messageId;
-        
+
         if (!messageId) {
             return res.status(400).json({ message: 'Message ID is required' });
         }
@@ -704,7 +704,7 @@ export const downloadChatFileForOnlyOffice = async (req: Request, res: Response)
         if (!message || !message.attachment) {
             return res.status(404).json({ message: 'Message or attachment not found' });
         }
-        
+
         const fileStream = await getFileStream(message.attachment);
         const fileStats = await getFileStats(message.attachment);
 
@@ -715,7 +715,7 @@ export const downloadChatFileForOnlyOffice = async (req: Request, res: Response)
             const fileName = pathParts[pathParts.length - 1] || '';
             originalName = fileName.split('-').slice(1).join('-');
         }
-        
+
         try {
             originalName = decodeURIComponent(originalName);
         } catch {
@@ -731,7 +731,7 @@ export const downloadChatFileForOnlyOffice = async (req: Request, res: Response)
             .replace(/\s+/g, '_');
 
         res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
-        
+
         if (fileStats.metaData && fileStats.metaData['content-type']) {
             res.setHeader('Content-Type', fileStats.metaData['content-type']);
         } else {

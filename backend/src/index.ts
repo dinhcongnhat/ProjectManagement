@@ -20,9 +20,19 @@ const allowedOrigins = [
     'http://www.jtsc.io.vn',
     'https://ai.jtsc.io.vn',
     'http://ai.jtsc.io.vn',
-    'http://171.237.138.176:3000',
-    'http://171.237.138.176:3001',
-    'http://171.237.138.176'
+    // DuckDNS domains
+    'https://jtscapi.duckdns.org',
+    'http://jtscapi.duckdns.org',
+    'https://jtscminio.duckdns.org',
+    'http://jtscminio.duckdns.org',
+    'https://jtsconlyoffice.duckdns.org',
+    'http://jtsconlyoffice.duckdns.org',
+    'https://jtscdb.duckdns.org',
+    'http://jtscdb.duckdns.org',
+    // IP addresses
+    'http://117.0.207.175:3000',
+    'http://117.0.207.175:3001',
+    'http://117.0.207.175'
 ];
 
 const io = new Server(httpServer, {

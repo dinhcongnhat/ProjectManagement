@@ -3,11 +3,11 @@ import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { minioClient, bucketName } from '../config/minio.js';
 import { Readable } from 'stream';
-import { isOfficeFile } from '../services/minioService.js';
+import { isOfficeFile, getPresignedUrl } from '../services/minioService.js';
 
 const userFolderPrefix = 'users/';
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://ai.jtsc.io.vn/api';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
 // Get username-based folder path
 const getUserFolderPath = (username: string): string => {
@@ -523,8 +523,8 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         const ext = file.name.split('.').pop()?.toLowerCase() || '';
         const documentType = getDocumentType(file.name);
 
-        // Build download URL for OnlyOffice
-        const downloadUrl = `${BACKEND_URL}/folders/files/${fileId}/onlyoffice-download`;
+        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
+        const downloadUrl = await getPresignedUrl(file.minioPath, 3600); // 1 hour expiry
 
         const config = {
             document: {

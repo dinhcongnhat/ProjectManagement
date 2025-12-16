@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useDialog } from '../../components/ui/Dialog';
+import { UploadProgressDialog } from '../../components/ui/UploadProgressDialog';
+import type { UploadFile } from '../../components/ui/UploadProgressDialog';
 
 interface UserData {
     id: number;
@@ -43,7 +45,13 @@ const CreateProject = () => {
         description: '',
         parentId: parentIdParam || ''
     });
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+
+    // Upload Progress State
+    const [showUploadDialog, setShowUploadDialog] = useState(false);
+    const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'completed' | 'error'>('idle');
 
     useEffect(() => {
         const fetchUsers = async () => {
@@ -135,7 +143,22 @@ const CreateProject = () => {
             return;
         }
 
-        setIsCreating(true); // Show loading
+        setIsCreating(true);
+
+        // Initialize upload files state for dialog
+        const filesToUpload: UploadFile[] = selectedFiles.map(f => ({
+            name: f.name,
+            size: f.size,
+            progress: 0,
+            status: 'pending' as const
+        }));
+
+        if (selectedFiles.length > 0) {
+            setUploadFiles(filesToUpload);
+            setUploadProgress(0);
+            setUploadStatus('uploading');
+            setShowUploadDialog(true);
+        }
 
         try {
             const formDataToSend = new FormData();
@@ -143,46 +166,91 @@ const CreateProject = () => {
             // Append all text fields
             Object.entries(formData).forEach(([key, value]) => {
                 if (key === 'implementerIds' || key === 'followerIds') {
-                    // Append arrays as JSON strings or individual items depending on backend expectation
-                    // Here sending as JSON string for simplicity in parsing on backend
                     formDataToSend.append(key, JSON.stringify(value));
                 } else {
                     formDataToSend.append(key, value as string);
                 }
             });
 
-            // Append file if selected
-            if (selectedFile) {
-                formDataToSend.append('file', selectedFile);
+            // Append files if selected (multiple files support)
+            if (selectedFiles.length > 0) {
+                selectedFiles.forEach(file => {
+                    formDataToSend.append('files', file);
+                });
             }
 
-            const response = await fetch(`${API_URL}/projects`, {
-                method: 'POST',
-                headers: {
-                    // 'Content-Type': 'multipart/form-data', // Browser sets this automatically with boundary
-                    Authorization: `Bearer ${token}`,
-                },
-                body: formDataToSend,
+            // Use XMLHttpRequest for progress tracking
+            const xhr = new XMLHttpRequest();
+
+            const uploadPromise = new Promise<{ ok: boolean, data?: any, message?: string }>((resolve, reject) => {
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        const percentComplete = Math.round((event.loaded / event.total) * 100);
+                        setUploadProgress(percentComplete);
+
+                        // Update all files progress (simplified - all files progress together)
+                        setUploadFiles(prev => prev.map(f => ({
+                            ...f,
+                            progress: percentComplete,
+                            status: percentComplete < 100 ? 'uploading' : 'completed'
+                        })));
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve({ ok: true, data: response });
+                        } else {
+                            resolve({ ok: false, message: response.message || 'Lỗi không xác định' });
+                        }
+                    } catch {
+                        resolve({ ok: false, message: 'Lỗi phản hồi từ server' });
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    reject(new Error('Lỗi kết nối mạng'));
+                });
+
+                xhr.open('POST', `${API_URL}/projects`);
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                xhr.send(formDataToSend);
             });
 
-            if (response.ok) {
-                await response.json();
-                showSuccess('Dự án đã được tạo thành công!');
-                // Navigate to parent project if creating sub-project, otherwise to projects list
-                if (parentIdParam) {
-                    navigate(`/admin/projects/${parentIdParam}`);
-                } else {
-                    navigate('/admin/projects');
-                }
+            const result = await uploadPromise;
+
+            if (result.ok) {
+                setUploadStatus('completed');
+                setUploadFiles(prev => prev.map(f => ({ ...f, status: 'completed', progress: 100 })));
+
+                // Wait a moment to show completion, then navigate
+                setTimeout(() => {
+                    setShowUploadDialog(false);
+                    showSuccess('Dự án đã được tạo thành công!');
+                    if (parentIdParam) {
+                        navigate(`/admin/projects/${parentIdParam}`);
+                    } else {
+                        navigate('/admin/projects');
+                    }
+                }, 1000);
             } else {
-                const data = await response.json();
-                showError(`Lỗi: ${data.message}`);
+                setUploadStatus('error');
+                setUploadFiles(prev => prev.map(f => ({ ...f, status: 'error', error: result.message })));
+                showError(`Lỗi: ${result.message}`);
             }
         } catch (error) {
             console.error('Error creating project:', error);
+            setUploadStatus('error');
+            setUploadFiles(prev => prev.map(f => ({
+                ...f,
+                status: 'error',
+                error: error instanceof Error ? error.message : 'Có lỗi xảy ra'
+            })));
             showError('Có lỗi xảy ra khi tạo dự án');
         } finally {
-            setIsCreating(false); // Hide loading
+            setIsCreating(false);
         }
     };
 
@@ -324,8 +392,13 @@ const CreateProject = () => {
         const fileInputRef = useRef<HTMLInputElement>(null);
 
         const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-            if (e.target.files && e.target.files[0]) {
-                setSelectedFile(e.target.files[0]);
+            if (e.target.files && e.target.files.length > 0) {
+                const newFiles = Array.from(e.target.files);
+                setSelectedFiles(prev => [...prev, ...newFiles]);
+            }
+            // Reset input để có thể chọn lại cùng file
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
             }
         };
 
@@ -337,14 +410,27 @@ const CreateProject = () => {
         const handleDrop = (e: React.DragEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                setSelectedFile(e.dataTransfer.files[0]);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                const newFiles = Array.from(e.dataTransfer.files);
+                setSelectedFiles(prev => [...prev, ...newFiles]);
             }
+        };
+
+        const removeFile = (index: number) => {
+            setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+        };
+
+        const formatFileSize = (bytes: number) => {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         };
 
         return (
             <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Đính kèm</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Đính kèm {selectedFiles.length > 0 && <span className="text-blue-600">({selectedFiles.length} tệp)</span>}
+                </label>
                 <div
                     className="border-2 border-dashed border-red-200 rounded-lg p-6 lg:p-8 flex flex-col items-center justify-center gap-3 lg:gap-4 bg-white"
                     onDragOver={handleDragOver}
@@ -369,13 +455,33 @@ const CreateProject = () => {
                             className="hidden"
                             aria-label="Chọn tệp đính kèm"
                             onChange={handleFileChange}
+                            multiple
                         />
                     </div>
-                    {selectedFile && (
-                        <div className="mt-2 flex items-center gap-2 text-sm text-gray-700 bg-gray-50 px-3 py-2 rounded-lg w-full max-w-md">
-                            <span className="flex-1 truncate">{selectedFile.name}</span>
-                            <button type="button" onClick={() => setSelectedFile(null)} className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0" aria-label="Xóa tệp đã chọn">
-                                <X size={16} />
+
+                    {/* Display selected files */}
+                    {selectedFiles.length > 0 && (
+                        <div className="mt-3 w-full max-w-lg space-y-2">
+                            {selectedFiles.map((file, index) => (
+                                <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 px-3 py-2 rounded-lg">
+                                    <span className="flex-1 truncate">{file.name}</span>
+                                    <span className="text-gray-400 text-xs shrink-0">{formatFileSize(file.size)}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeFile(index)}
+                                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                                        aria-label="Xóa tệp"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            ))}
+                            <button
+                                type="button"
+                                onClick={() => setSelectedFiles([])}
+                                className="text-xs text-red-500 hover:text-red-700 mt-1"
+                            >
+                                Xóa tất cả
                             </button>
                         </div>
                     )}
@@ -592,8 +698,23 @@ const CreateProject = () => {
                 </div>
             </div>
 
-            {/* Loading Overlay Dialog */}
-            {isCreating && (
+            {/* Upload Progress Dialog */}
+            <UploadProgressDialog
+                isOpen={showUploadDialog}
+                onClose={() => {
+                    if (uploadStatus !== 'uploading') {
+                        setShowUploadDialog(false);
+                    }
+                }}
+                title={uploadStatus === 'completed' ? 'Tải lên hoàn tất!' : 'Đang tải lên...'}
+                files={uploadFiles}
+                totalProgress={uploadProgress}
+                status={uploadStatus}
+                canClose={uploadStatus !== 'uploading'}
+            />
+
+            {/* Simple Loading Overlay (when no files to upload) */}
+            {isCreating && !showUploadDialog && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
                     <div className="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-sm mx-4">
                         <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
@@ -602,9 +723,6 @@ const CreateProject = () => {
                         <div className="text-center">
                             <h3 className="text-lg font-semibold text-gray-900 mb-1">Đang tạo dự án</h3>
                             <p className="text-sm text-gray-500">Vui lòng đợi trong giây lát...</p>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <div className="bg-blue-600 h-full rounded-full animate-pulse" style={{ width: '60%' }}></div>
                         </div>
                     </div>
                 </div>

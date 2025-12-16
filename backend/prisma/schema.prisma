@@ -83,6 +83,9 @@ model User {
   // Personal folders
   userFolders UserFolder[] @relation("UserFolders")
   userFiles   UserFile[]   @relation("UserFiles")
+  
+  // Project attachments uploaded by this user
+  uploadedAttachments ProjectAttachment[] @relation("UploadedAttachments")
 }
 
 model Task {
@@ -136,8 +139,32 @@ model Project {
   implementers User[] @relation("ProjectImplementers")
   followers    User[] @relation("ProjectFollowers")
   
-  messages   Message[]
-  activities ProjectActivity[]
+  messages     Message[]
+  activities   ProjectActivity[]
+  attachments  ProjectAttachment[]  // Multiple attachments support
+}
+
+// Project Attachments - Multiple files per project
+// Admin uploads go to: DuAn/{TenDuAn}/TaiLieuDinhKem/
+// Employee uploads go to: DuAn/{TenDuAn}/NhanVienDinhKem/
+model ProjectAttachment {
+  id          Int      @id @default(autoincrement())
+  name        String   // Original filename
+  minioPath   String   // Full path in MinIO
+  fileType    String   // MIME type
+  fileSize    Int      // Size in bytes
+  category    String   // "TaiLieuDinhKem" (admin) or "NhanVienDinhKem" (employee)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  projectId   Int
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  uploadedById Int
+  uploadedBy   User @relation("UploadedAttachments", fields: [uploadedById], references: [id])
+
+  @@index([projectId])
+  @@index([uploadedById])
 }
 
 model Message {

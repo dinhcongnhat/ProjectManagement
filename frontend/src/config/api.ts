@@ -3,10 +3,10 @@
 // Frontend: jtsc.io.vn (port 3000)
 
 const isProduction = () => {
-    return typeof window !== 'undefined' && 
-        (window.location.hostname === 'jtsc.io.vn' || 
-         window.location.hostname.endsWith('.jtsc.io.vn') ||
-         window.location.hostname === 'ai.jtsc.io.vn');
+    return typeof window !== 'undefined' &&
+        (window.location.hostname === 'jtsc.io.vn' ||
+            window.location.hostname.endsWith('.jtsc.io.vn') ||
+            window.location.hostname === 'jtscapi.duckdns.org');
 };
 
 const isMobileApp = () => {
@@ -21,19 +21,19 @@ const isMobileApp = () => {
 const getDefaultApiUrl = () => {
     // Production - always use domain backend (ignore env vars for production)
     if (isProduction()) {
-        return 'https://ai.jtsc.io.vn/api';
+        return 'https://jtscapi.duckdns.org/api';
     }
     // Development mode - use env or IP default
-    return import.meta.env.VITE_API_URL || 'https://ai.jtsc.io.vn/api';
+    return import.meta.env.VITE_API_URL || 'https://jtscapi.duckdns.org/api';
 };
 
 const getDefaultWsUrl = () => {
     // Production - always use domain backend
     if (isProduction()) {
-        return 'wss://ai.jtsc.io.vn';
+        return 'wss://jtscapi.duckdns.org';
     }
     // Development mode - use env or IP default
-    return import.meta.env.VITE_WS_URL || 'ws://ai.jtsc.io.vn/api';
+    return import.meta.env.VITE_WS_URL || 'wss://jtscapi.duckdns.org';
 };
 
 export const API_URL = getDefaultApiUrl();
@@ -75,18 +75,18 @@ const createApi = () => {
             }
             return { data: await res.json() };
         },
-        
+
         post: async (path: string, data?: any, config?: { headers?: Record<string, string> }) => {
             const isFormData = data instanceof FormData;
             const headers: Record<string, string> = {
                 ...getAuthHeaders()
             };
-            
+
             // For FormData, don't set Content-Type - browser will set it with boundary
             if (!isFormData) {
                 headers['Content-Type'] = 'application/json';
             }
-            
+
             // Merge custom headers, but ignore Content-Type for FormData
             if (config?.headers) {
                 Object.entries(config.headers).forEach(([key, value]) => {
@@ -97,7 +97,7 @@ const createApi = () => {
                     headers[key] = value;
                 });
             }
-            
+
             const res = await fetch(`${API_URL}${path}`, {
                 method: 'POST',
                 headers: headers as HeadersInit,
@@ -109,7 +109,7 @@ const createApi = () => {
             }
             return { data: await res.json() };
         },
-        
+
         put: async (path: string, data?: any) => {
             const res = await fetch(`${API_URL}${path}`, {
                 method: 'PUT',
@@ -125,7 +125,7 @@ const createApi = () => {
             }
             return { data: await res.json() };
         },
-        
+
         delete: async (path: string) => {
             const res = await fetch(`${API_URL}${path}`, {
                 method: 'DELETE',
@@ -148,48 +148,48 @@ export default api;
 
 // Fetch with retry for mobile network issues
 export const fetchWithRetry = async (
-    url: string, 
-    options: RequestInit = {}, 
+    url: string,
+    options: RequestInit = {},
     retries = 3
 ): Promise<Response> => {
     let lastError: Error | null = null;
-    
+
     for (let i = 0; i < retries; i++) {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-            
+
             const response = await fetch(url, {
                 ...options,
                 signal: controller.signal,
             });
-            
+
             clearTimeout(timeoutId);
-            
+
             if (response.ok) {
                 return response;
             }
-            
+
             // Don't retry for client errors (4xx)
             if (response.status >= 400 && response.status < 500) {
                 return response;
             }
-            
+
             lastError = new Error(`HTTP ${response.status}`);
         } catch (err: any) {
             lastError = err;
-            
+
             // Don't retry if request was aborted by user
             if (err.name === 'AbortError') {
                 throw err;
             }
-            
+
             // Wait before retrying
             if (i < retries - 1) {
                 await new Promise(r => setTimeout(r, 1000 * (i + 1)));
             }
         }
     }
-    
+
     throw lastError || new Error('Fetch failed');
 };

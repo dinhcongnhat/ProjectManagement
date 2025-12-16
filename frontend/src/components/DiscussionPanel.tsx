@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Paperclip, File, Download, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, Eye, FileText, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Send, File, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, Eye, FileText, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
+import { FileDownloadButton } from './ui/DownloadOptions';
+import { AttachmentPicker } from './ui/AttachmentPicker';
 import { io, Socket } from 'socket.io-client';
 import { API_URL, WS_URL } from '../config/api';
 
@@ -79,11 +81,11 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const [isRecording, setIsRecording] = useState(false);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const [playingAudio, setPlayingAudio] = useState<number | null>(null);
-    const [showOnlyOffice, setShowOnlyOffice] = useState<{messageId: number; fileName: string} | null>(null);
+    const [showOnlyOffice, setShowOnlyOffice] = useState<{ messageId: number; fileName: string } | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [wsConnected, setWsConnected] = useState(false);
-    const [typingUsers, setTypingUsers] = useState<{userId: number; userName: string}[]>([]);
-    
+    const [typingUsers, setTypingUsers] = useState<{ userId: number; userName: string }[]>([]);
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -120,11 +122,11 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 },
                 signal: abortControllerRef.current.signal,
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
-            
+
             const data = await response.json();
             setMessages(data.messages || []);
             setError(null);
@@ -144,7 +146,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         if (!token) return;
 
         console.log('[Discussion] Connecting WebSocket for project:', projectId);
-        
+
         const socket = io(WS_URL, {
             auth: { token },
             transports: isStandalonePWA ? ['polling', 'websocket'] : ['websocket', 'polling'],
@@ -161,7 +163,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             setWsConnected(true);
             // Join project room
             socket.emit('join_project', projectId.toString());
-            
+
             // Start heartbeat for PWA
             if (heartbeatRef.current) clearInterval(heartbeatRef.current);
             heartbeatRef.current = setInterval(() => {
@@ -263,10 +265,10 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 userId: user.id,
                 userName: user.name
             });
-            
+
             // Clear previous timeout
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-            
+
             // Stop typing after 3 seconds
             typingTimeoutRef.current = setTimeout(() => {
                 socketRef.current?.emit('discussion:stop_typing', { projectId, userId: user.id });
@@ -303,17 +305,17 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     // Send text message
     const sendTextMessage = async () => {
         if (!newMessage.trim() && !selectedFile) return;
-        
+
         setSending(true);
         shouldScrollRef.current = true;
-        
+
         // Stop typing indicator
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         socketRef.current?.emit('discussion:stop_typing', { projectId, userId: user?.id });
-        
+
         try {
             const authToken = localStorage.getItem('token');
-            
+
             if (selectedFile) {
                 // Send file with optional text
                 const formData = new FormData();
@@ -321,7 +323,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 if (newMessage.trim()) {
                     formData.append('content', newMessage.trim());
                 }
-                
+
                 const response = await fetch(`${API_URL}/projects/${projectId}/messages/file`, {
                     method: 'POST',
                     headers: {
@@ -329,9 +331,9 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     },
                     body: formData
                 });
-                
+
                 if (!response.ok) throw new Error('Failed to send file');
-                
+
                 // Get the sent message from response and add it directly
                 const sentMessage = await response.json();
                 setMessages(prev => {
@@ -339,7 +341,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     return [...prev, sentMessage];
                 });
                 setTimeout(() => scrollToBottom(true), 100);
-                
+
                 removeSelectedFile();
             } else {
                 // Send text only
@@ -351,9 +353,9 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     },
                     body: JSON.stringify({ content: newMessage.trim() })
                 });
-                
+
                 if (!response.ok) throw new Error('Failed to send message');
-                
+
                 // Get the sent message from response and add it directly
                 const sentMessage = await response.json();
                 setMessages(prev => {
@@ -362,7 +364,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 });
                 setTimeout(() => scrollToBottom(true), 100);
             }
-            
+
             setNewMessage('');
             setError(null);
         } catch (err) {
@@ -380,17 +382,17 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             const mediaRecorder = new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
-            
+
             mediaRecorder.ondataavailable = (e) => {
                 audioChunksRef.current.push(e.data);
             };
-            
+
             mediaRecorder.onstop = () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 setAudioBlob(audioBlob);
                 stream.getTracks().forEach(track => track.stop());
             };
-            
+
             mediaRecorder.start();
             setIsRecording(true);
         } catch (err) {
@@ -408,14 +410,14 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
     const sendVoiceMessage = async () => {
         if (!audioBlob) return;
-        
+
         setSending(true);
         shouldScrollRef.current = true;
         try {
             const authToken = localStorage.getItem('token');
             const formData = new FormData();
             formData.append('audio', audioBlob, 'voice-message.webm');
-            
+
             const response = await fetch(`${API_URL}/projects/${projectId}/messages/voice`, {
                 method: 'POST',
                 headers: {
@@ -423,9 +425,9 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 },
                 body: formData
             });
-            
+
             if (!response.ok) throw new Error('Failed to send voice message');
-            
+
             // Get the sent message from response and add it directly
             const sentMessage = await response.json();
             setMessages(prev => {
@@ -433,7 +435,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                 return [...prev, sentMessage];
             });
             setTimeout(() => scrollToBottom(true), 100);
-            
+
             setAudioBlob(null);
             setError(null);
         } catch (err) {
@@ -472,12 +474,12 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         const diffMins = Math.floor(diffMs / 60000);
         const diffHours = Math.floor(diffMs / 3600000);
         const diffDays = Math.floor(diffMs / 86400000);
-        
+
         if (diffMins < 1) return 'Vừa xong';
         if (diffMins < 60) return `${diffMins} phút trước`;
         if (diffHours < 24) return `${diffHours} giờ trước`;
         if (diffDays < 7) return `${diffDays} ngày trước`;
-        
+
         return date.toLocaleDateString('vi-VN', {
             day: '2-digit',
             month: '2-digit',
@@ -495,7 +497,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         // Remove timestamp prefix if present (format: projectId-userId-timestamp-filename)
         const match = fileName.match(/^\d+-\d+-\d+-(.+)$/);
         let name = match ? match[1] : fileName;
-        
+
         // Try to decode URI encoded filename (may need multiple decodes)
         try {
             // First decode
@@ -507,7 +509,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         } catch {
             // Keep as is if decoding fails
         }
-        
+
         return name;
     };
 
@@ -515,19 +517,19 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const renderMessageContent = (message: Message) => {
         const isOwnMessage = message.sender.id === user?.id;
         const attachmentUrl = resolveAttachmentUrl(message.attachmentUrl);
-        
+
         switch (message.messageType) {
             case 'TEXT':
                 return (
                     <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
                 );
-                
+
             case 'IMAGE':
                 return (
                     <div className="space-y-2">
                         {attachmentUrl && (
-                            <img 
-                                src={attachmentUrl} 
+                            <img
+                                src={attachmentUrl}
                                 alt="Hình ảnh"
                                 className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                                 onClick={() => setImageModal(attachmentUrl)}
@@ -535,7 +537,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         )}
                     </div>
                 );
-                
+
             case 'FILE':
                 return (
                     <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwnMessage ? 'bg-blue-400' : 'bg-gray-100'}`}>
@@ -556,21 +558,18 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                                 </button>
                             )}
                             {attachmentUrl && (
-                                <a 
-                                    href={attachmentUrl} 
-                                    download
-                                    className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title="Tải xuống file"
-                                >
-                                    <Download size={16} />
-                                </a>
+                                <FileDownloadButton
+                                    fileName={getFileName(message.attachment)}
+                                    downloadUrl={attachmentUrl}
+                                    token={localStorage.getItem('token') || ''}
+                                    isOwnMessage={isOwnMessage}
+                                    size="sm"
+                                />
                             )}
                         </div>
                     </div>
                 );
-                
+
             case 'TEXT_WITH_FILE':
                 return (
                     <div className="space-y-2">
@@ -579,8 +578,8 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         )}
                         {isImageFile(message.attachment) ? (
                             attachmentUrl && (
-                                <img 
-                                    src={attachmentUrl} 
+                                <img
+                                    src={attachmentUrl}
                                     alt="Hình ảnh"
                                     className="max-w-xs rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                                     onClick={() => setImageModal(attachmentUrl)}
@@ -605,23 +604,20 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                                         </button>
                                     )}
                                     {attachmentUrl && (
-                                        <a 
-                                            href={attachmentUrl} 
-                                            download
-                                            className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title="Tải xuống file"
-                                        >
-                                            <Download size={16} />
-                                        </a>
+                                        <FileDownloadButton
+                                            fileName={getFileName(message.attachment)}
+                                            downloadUrl={attachmentUrl}
+                                            token={localStorage.getItem('token') || ''}
+                                            isOwnMessage={isOwnMessage}
+                                            size="sm"
+                                        />
                                     )}
                                 </div>
                             </div>
                         )}
                     </div>
                 );
-                
+
             case 'VOICE':
                 return (
                     <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwnMessage ? 'bg-blue-400' : 'bg-gray-100'}`}>
@@ -635,7 +631,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         <span className="text-sm">Tin nhắn thoại</span>
                     </div>
                 );
-                
+
             default:
                 return <p className="text-sm">{message.content}</p>;
         }
@@ -687,7 +683,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
             </div>
 
             {/* Messages - Isolated scroll container */}
-            <div 
+            <div
                 className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0 overscroll-contain"
                 style={{ overscrollBehaviorY: 'contain' }}
                 onWheel={(e) => {
@@ -695,7 +691,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     const element = e.currentTarget;
                     const atTop = element.scrollTop === 0;
                     const atBottom = element.scrollHeight - element.scrollTop === element.clientHeight;
-                    
+
                     if ((atTop && e.deltaY < 0) || (atBottom && e.deltaY > 0)) {
                         e.stopPropagation();
                     }
@@ -711,7 +707,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     messages.map((message) => {
                         const isOwnMessage = message.sender.id === user?.id;
                         return (
-                            <div 
+                            <div
                                 key={message.id}
                                 className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                             >
@@ -726,12 +722,11 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                                             )}
                                         </p>
                                     )}
-                                    <div 
-                                        className={`p-3 rounded-2xl ${
-                                            isOwnMessage 
-                                                ? 'bg-blue-500 text-white rounded-br-md' 
-                                                : 'bg-gray-100 text-gray-800 rounded-bl-md'
-                                        }`}
+                                    <div
+                                        className={`p-3 rounded-2xl ${isOwnMessage
+                                            ? 'bg-blue-500 text-white rounded-br-md'
+                                            : 'bg-gray-100 text-gray-800 rounded-bl-md'
+                                            }`}
                                     >
                                         {renderMessageContent(message)}
                                     </div>
@@ -817,14 +812,19 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
                         title="Chọn file để đính kèm"
                     />
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-2.5 sm:p-2 text-gray-500 hover:bg-gray-100 active:bg-gray-200 rounded-lg touch-manipulation shrink-0"
-                        title="Đính kèm file"
-                    >
-                        <Paperclip size={22} className="sm:w-5 sm:h-5" />
-                    </button>
-                    
+                    <AttachmentPicker
+                        token={token || ''}
+                        onFilesSelected={(files) => {
+                            if (files.length > 0) {
+                                setSelectedFile(files[0]);
+                            }
+                        }}
+                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+                        multiple={false}
+                        buttonClassName="p-2.5 sm:p-2 text-gray-500 hover:bg-gray-100 active:bg-gray-200 rounded-lg touch-manipulation shrink-0"
+                        iconSize={22}
+                    />
+
                     {/* Voice recording button */}
                     <button
                         onClick={isRecording ? stopRecording : startRecording}
@@ -833,7 +833,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     >
                         {isRecording ? <MicOff size={22} className="sm:w-5 sm:h-5" /> : <Mic size={22} className="sm:w-5 sm:h-5" />}
                     </button>
-                    
+
                     {/* Text input */}
                     <div className="flex-1 min-w-0">
                         <textarea
@@ -855,7 +855,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                             style={{ fontSize: '16px' }} // Prevent iOS zoom on focus
                         />
                     </div>
-                    
+
                     {/* Send button */}
                     <button
                         onClick={sendTextMessage}
@@ -870,13 +870,13 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
             {/* Image modal */}
             {imageModal && (
-                <div 
+                <div
                     className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
                     onClick={() => setImageModal(null)}
                 >
                     <div className="max-w-4xl max-h-[90vh] p-4">
-                        <img 
-                            src={imageModal} 
+                        <img
+                            src={imageModal}
                             alt="Xem ảnh"
                             className="max-w-full max-h-full object-contain rounded-lg"
                         />

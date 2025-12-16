@@ -2,19 +2,14 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
-import { ArrowLeft, Calendar, User, Users, Eye, Clock, CheckCircle2, AlertCircle, FileText, Image as ImageIcon, X, MessageSquare, History, FolderTree, Plus, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Users, Eye, Clock, CheckCircle2, AlertCircle, FileText, X, MessageSquare, History, FolderTree, Plus, ChevronRight } from 'lucide-react';
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../../components/OnlyOfficeViewer';
-import { getDisplayFilename } from '../../utils/filenameUtils';
+import { ProjectAttachments } from '../../components/ProjectAttachments';
 import { useDialog } from '../../components/ui/Dialog';
 
-// Office file extensions supported by OnlyOffice
-const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
-const isOfficeFile = (fileName: string): boolean => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    return officeExtensions.includes(ext);
-};
+
 
 interface SubProject {
     id: number;
@@ -25,6 +20,21 @@ interface SubProject {
     startDate: string;
     endDate: string;
     manager?: { id: number, name: string };
+}
+
+interface ProjectAttachmentType {
+    id: number;
+    name: string;
+    minioPath: string;
+    fileType: string;
+    fileSize: number;
+    category: 'TaiLieuDinhKem' | 'NhanVienDinhKem';
+    createdAt: string;
+    uploadedBy: {
+        id: number;
+        name: string;
+        role: string;
+    };
 }
 
 interface Project {
@@ -42,6 +52,7 @@ interface Project {
     progressMethod: string;
     description: string;
     attachment?: string;
+    attachments?: ProjectAttachmentType[];
     progress: number;
     status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
     parentId?: number;
@@ -56,7 +67,6 @@ const ProjectDetailsAdmin = () => {
     const [loading, setLoading] = useState(true);
     const [approving, setApproving] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'discussion' | 'activity'>('info');
     const [showOnlyOffice, setShowOnlyOffice] = useState(false);
     const { showConfirm, showSuccess, showError } = useDialog();
@@ -80,13 +90,6 @@ const ProjectDetailsAdmin = () => {
 
     useEffect(() => {
         if (token && id) fetchProject();
-
-        // Cleanup blob URL on unmount
-        return () => {
-            if (imageUrl) {
-                URL.revokeObjectURL(imageUrl);
-            }
-        };
     }, [token, id]);
 
     const handleApprove = async () => {
@@ -219,7 +222,7 @@ const ProjectDetailsAdmin = () => {
                             {/* Progress and Timeline Combined */}
                             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {/* Progress Section - Compact */}
+                                    {/* Progress Section - Compact */}
                                     <div>
                                         <h3 className="text-lg font-bold text-gray-900 mb-3">Tiến độ thực hiện</h3>
                                         <div className="space-y-3">
@@ -296,9 +299,8 @@ const ProjectDetailsAdmin = () => {
                                                         }
                                                     }}
                                                     disabled={project.status === 'COMPLETED'}
-                                                    className={`w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600 ${
-                                                        project.status === 'COMPLETED' ? 'opacity-50 cursor-not-allowed' : ''
-                                                    }`}
+                                                    className={`w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600 ${project.status === 'COMPLETED' ? 'opacity-50 cursor-not-allowed' : ''
+                                                        }`}
                                                     style={{
                                                         background: project.status === 'COMPLETED'
                                                             ? `linear-gradient(to right, #10b981 0%, #10b981 ${project.progress}%, #e5e7eb ${project.progress}%, #e5e7eb 100%)`
@@ -400,79 +402,18 @@ const ProjectDetailsAdmin = () => {
                                 </div>
                             </div>
 
-                            {/* Attachment */}
-                            {project.attachment && (
-                                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                                    <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                        <ImageIcon size={18} className="text-red-600" />
-                                        Tài liệu đính kèm
-                                    </h2>
-                                    <div
-                                        onClick={async () => {
-                                            const ext = project.attachment?.split('.').pop()?.toLowerCase() || '';
-                                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
-                                            const isOffice = isOfficeFile(project.attachment || '');
-                                            
-                                            if (isImage) {
-                                                // Lazy load image when user clicks
-                                                if (!imageUrl) {
-                                                    const imgResponse = await fetch(`${API_URL}/projects/${project.id}/attachment`, {
-                                                        headers: { Authorization: `Bearer ${token}` },
-                                                    });
-                                                    if (imgResponse.ok) {
-                                                        const blob = await imgResponse.blob();
-                                                        const url = URL.createObjectURL(blob);
-                                                        setImageUrl(url);
-                                                        setPreviewImage(url);
-                                                    }
-                                                } else {
-                                                    setPreviewImage(imageUrl);
-                                                }
-                                            } else if (isOffice) {
-                                                // Open with OnlyOffice
-                                                setShowOnlyOffice(true);
-                                            } else {
-                                                // Download other files
-                                                window.open(`${API_URL}/projects/${project.id}/attachment`, '_blank');
-                                            }
-                                        }}
-                                        className="flex items-center gap-4 p-4 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border-2 border-gray-200 hover:border-blue-400 cursor-pointer transition-all hover:shadow-md group"
-                                    >
-                                        <div className="p-3 bg-white rounded-lg border border-gray-200 group-hover:border-blue-400 transition-colors">
-                                            {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') ? (
-                                                <ImageIcon size={28} className="text-blue-600" />
-                                            ) : isOfficeFile(project.attachment || '') ? (
-                                                <FileText size={28} className="text-green-600" />
-                                            ) : (
-                                                <FileText size={28} className="text-red-600" />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
-                                                {getDisplayFilename(project.attachment)}
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') 
-                                                    ? 'Click để xem ảnh' 
-                                                    : isOfficeFile(project.attachment || '')
-                                                        ? 'Click để xem với OnlyOffice'
-                                                        : 'Click để tải xuống'}
-                                            </p>
-                                        </div>
-                                        <div className={`px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors ${
-                                            isOfficeFile(project.attachment || '') 
-                                                ? 'bg-green-600 group-hover:bg-green-700' 
-                                                : 'bg-blue-600 group-hover:bg-blue-700'
-                                        }`}>
-                                            {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment?.split('.').pop()?.toLowerCase() || '') 
-                                                ? '👁️ Xem' 
-                                                : isOfficeFile(project.attachment || '')
-                                                    ? '📄 Mở'
-                                                    : '⬇️ Tải'}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
+                            {/* Project Attachments - Multiple Files Support */}
+                            <ProjectAttachments
+                                projectId={project.id}
+                                projectName={project.name}
+                                projectStatus={project.status}
+                                canUpload={true} // Admin can always upload
+                                isImplementer={false}
+                                isAdmin={true}
+                                isManager={false}
+                                attachments={project.attachments}
+                                onRefresh={fetchProject}
+                            />
                         </div>
 
                         {/* Sidebar */}
@@ -535,7 +476,7 @@ const ProjectDetailsAdmin = () => {
                                         <FolderTree size={18} className="text-purple-600" />
                                         Dự án cha
                                     </h2>
-                                    <Link 
+                                    <Link
                                         to={`/admin/projects/${project.parent.id}`}
                                         className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors group"
                                     >
@@ -568,7 +509,7 @@ const ProjectDetailsAdmin = () => {
                                         Thêm
                                     </Link>
                                 </div>
-                                
+
                                 {project.children && project.children.length > 0 ? (
                                     <div className="space-y-3">
                                         {project.children.map(child => (
@@ -577,10 +518,9 @@ const ProjectDetailsAdmin = () => {
                                                 to={`/admin/projects/${child.id}`}
                                                 className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
                                             >
-                                                <div className={`p-2 rounded-lg text-white ${
-                                                    child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                <div className={`p-2 rounded-lg text-white ${child.status === 'COMPLETED' ? 'bg-green-500' :
                                                     child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                                }`}>
+                                                    }`}>
                                                     <FolderTree size={14} />
                                                 </div>
                                                 <div className="flex-1 min-w-0">
@@ -590,21 +530,19 @@ const ProjectDetailsAdmin = () => {
                                                     <div className="flex items-center gap-2 mt-1">
                                                         <span className="text-xs text-gray-500">{child.code}</span>
                                                         <span className="text-xs text-gray-400">•</span>
-                                                        <span className={`text-xs font-medium ${
-                                                            child.status === 'COMPLETED' ? 'text-green-600' :
+                                                        <span className={`text-xs font-medium ${child.status === 'COMPLETED' ? 'text-green-600' :
                                                             child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
-                                                        }`}>
+                                                            }`}>
                                                             {child.progress}%
                                                         </span>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-1">
                                                     <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                                        <div 
-                                                            className={`h-full rounded-full ${
-                                                                child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                        <div
+                                                            className={`h-full rounded-full ${child.status === 'COMPLETED' ? 'bg-green-500' :
                                                                 child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                                            }`}
+                                                                }`}
                                                             style={{ width: `${child.progress}%` }}
                                                         />
                                                     </div>

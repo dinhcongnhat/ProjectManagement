@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-    MessageCircle, X, Search, Users, MessageSquare, Send, Smile, Paperclip,
+    MessageCircle, X, Search, Users, MessageSquare, Send, Smile,
     Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
-    Volume2, FileText, Download, Plus, Check, CheckCheck, Loader2, Camera, Trash2, MoreVertical,
+    Volume2, FileText, Plus, Check, CheckCheck, Loader2, Camera, Trash2, MoreVertical,
     ZoomIn, ZoomOut, RotateCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from './ui/Dialog';
+import { FileDownloadButton } from './ui/DownloadOptions';
+import { AttachmentPicker } from './ui/AttachmentPicker';
 import api, { API_URL } from '../config/api';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -2102,19 +2104,15 @@ const ChatPopup: React.FC = () => {
                                         {isOfficeFile(filename) ? 'Nhấn để xem' : 'Nhấn để tải'}
                                     </p>
                                 </div>
-                                <a
-                                    href={resolvedAttachmentUrl || '#'}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${isOwn
-                                        ? 'hover:bg-white/20 text-white'
-                                        : 'hover:bg-gray-100 text-gray-500'
-                                        }`}
-                                    title="Tải xuống"
-                                >
-                                    <Download size={16} />
-                                </a>
+                                <div onClick={(e) => e.stopPropagation()}>
+                                    <FileDownloadButton
+                                        fileName={filename}
+                                        downloadUrl={resolvedAttachmentUrl || ''}
+                                        token={token || ''}
+                                        isOwnMessage={isOwn}
+                                        size="sm"
+                                    />
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2541,25 +2539,17 @@ const ChatPopup: React.FC = () => {
                                     </div>
 
                                     {/* File Upload */}
-                                    <input
-                                        type="file"
-                                        id={`file-input-${conversationId}`}
-                                        onChange={(e) => {
-                                            const file = e.target.files?.[0];
-                                            if (file) {
-                                                handleFileUpload(conversationId, file);
-                                                e.target.value = '';
+                                    <AttachmentPicker
+                                        token={token || ''}
+                                        onFilesSelected={(files) => {
+                                            if (files.length > 0) {
+                                                handleFileUpload(conversationId, files[0]);
                                             }
                                         }}
-                                        className="hidden"
+                                        multiple={false}
+                                        buttonClassName="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
+                                        iconSize={18}
                                     />
-                                    <button
-                                        onClick={() => document.getElementById(`file-input-${conversationId}`)?.click()}
-                                        className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
-                                        title="Đính kèm file/ảnh/video"
-                                    >
-                                        <Paperclip size={18} />
-                                    </button>
 
                                     {/* Text Input with Mention Popup */}
                                     <div className="relative flex-1 min-w-0">
@@ -3000,19 +2990,6 @@ const ChatPopup: React.FC = () => {
                         <div className="flex items-center gap-2">
                             <input
                                 type="file"
-                                id={`mobile-file-input-${conversationId}`}
-                                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                        handleFileUpload(conversationId, file);
-                                        e.target.value = '';
-                                    }
-                                }}
-                                className="hidden"
-                            />
-                            <input
-                                type="file"
                                 id={`mobile-camera-input-${conversationId}`}
                                 accept="image/*"
                                 capture="environment"
@@ -3025,13 +3002,18 @@ const ChatPopup: React.FC = () => {
                                 }}
                                 className="hidden"
                             />
-                            <button
-                                onClick={() => document.getElementById(`mobile-file-input-${conversationId}`)?.click()}
-                                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
-                                title="Đính kèm file/ảnh/video"
-                            >
-                                <Paperclip size={20} />
-                            </button>
+                            <AttachmentPicker
+                                token={token || ''}
+                                onFilesSelected={(files) => {
+                                    if (files.length > 0) {
+                                        handleFileUpload(conversationId, files[0]);
+                                    }
+                                }}
+                                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                multiple={false}
+                                buttonClassName="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                iconSize={20}
+                            />
                             <button
                                 onClick={() => document.getElementById(`mobile-camera-input-${conversationId}`)?.click()}
                                 className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"

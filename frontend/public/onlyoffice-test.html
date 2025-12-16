@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OnlyOffice Connection Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status.pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status.loading {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .test-item {
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .test-item h3 {
+            font-size: 14px;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+
+        .test-item .result {
+            font-family: monospace;
+            font-size: 13px;
+            background: #f3f4f6;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .config-form {
+            display: grid;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button.secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        button.secondary:hover {
+            background: #e5e7eb;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        #editor-container {
+            width: 100%;
+            height: 600px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden;
+            display: none;
+        }
+
+        #editor-container.active {
+            display: block;
+        }
+
+        .log-container {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            background: #1f2937;
+            color: #10b981;
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #374151;
+        }
+
+        .log-entry.error {
+            color: #ef4444;
+        }
+
+        .log-entry.warn {
+            color: #f59e0b;
+        }
+
+        .log-entry.info {
+            color: #3b82f6;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔧 OnlyOffice Connection Test</h1>
+
+        <!-- Configuration -->
+        <div class="card">
+            <h2>⚙️ Cấu hình</h2>
+            <div class="config-form">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>OnlyOffice Server URL</label>
+                        <input type="text" id="onlyoffice-url" value="https://jtsconlyoffice.duckdns.org"
+                            placeholder="https://your-onlyoffice-server.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Backend API URL</label>
+                        <input type="text" id="backend-url" value="https://jtscapi.duckdns.org"
+                            placeholder="https://your-api.com/api">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>JWT Token (nếu cần)</label>
+                    <input type="text" id="jwt-token" placeholder="Bearer token từ localStorage">
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Tests -->
+        <div class="card">
+            <h2>🔌 Kiểm tra kết nối</h2>
+            <div class="button-group" style="margin-bottom: 20px;">
+                <button class="primary" onclick="runAllTests()">▶️ Chạy tất cả tests</button>
+                <button class="secondary" onclick="clearLogs()">🗑️ Xóa logs</button>
+            </div>
+
+            <div class="test-item">
+                <h3>1. Kiểm tra OnlyOffice API Script</h3>
+                <div class="result" id="test-script">
+                    <span class="status pending">Chưa chạy</span>
+                </div>
+            </div>
+
+            <div class="test-item">
+                <h3>2. Kiểm tra OnlyOffice Server Health</h3>
+                <div class="result" id="test-health">
+                    <span class="status pending">Chưa chạy</span>
+                </div>
+            </div>
+
+            <div class="test-item">
+                <h3>3. Kiểm tra Backend API</h3>
+                <div class="result" id="test-backend">
+                    <span class="status pending">Chưa chạy</span>
+                </div>
+            </div>
+
+            <div class="test-item">
+                <h3>4. Load DocsAPI Script</h3>
+                <div class="result" id="test-docsapi">
+                    <span class="status pending">Chưa chạy</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Editor Demo -->
+        <div class="card">
+            <h2>📝 Demo Editor</h2>
+            <p style="color: #6b7280; margin-bottom: 16px;">
+                Tạo một document mới để test khả năng soạn thảo (cần OnlyOffice server hỗ trợ tạo document mới)
+            </p>
+            <div class="button-group" style="margin-bottom: 20px;">
+                <button class="primary" onclick="createDemoEditor()" id="btn-create-editor">📄 Tạo Demo
+                    Document</button>
+                <button class="secondary" onclick="destroyEditor()">❌ Đóng Editor</button>
+            </div>
+            <div id="editor-container"></div>
+        </div>
+
+        <!-- Logs -->
+        <div class="card">
+            <h2>📋 Logs</h2>
+            <div class="log-container" id="log-container">
+                <div class="log-entry info">[System] Ready to test. Click "Chạy tất cả tests" to start.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let editorInstance = null;
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('log-container');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${time}] ${message}`;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('log-container').innerHTML = '';
+            log('Logs cleared', 'info');
+        }
+
+        function setTestResult(id, status, message) {
+            const el = document.getElementById(id);
+            const statusClass = status === 'success' ? 'success' : status === 'error' ? 'error' : status === 'loading' ? 'loading' : 'pending';
+            el.innerHTML = `<span class="status ${statusClass}">${status.toUpperCase()}</span>\n${message}`;
+        }
+
+        async function testScript() {
+            const url = document.getElementById('onlyoffice-url').value;
+            const scriptUrl = `${url}/web-apps/apps/api/documents/api.js`;
+
+            setTestResult('test-script', 'loading', 'Đang kiểm tra...');
+            log(`Testing script URL: ${scriptUrl}`);
+
+            try {
+                // Try to fetch the script
+                const response = await fetch(scriptUrl, {
+                    method: 'HEAD',
+                    mode: 'no-cors' // OnlyOffice may not have CORS headers
+                });
+
+                // Since no-cors, we can't read the response, but if it doesn't throw, it likely exists
+                setTestResult('test-script', 'success', `Script URL có thể truy cập được:\n${scriptUrl}\n\nNote: CORS có thể chặn việc đọc response, nhưng script có thể load được.`);
+                log('Script URL accessible (CORS may block reading)', 'info');
+                return true;
+            } catch (error) {
+                setTestResult('test-script', 'error', `Lỗi: ${error.message}\n\nURL: ${scriptUrl}`);
+                log(`Script test failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function testHealth() {
+            const url = document.getElementById('onlyoffice-url').value;
+            const healthUrl = `${url}/healthcheck`;
+
+            setTestResult('test-health', 'loading', 'Đang kiểm tra...');
+            log(`Testing health URL: ${healthUrl}`);
+
+            try {
+                const response = await fetch(healthUrl, {
+                    mode: 'no-cors'
+                });
+                setTestResult('test-health', 'success', `Server health endpoint có thể truy cập\nURL: ${healthUrl}`);
+                log('Health check accessible', 'info');
+                return true;
+            } catch (error) {
+                setTestResult('test-health', 'warn', `Không thể kiểm tra trực tiếp (CORS)\nThử mở trực tiếp: ${healthUrl}`);
+                log(`Health check: ${error.message}`, 'warn');
+                return false;
+            }
+        }
+
+        async function testBackend() {
+            const url = document.getElementById('backend-url').value;
+            const token = document.getElementById('jwt-token').value;
+
+            setTestResult('test-backend', 'loading', 'Đang kiểm tra...');
+            log(`Testing backend URL: ${url}`);
+
+            try {
+                const headers = {};
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+
+                const response = await fetch(`${url}/health`, {
+                    headers,
+                    mode: 'cors'
+                });
+
+                if (response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    setTestResult('test-backend', 'success', `Backend API hoạt động\nStatus: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`);
+                    log('Backend API working', 'info');
+                    return true;
+                } else {
+                    setTestResult('test-backend', 'error', `Backend trả về lỗi\nStatus: ${response.status}`);
+                    log(`Backend error: ${response.status}`, 'error');
+                    return false;
+                }
+            } catch (error) {
+                setTestResult('test-backend', 'error', `Lỗi kết nối backend: ${error.message}\n\nKiểm tra:\n- Backend có đang chạy không?\n- CORS có được cấu hình đúng không?\n- URL có đúng không?`);
+                log(`Backend test failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function testDocsAPI() {
+            const url = document.getElementById('onlyoffice-url').value;
+            const scriptUrl = `${url}/web-apps/apps/api/documents/api.js`;
+
+            setTestResult('test-docsapi', 'loading', 'Đang tải DocsAPI script...');
+            log(`Loading DocsAPI from: ${scriptUrl}`);
+
+            return new Promise((resolve) => {
+                // Check if already loaded
+                if (window.DocsAPI) {
+                    setTestResult('test-docsapi', 'success', 'DocsAPI đã được load sẵn!\n\nwindow.DocsAPI available: true\nDocsAPI.DocEditor: ' + (typeof window.DocsAPI.DocEditor));
+                    log('DocsAPI already loaded', 'info');
+                    resolve(true);
+                    return;
+                }
+
+                // Remove any existing script
+                const existingScript = document.querySelector('script[src*="api.js"]');
+                if (existingScript) {
+                    existingScript.remove();
+                }
+
+                const script = document.createElement('script');
+                script.src = scriptUrl;
+                script.async = true;
+
+                script.onload = () => {
+                    if (window.DocsAPI) {
+                        setTestResult('test-docsapi', 'success', 'DocsAPI loaded thành công!\n\nwindow.DocsAPI available: true\nDocsAPI.DocEditor: ' + (typeof window.DocsAPI.DocEditor));
+                        log('DocsAPI loaded successfully!', 'info');
+                        resolve(true);
+                    } else {
+                        setTestResult('test-docsapi', 'error', 'Script loaded nhưng DocsAPI không available');
+                        log('Script loaded but DocsAPI not available', 'error');
+                        resolve(false);
+                    }
+                };
+
+                script.onerror = (e) => {
+                    setTestResult('test-docsapi', 'error', `Không thể load DocsAPI script\n\nLỗi có thể do:\n- CORS policy\n- OnlyOffice server không hoạt động\n- URL sai\n\nThử mở trực tiếp: ${scriptUrl}`);
+                    log('Failed to load DocsAPI script', 'error');
+                    resolve(false);
+                };
+
+                document.body.appendChild(script);
+            });
+        }
+
+        async function runAllTests() {
+            log('=== Starting all tests ===', 'info');
+
+            await testScript();
+            await testHealth();
+            await testBackend();
+            await testDocsAPI();
+
+            log('=== All tests completed ===', 'info');
+        }
+
+        function createDemoEditor() {
+            const url = document.getElementById('onlyoffice-url').value;
+
+            if (!window.DocsAPI) {
+                alert('Vui lòng chạy test "Load DocsAPI Script" trước!');
+                log('DocsAPI not loaded, cannot create editor', 'error');
+                return;
+            }
+
+            log('Creating demo editor...', 'info');
+
+            const container = document.getElementById('editor-container');
+            container.classList.add('active');
+            container.innerHTML = '<div id="demo-editor" style="width: 100%; height: 100%;"></div>';
+
+            try {
+                // Create a simple demo config for testing
+                // Note: This requires OnlyOffice to support createUrl or you need a real document URL
+                const config = {
+                    document: {
+                        fileType: 'docx',
+                        key: 'demo_' + Date.now(),
+                        title: 'Demo Document.docx',
+                        // For demo, we'll use a blank document approach
+                        // In production, you need a real document URL from your backend
+                        url: `${url}/cache/files/new.docx` // This may not work without proper setup
+                    },
+                    documentType: 'word',
+                    editorConfig: {
+                        mode: 'edit',
+                        lang: 'vi',
+                        customization: {
+                            compactHeader: false,
+                            compactToolbar: false,
+                            feedback: false,
+                            forcesave: false,
+                            help: false,
+                            hideRightMenu: false,
+                        }
+                    },
+                    events: {
+                        onDocumentReady: () => {
+                            log('✅ Document ready! Editor is working.', 'info');
+                            alert('✅ OnlyOffice Editor đã sẵn sàng!');
+                        },
+                        onError: (event) => {
+                            log(`❌ Editor error: ${JSON.stringify(event.data)}`, 'error');
+                            alert('❌ Lỗi: ' + JSON.stringify(event.data));
+                        },
+                        onWarning: (event) => {
+                            log(`⚠️ Editor warning: ${JSON.stringify(event.data)}`, 'warn');
+                        }
+                    },
+                    height: '100%',
+                    width: '100%'
+                };
+
+                log('Editor config: ' + JSON.stringify(config, null, 2), 'info');
+
+                editorInstance = new window.DocsAPI.DocEditor('demo-editor', config);
+                log('Editor instance created', 'info');
+
+            } catch (error) {
+                log(`Error creating editor: ${error.message}`, 'error');
+                container.innerHTML = `<div style="padding: 40px; text-align: center; color: #991b1b;">
+                    <h3>❌ Lỗi tạo Editor</h3>
+                    <p>${error.message}</p>
+                    <p style="font-size: 12px; color: #6b7280; margin-top: 20px;">
+                        Để test editor thực sự, bạn cần có một document URL hợp lệ từ backend.
+                        <br>Thử mở một file thực trong ứng dụng của bạn và xem Console để debug.
+                    </p>
+                </div>`;
+            }
+        }
+
+        function destroyEditor() {
+            if (editorInstance) {
+                try {
+                    editorInstance.destroyEditor();
+                } catch (e) {
+                    log('Error destroying editor: ' + e.message, 'warn');
+                }
+                editorInstance = null;
+            }
+            const container = document.getElementById('editor-container');
+            container.classList.remove('active');
+            container.innerHTML = '';
+            log('Editor destroyed', 'info');
+        }
+
+        // Auto-fill token from localStorage if available
+        window.onload = function () {
+            const token = localStorage.getItem('token');
+            if (token) {
+                document.getElementById('jwt-token').value = token;
+                log('JWT token found in localStorage', 'info');
+            }
+        };
+    </script>
+</body>
+
+</html>

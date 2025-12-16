@@ -79,7 +79,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 progress: 0,
                 status: 'IN_PROGRESS',
                 managerId: Number(managerId),
-                createdById: req.user?.id, // Save the creator ID
+                createdById: req.user?.id ?? null, // Save the creator ID
                 parentId: parentId ? Number(parentId) : null,  // Add parentId
                 implementers: {
                     connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
@@ -256,6 +256,12 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                         manager: { select: { id: true, name: true } },
                     },
                     orderBy: { createdAt: 'desc' },
+                },
+                attachments: {
+                    include: {
+                        uploadedBy: { select: { id: true, name: true, role: true } }
+                    },
+                    orderBy: { createdAt: 'desc' }
                 },
             },
         });

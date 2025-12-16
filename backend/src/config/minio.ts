@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 // Ensure environment variables are loaded
 dotenv.config();
 
-const endPoint = process.env.MINIO_ENDPOINT || 'apiminiojtsc.duckdns.org';
+const endPoint = process.env.MINIO_ENDPOINT || 'jtscminio.duckdns.org';
 const port = parseInt(process.env.MINIO_PORT || '443');
 const useSSL = process.env.MINIO_USE_SSL !== 'false'; // Default true for HTTPS
 const accessKey = process.env.MINIO_ACCESS_KEY || 'jtsc';

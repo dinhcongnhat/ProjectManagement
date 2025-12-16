@@ -1,20 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Calendar, User, Users, Eye, Clock, X, FileText, Image as ImageIcon, MessageSquare, History, CheckCircle2, FolderTree, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Users, Eye, Clock, X, FileText, MessageSquare, History, CheckCircle2, FolderTree, ChevronRight } from 'lucide-react';
 import { DiscussionPanel } from '../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
 import { OnlyOfficeViewer } from '../components/OnlyOfficeViewer';
+import { ProjectAttachments } from '../components/ProjectAttachments';
 import { API_URL } from '../config/api';
-import { getDisplayFilename } from '../utils/filenameUtils';
 import { useDialog } from '../components/ui/Dialog';
 
-// Office file extensions supported by OnlyOffice
-const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'csv', 'rtf', 'pdf'];
-const isOfficeFile = (fileName: string): boolean => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    return officeExtensions.includes(ext);
-};
+
 
 interface SubProject {
     id: number;
@@ -25,6 +20,21 @@ interface SubProject {
     startDate: string;
     endDate: string;
     manager?: { id: number, name: string };
+}
+
+interface ProjectAttachmentType {
+    id: number;
+    name: string;
+    minioPath: string;
+    fileType: string;
+    fileSize: number;
+    category: 'TaiLieuDinhKem' | 'NhanVienDinhKem';
+    createdAt: string;
+    uploadedBy: {
+        id: number;
+        name: string;
+        role: string;
+    };
 }
 
 interface Project {
@@ -42,6 +52,7 @@ interface Project {
     progressMethod: string;
     description: string;
     attachment?: string;
+    attachments?: ProjectAttachmentType[];
     progress: number;
     status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
     parentId?: number;
@@ -55,48 +66,33 @@ const ProjectDetails = () => {
     const [project, setProject] = useState<Project | null>(null);
     const [loading, setLoading] = useState(true);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'discussion' | 'activity'>('info');
     const [showOnlyOffice, setShowOnlyOffice] = useState(false);
     const [approving, setApproving] = useState(false);
     const { showConfirm, showSuccess, showError } = useDialog();
 
-    const cleanupImageUrl = useCallback(() => {
-        if (imageUrl) {
-            URL.revokeObjectURL(imageUrl);
+    const fetchProject = useCallback(async () => {
+        try {
+            const response = await fetch(`${API_URL}/projects/${id}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setProject(data);
+            }
+        } catch (error) {
+            console.error('Error fetching project:', error);
+        } finally {
+            setLoading(false);
         }
-    }, [imageUrl]);
+    }, [id, token]);
 
     useEffect(() => {
-        const fetchProject = async () => {
-            try {
-                const response = await fetch(`${API_URL}/projects/${id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    setProject(data);
-                    // Don't load attachment immediately for better performance
-                }
-            } catch (error) {
-                console.error('Error fetching project:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
         if (token && id) fetchProject();
-
-        // Cleanup blob URL on unmount
-        return () => {
-            cleanupImageUrl();
-        };
-    }, [token, id, cleanupImageUrl]);
+    }, [token, id, fetchProject]);
 
     if (loading) return <div className="p-6">Loading...</div>;
     if (!project) return <div className="p-6">Project not found</div>;
-
-    const isImage = project.attachment && ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(project.attachment.split('.').pop()?.toLowerCase() || '');
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -162,21 +158,19 @@ const ProjectDetails = () => {
                                     <div className="space-y-3">
                                         <div className="flex items-center justify-between">
                                             <span className="text-sm text-gray-600">Hiện tại:</span>
-                                            <span className={`text-2xl font-bold ${
-                                                project.status === 'COMPLETED' ? 'text-green-600' :
+                                            <span className={`text-2xl font-bold ${project.status === 'COMPLETED' ? 'text-green-600' :
                                                 project.status === 'PENDING_APPROVAL' ? 'text-orange-600' :
-                                                'text-blue-600'
-                                            }`}>{project.progress || 0}%</span>
+                                                    'text-blue-600'
+                                                }`}>{project.progress || 0}%</span>
                                         </div>
 
                                         {/* Progress Bar Display */}
                                         <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
                                             <div
-                                                className={`h-full rounded-full transition-all ${
-                                                    project.status === 'COMPLETED' ? 'bg-green-500' :
+                                                className={`h-full rounded-full transition-all ${project.status === 'COMPLETED' ? 'bg-green-500' :
                                                     project.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
-                                                    'bg-blue-500'
-                                                }`}
+                                                        'bg-blue-500'
+                                                    }`}
                                                 style={{ width: `${project.progress || 0}%` }}
                                             ></div>
                                         </div>
@@ -237,9 +231,8 @@ const ProjectDetails = () => {
                                                     }
                                                 }}
                                                 disabled={project.status === 'COMPLETED'}
-                                                className={`w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600 ${
-                                                    project.status === 'COMPLETED' ? 'opacity-50 cursor-not-allowed' : ''
-                                                }`}
+                                                className={`w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600 ${project.status === 'COMPLETED' ? 'opacity-50 cursor-not-allowed' : ''
+                                                    }`}
                                                 style={{
                                                     background: project.status === 'COMPLETED'
                                                         ? `linear-gradient(to right, #10b981 0%, #10b981 ${project.progress || 0}%, #e5e7eb ${project.progress || 0}%, #e5e7eb 100%)`
@@ -429,72 +422,18 @@ const ProjectDetails = () => {
                                 </div>
                             </div>
 
-                            {/* Attachment */}
-                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                                <h2 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
-                                    <ImageIcon size={16} className="text-red-600" />
-                                    Tài liệu đính kèm
-                                </h2>
-                                {project.attachment ? (
-                                    <div
-                                        onClick={async () => {
-                                            const ext = project.attachment?.split('.').pop()?.toLowerCase() || '';
-                                            const isImageFile = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
-                                            const isOffice = isOfficeFile(project.attachment || '');
-                                            
-                                            if (isImageFile) {
-                                                if (!imageUrl) {
-                                                    const imgResponse = await fetch(`${API_URL}/projects/${project.id}/attachment`, {
-                                                        headers: { Authorization: `Bearer ${token}` },
-                                                    });
-                                                    if (imgResponse.ok) {
-                                                        const blob = await imgResponse.blob();
-                                                        const url = URL.createObjectURL(blob);
-                                                        setImageUrl(url);
-                                                        setPreviewImage(url);
-                                                    }
-                                                } else {
-                                                    setPreviewImage(imageUrl);
-                                                }
-                                            } else if (isOffice) {
-                                                setShowOnlyOffice(true);
-                                            } else {
-                                                window.open(`${API_URL}/projects/${project.id}/attachment`, '_blank');
-                                            }
-                                        }}
-                                        className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all group"
-                                    >
-                                        <div className="p-2 bg-white rounded-lg border border-gray-200 group-hover:border-blue-400">
-                                            {isImage ? (
-                                                <ImageIcon size={20} className="text-blue-600" />
-                                            ) : isOfficeFile(project.attachment || '') ? (
-                                                <FileText size={20} className="text-green-600" />
-                                            ) : (
-                                                <FileText size={20} className="text-gray-600" />
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-medium text-gray-900 truncate group-hover:text-blue-600">
-                                                {getDisplayFilename(project.attachment)}
-                                            </p>
-                                            <p className="text-xs text-gray-500">
-                                                {isImage ? 'Ảnh' : isOfficeFile(project.attachment || '') ? 'Click để xem với OnlyOffice' : 'File'}
-                                            </p>
-                                        </div>
-                                        <button className={`px-3 py-1 text-white text-xs font-medium rounded ${
-                                            isOfficeFile(project.attachment || '') 
-                                                ? 'bg-green-600' 
-                                                : 'bg-blue-600'
-                                        }`}>
-                                            Mở
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center justify-center p-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                                        <p className="text-gray-500 text-xs">Không có tài liệu đính kèm</p>
-                                    </div>
-                                )}
-                            </div>
+                            {/* Attachment - Using ProjectAttachments Component */}
+                            <ProjectAttachments
+                                projectId={project.id}
+                                projectName={project.name}
+                                projectStatus={project.status}
+                                canUpload={project.implementers?.some(i => i.id === user?.id) || project.manager?.id === user?.id}
+                                isImplementer={project.implementers?.some(i => i.id === user?.id) || false}
+                                isAdmin={false}
+                                isManager={project.manager?.id === user?.id}
+                                attachments={project.attachments}
+                                onRefresh={fetchProject}
+                            />
                         </div>
 
                         {/* Parent Project */}
@@ -504,7 +443,7 @@ const ProjectDetails = () => {
                                     <FolderTree size={16} className="text-purple-600" />
                                     Dự án cha
                                 </h2>
-                                <Link 
+                                <Link
                                     to={`/projects/${project.parent.id}`}
                                     className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors group"
                                 >
@@ -536,10 +475,9 @@ const ProjectDetails = () => {
                                             to={`/projects/${child.id}`}
                                             className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
                                         >
-                                            <div className={`p-2 rounded-lg text-white ${
-                                                child.status === 'COMPLETED' ? 'bg-green-500' :
+                                            <div className={`p-2 rounded-lg text-white ${child.status === 'COMPLETED' ? 'bg-green-500' :
                                                 child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                            }`}>
+                                                }`}>
                                                 <FolderTree size={14} />
                                             </div>
                                             <div className="flex-1 min-w-0">
@@ -549,21 +487,19 @@ const ProjectDetails = () => {
                                                 <div className="flex items-center gap-2 mt-1">
                                                     <span className="text-xs text-gray-500">{child.code}</span>
                                                     <span className="text-xs text-gray-400">•</span>
-                                                    <span className={`text-xs font-medium ${
-                                                        child.status === 'COMPLETED' ? 'text-green-600' :
+                                                    <span className={`text-xs font-medium ${child.status === 'COMPLETED' ? 'text-green-600' :
                                                         child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
-                                                    }`}>
+                                                        }`}>
                                                         {child.progress}%
                                                     </span>
                                                 </div>
                                             </div>
                                             <div className="flex flex-col items-end gap-1">
                                                 <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                                    <div 
-                                                        className={`h-full rounded-full ${
-                                                            child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                    <div
+                                                        className={`h-full rounded-full ${child.status === 'COMPLETED' ? 'bg-green-500' :
                                                             child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                                        }`}
+                                                            }`}
                                                         style={{ width: `${child.progress}%` }}
                                                     />
                                                 </div>

@@ -30,12 +30,12 @@ const updateSW = registerSW({
   },
   onRegistered(registration) {
     console.log('SW registered:', registration)
-    
-    // For installed PWA, check for updates more frequently
+
+    // For installed PWA, check for updates less frequently to avoid reload loop
     if (isStandalonePWA && registration) {
       setInterval(() => {
         registration.update()
-      }, 60 * 1000) // Check every minute
+      }, 5 * 60 * 1000) // Check every 5 minutes instead of 1 minute
     }
   },
   onRegisterError(error) {
@@ -50,7 +50,7 @@ if (isStandalonePWA) {
       console.log('[PWA] App became visible, checking connection...')
       // Dispatch custom event for WebSocket to reconnect
       window.dispatchEvent(new CustomEvent('pwa-visible'))
-      
+
       // Force reload all images to get fresh avatars
       setTimeout(() => {
         const images = document.querySelectorAll('img[src*="/avatar"]');
@@ -67,13 +67,13 @@ if (isStandalonePWA) {
       }, 500);
     }
   })
-  
+
   // Handle online/offline
   window.addEventListener('online', () => {
     console.log('[PWA] Back online')
     window.dispatchEvent(new CustomEvent('pwa-online'))
   })
-  
+
   console.log('[PWA] Running as installed PWA')
 }
 
