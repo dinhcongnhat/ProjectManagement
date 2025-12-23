@@ -124,7 +124,7 @@ export default function UserProfilePopup() {
                         <button
                             onClick={() => {
                                 setIsOpen(false);
-                                // Navigate to settings if you have one
+                                navigate('/settings');
                             }}
                             className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
                         >

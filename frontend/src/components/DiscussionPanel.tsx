@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, File, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, Eye, FileText, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Send, File, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, FileText, RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { FileDownloadButton } from './ui/DownloadOptions';
@@ -276,17 +276,46 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         }
     }, [projectId, user]);
 
-    // Handle file selection
-    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Handle file selection - auto send when file is selected
+    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            setSelectedFile(file);
-            if (file.type.startsWith('image/')) {
-                const url = URL.createObjectURL(file);
-                setPreviewUrl(url);
-            } else {
-                setPreviewUrl(null);
-            }
+        if (!file) return;
+
+        // Reset input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+
+        // Auto send the file immediately
+        setSending(true);
+        shouldScrollRef.current = true;
+
+        try {
+            const authToken = localStorage.getItem('token');
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const response = await fetch(`${API_URL}/projects/${projectId}/messages/file`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${authToken}`
+                },
+                body: formData
+            });
+
+            if (!response.ok) throw new Error('Failed to send file');
+
+            const sentMessage = await response.json();
+            setMessages(prev => {
+                if (prev.some(m => m.id === sentMessage.id)) return prev;
+                return [...prev, sentMessage];
+            });
+            setTimeout(() => scrollToBottom(true), 100);
+        } catch (err) {
+            setError('Không thể gửi file');
+            console.error('Error sending file:', err);
+        } finally {
+            setSending(false);
         }
     };
 
@@ -540,23 +569,24 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
             case 'FILE':
                 return (
-                    <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwnMessage ? 'bg-blue-400' : 'bg-gray-100'}`}>
+                    <div
+                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${isOwnMessage ? 'bg-blue-400 hover:bg-blue-300' : 'bg-gray-100 hover:bg-gray-200'}`}
+                        onClick={() => {
+                            if (isOfficeFile(message.attachment)) {
+                                setShowOnlyOffice({ messageId: message.id, fileName: getFileName(message.attachment) });
+                            }
+                        }}
+                        title={isOfficeFile(message.attachment) ? 'Nhấn để xem file' : undefined}
+                    >
                         {isOfficeFile(message.attachment) ? (
                             <FileText size={20} />
                         ) : (
                             <File size={20} />
                         )}
-                        <span className="text-sm flex-1 truncate">{getFileName(message.attachment)}</span>
-                        <div className="flex items-center gap-1">
-                            {isOfficeFile(message.attachment) && (
-                                <button
-                                    onClick={() => setShowOnlyOffice({ messageId: message.id, fileName: getFileName(message.attachment) })}
-                                    className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
-                                    title="Xem file"
-                                >
-                                    <Eye size={16} />
-                                </button>
-                            )}
+                        <span className={`text-sm flex-1 truncate ${isOfficeFile(message.attachment) ? 'underline' : ''}`}>
+                            {getFileName(message.attachment)}
+                        </span>
+                        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                             {attachmentUrl && (
                                 <FileDownloadButton
                                     fileName={getFileName(message.attachment)}
@@ -586,23 +616,24 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                                 />
                             )
                         ) : (
-                            <div className={`flex items-center gap-2 p-2 rounded-lg ${isOwnMessage ? 'bg-blue-400' : 'bg-gray-100'}`}>
+                            <div
+                                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${isOwnMessage ? 'bg-blue-400 hover:bg-blue-300' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                onClick={() => {
+                                    if (isOfficeFile(message.attachment)) {
+                                        setShowOnlyOffice({ messageId: message.id, fileName: getFileName(message.attachment) });
+                                    }
+                                }}
+                                title={isOfficeFile(message.attachment) ? 'Nhấn để xem file' : undefined}
+                            >
                                 {isOfficeFile(message.attachment) ? (
                                     <FileText size={20} />
                                 ) : (
                                     <File size={20} />
                                 )}
-                                <span className="text-sm flex-1 truncate">{getFileName(message.attachment)}</span>
-                                <div className="flex items-center gap-1">
-                                    {isOfficeFile(message.attachment) && (
-                                        <button
-                                            onClick={() => setShowOnlyOffice({ messageId: message.id, fileName: getFileName(message.attachment) })}
-                                            className={`p-1 rounded ${isOwnMessage ? 'hover:bg-blue-300' : 'hover:bg-gray-200'}`}
-                                            title="Xem file"
-                                        >
-                                            <Eye size={16} />
-                                        </button>
-                                    )}
+                                <span className={`text-sm flex-1 truncate ${isOfficeFile(message.attachment) ? 'underline' : ''}`}>
+                                    {getFileName(message.attachment)}
+                                </span>
+                                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                     {attachmentUrl && (
                                         <FileDownloadButton
                                             fileName={getFileName(message.attachment)}

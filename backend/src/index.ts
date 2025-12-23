@@ -71,6 +71,7 @@ import chatRoutes from './routes/chatRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import folderRoutes from './routes/folderRoutes.js';
 import projectImportExportRoutes from './routes/projectImportExportRoutes.js';
+import workflowRoutes from './routes/workflowRoutes.js';
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -344,6 +345,7 @@ app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/folders', folderRoutes);
+app.use('/api', workflowRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');

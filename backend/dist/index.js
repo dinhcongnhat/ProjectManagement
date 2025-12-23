@@ -18,9 +18,19 @@ const allowedOrigins = [
     'http://www.jtsc.io.vn',
     'https://ai.jtsc.io.vn',
     'http://ai.jtsc.io.vn',
-    'http://171.237.138.176:3000',
-    'http://171.237.138.176:3001',
-    'http://171.237.138.176'
+    // DuckDNS domains
+    'https://jtscapi.duckdns.org',
+    'http://jtscapi.duckdns.org',
+    'https://jtscminio.duckdns.org',
+    'http://jtscminio.duckdns.org',
+    'https://jtsconlyoffice.duckdns.org',
+    'http://jtsconlyoffice.duckdns.org',
+    'https://jtscdb.duckdns.org',
+    'http://jtscdb.duckdns.org',
+    // IP addresses
+    'http://117.0.207.175:3000',
+    'http://117.0.207.175:3001',
+    'http://117.0.207.175'
 ];
 const io = new Server(httpServer, {
     cors: {
@@ -56,6 +66,9 @@ import activityRoutes from './routes/activityRoutes.js';
 import onlyofficeRoutes from './routes/onlyofficeRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import folderRoutes from './routes/folderRoutes.js';
+import projectImportExportRoutes from './routes/projectImportExportRoutes.js';
+import workflowRoutes from './routes/workflowRoutes.js';
 app.use(cors({
     origin: function (origin, callback) {
         // Cho phép requests không có origin (như mobile apps, Postman)
@@ -98,58 +111,19 @@ app.use((req, res, next) => {
     next();
 });
 // ==================== PUBLIC ROUTES (NO AUTH) ====================
-// These must be defined BEFORE any authenticated routes
-// Serve chat message attachments (images, files, audio)
-app.get('/api/chat/messages/:messageId/file', async (req, res) => {
-    try {
-        const { messageId } = req.params;
-        const message = await prisma.chatMessage.findUnique({
-            where: { id: Number(messageId) }
-        });
-        if (!message || !message.attachment) {
-            return res.status(404).json({ message: 'Attachment not found' });
-        }
-        const { getFileStream, getFileStats } = await import('./services/minioService.js');
-        const stats = await getFileStats(message.attachment);
-        const fileStream = await getFileStream(message.attachment);
-        const contentType = stats.metaData?.['content-type'] || stats.metaData?.['Content-Type'] || 'application/octet-stream';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=31536000');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        fileStream.pipe(res);
-    }
-    catch (error) {
-        console.error('[serveMessageAttachment] Error:', error?.message);
-        res.status(404).json({ message: 'File not found' });
-    }
+// These routes MUST be defined here (before any routers with auth middleware)
+// to ensure they're matched first
+// Serve chat message attachments (public - for img src)
+app.get('/api/chat/conversations/:conversationId/messages/:messageId/file', async (req, res) => {
+    console.log('[Index] Public route for chat attachment');
+    const { serveMessageAttachment } = await import('./controllers/chatController.js');
+    return serveMessageAttachment(req, res);
 });
-// NOTE: User avatar route is handled in userRoutes.ts
-// Serve conversation avatars
+// Serve conversation avatars (public - for img src)
 app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const conversation = await prisma.conversation.findUnique({
-            where: { id: Number(id) },
-            select: { avatar: true }
-        });
-        if (!conversation || !conversation.avatar) {
-            return res.status(404).json({ message: 'Avatar not found' });
-        }
-        const { getFileStream, getFileStats } = await import('./services/minioService.js');
-        const stats = await getFileStats(conversation.avatar);
-        const fileStream = await getFileStream(conversation.avatar);
-        const contentType = stats.metaData?.['content-type'] || 'image/jpeg';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Length', stats.size);
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        fileStream.pipe(res);
-    }
-    catch (error) {
-        console.error('[serveConversationAvatar] Error:', error?.message);
-        res.status(404).json({ message: 'Avatar not found' });
-    }
+    console.log('[Index] Public route for conversation avatar');
+    const { serveConversationAvatar } = await import('./controllers/chatController.js');
+    return serveConversationAvatar(req, res);
 });
 // OnlyOffice download routes (NO AUTH - OnlyOffice server needs direct access)
 app.get('/api/onlyoffice/download/:id', async (req, res) => {
@@ -274,6 +248,34 @@ app.get('/api/onlyoffice/chat/download/:messageId', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+// OnlyOffice download for user folder files (NO AUTH - OnlyOffice needs direct access)
+app.get('/api/folders/files/:id/onlyoffice-download', async (req, res) => {
+    try {
+        const fileId = parseInt(req.params.id);
+        console.log('[OnlyOffice Folder Download] File ID:', fileId);
+        const file = await prisma.userFile.findUnique({
+            where: { id: fileId }
+        });
+        if (!file) {
+            console.log('[OnlyOffice Folder Download] File not found');
+            return res.status(404).json({ message: 'File not found' });
+        }
+        console.log('[OnlyOffice Folder Download] Found file:', file.name, 'at', file.minioPath);
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        const fileStream = await getFileStream(file.minioPath);
+        const fileStats = await getFileStats(file.minioPath);
+        res.setHeader('Content-Type', file.fileType);
+        if (fileStats.size)
+            res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    }
+    catch (error) {
+        console.error('[OnlyOffice Folder Download] Error:', error?.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
 // ==================== END PUBLIC ROUTES ====================
 // Public route for VAPID key (NO AUTH - must be before authenticated routes)
 app.get('/api/notifications/vapid-public-key', (req, res) => {
@@ -301,11 +303,14 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tasks', taskRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/projects-io', projectImportExportRoutes);
 app.use('/api', messageRoutes);
 app.use('/api', activityRoutes);
 app.use('/api/onlyoffice', onlyofficeRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/folders', folderRoutes);
+app.use('/api', workflowRoutes);
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');
 });
@@ -494,6 +499,12 @@ httpServer.listen(Number(port), host, () => {
     console.log(`Server is running on http://${host}:${port}`);
     console.log(`Socket.io server ready`);
     console.log(`Access from LAN: http://<your-ip>:${port}`);
+    // Start deadline scheduler for push notifications
+    import('./services/deadlineScheduler.js').then(({ startDeadlineScheduler }) => {
+        startDeadlineScheduler();
+    }).catch(err => {
+        console.error('[DeadlineScheduler] Failed to start:', err);
+    });
 });
 // Export io for use in controllers
 export const getIO = () => io;

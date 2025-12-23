@@ -12,6 +12,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
         const {
             code,
             name,
+            investor,  // Chủ đầu tư
             startDate,
             endDate,
             duration,
@@ -42,6 +43,16 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             }
         }
 
+        // Parse cooperatorIds - Phối hợp thực hiện
+        let cooperatorIds = req.body.cooperatorIds;
+        if (typeof cooperatorIds === 'string') {
+            try {
+                cooperatorIds = JSON.parse(cooperatorIds);
+            } catch (e) {
+                cooperatorIds = [cooperatorIds];
+            }
+        }
+
         console.log('Received createProject body:', req.body);
         console.log('Received file:', req.file);
 
@@ -50,7 +61,6 @@ export const createProject = async (req: AuthRequest, res: Response) => {
         if (!code) missingFields.push('code');
         if (!name) missingFields.push('name');
         if (!managerId) missingFields.push('managerId');
-        if (!progressMethod) missingFields.push('progressMethod');
 
         if (missingFields.length > 0) {
             return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
@@ -65,10 +75,12 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             });
         }
 
+        const now = new Date();
         const project = await prisma.project.create({
             data: {
                 code,
                 name,
+                investor,  // Chủ đầu tư
                 startDate: startDate ? new Date(startDate) : null,
                 endDate: endDate ? new Date(endDate) : null,
                 duration,
@@ -88,10 +100,22 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 followers: {
                     connect: Array.isArray(followerIds) ? followerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
+                cooperators: {
+                    connect: Array.isArray(cooperatorIds) ? cooperatorIds.map((id: string | number) => ({ id: Number(id) })) : [],
+                },
+                // Tự động tạo ProjectWorkflow khi tạo dự án
+                workflow: {
+                    create: {
+                        currentStatus: 'RECEIVED',
+                        receivedStartAt: now,  // Ngày bắt đầu = ngày tạo project
+                    }
+                }
             },
             include: {
                 parent: { select: { id: true, name: true, code: true } },
                 children: { select: { id: true, name: true, code: true, progress: true, status: true } },
+                cooperators: { select: { id: true, name: true } },
+                workflow: true,
             },
         });
 
@@ -194,6 +218,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                     { managerId: userId },
                     { implementers: { some: { id: userId } } },
                     { followers: { some: { id: userId } } },
+                    { cooperators: { some: { id: userId } } },
                 ]
             };
         } else {
@@ -203,6 +228,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                     { managerId: userId },
                     { implementers: { some: { id: userId } } },
                     { followers: { some: { id: userId } } },
+                    { cooperators: { some: { id: userId } } },
                 ]
             };
         }
@@ -217,6 +243,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                             { name: { contains: String(q), mode: 'insensitive' } },
                             { code: { contains: String(q), mode: 'insensitive' } },
                             { description: { contains: String(q), mode: 'insensitive' } },
+                            { investor: { contains: String(q), mode: 'insensitive' } },
                         ]
                     }
                 ]
@@ -229,6 +256,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                 manager: { select: { id: true, name: true } },
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
+                cooperators: { select: { id: true, name: true } },
                 parent: { select: { id: true, name: true, code: true } },
                 children: {
                     select: {
@@ -241,6 +269,7 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                         endDate: true,
                     }
                 },
+                workflow: true,
             },
             orderBy: { createdAt: 'desc' },
         });
@@ -260,6 +289,7 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                 manager: { select: { id: true, name: true } },
                 implementers: { select: { id: true, name: true } },
                 followers: { select: { id: true, name: true } },
+                cooperators: { select: { id: true, name: true } },
                 parent: { select: { id: true, name: true, code: true } },
                 children: {
                     select: {
@@ -279,6 +309,11 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                         uploadedBy: { select: { id: true, name: true, role: true } }
                     },
                     orderBy: { createdAt: 'desc' }
+                },
+                workflow: {
+                    include: {
+                        completedApprovedBy: { select: { id: true, name: true } }
+                    }
                 },
             },
         });

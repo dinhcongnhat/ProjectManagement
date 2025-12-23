@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { X, Loader2, FileText, AlertCircle } from 'lucide-react';
+import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../config/api';
 
 interface DiscussionOnlyOfficeViewerProps {
@@ -204,47 +204,37 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
     }, [scriptLoaded, messageId, token, apiPath]);
 
     return ReactDOM.createPortal(
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col" style={{ isolation: 'isolate', zIndex: 999999 }}>
-            {/* Header - with safe area for mobile notch/status bar */}
-            <div className="flex items-center justify-between px-4 py-2 bg-white border-b shadow-lg relative z-[100000]" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
-                <div className="flex items-center gap-2">
-                    <FileText className="text-blue-600" size={18} />
-                    <div className="flex items-center gap-1">
-                        <span className="font-medium text-gray-800 text-sm">{fileName}</span>
-                        <span className="text-xs text-gray-500">(Chỉ xem)</span>
-                    </div>
-                </div>
-                <button
-                    onClick={onClose}
-                    className="p-1 hover:bg-gray-100 rounded transition-colors"
-                    title="Đóng"
-                >
-                    <X size={20} className="text-gray-600" />
-                </button>
-            </div>
+        <div className="fixed inset-0 bg-black flex flex-col" style={{ isolation: 'isolate', zIndex: 999999 }}>
+            {/* Close button - floating on top right */}
+            <button
+                onClick={onClose}
+                className="absolute top-2 right-2 z-[1000000] p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-lg"
+                title="Đóng (ESC)"
+                style={{ paddingTop: 'max(8px, env(safe-area-inset-top))' }}
+            >
+                <X size={20} />
+            </button>
 
-            {/* Editor Container */}
-            <div className="flex-1 relative bg-gray-100">
+            {/* Editor Container - Full screen */}
+            <div className="flex-1 relative">
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white">
-                        <div className="flex flex-col items-center gap-4">
-                            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                            <p className="text-gray-600 font-medium">Đang tải tài liệu...</p>
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="text-center">
+                            <Loader2 size={48} className="animate-spin text-blue-500 mx-auto mb-4" />
+                            <p className="text-gray-300 font-medium">Đang tải tài liệu...</p>
+                            <p className="text-gray-500 text-sm mt-1">{fileName}</p>
                         </div>
                     </div>
                 )}
 
                 {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white">
-                        <div className="flex flex-col items-center gap-4 max-w-md text-center p-6">
-                            <div className="p-4 bg-red-100 rounded-full">
-                                <AlertCircle className="w-12 h-12 text-red-600" />
-                            </div>
-                            <h3 className="text-xl font-semibold text-gray-800">Không thể mở tài liệu</h3>
-                            <p className="text-gray-600">{error}</p>
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="text-center p-6 max-w-md">
+                            <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+                            <p className="text-red-400 font-medium mb-2">{error}</p>
                             <button
                                 onClick={onClose}
-                                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
                             >
                                 Đóng
                             </button>
@@ -256,7 +246,7 @@ export const DiscussionOnlyOfficeViewer = ({ messageId, fileName, onClose, token
                     id="discussion-onlyoffice-editor"
                     ref={editorRef}
                     className="w-full h-full"
-                    style={{ display: loading || error ? 'none' : 'block' }}
+                    style={{ display: loading || error ? 'none' : 'block', minHeight: '100vh' }}
                 />
             </div>
         </div>,

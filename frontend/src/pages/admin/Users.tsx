@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, X, Users as UsersIcon } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Users as UsersIcon, Shield, User, Search } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useDialog } from '../../components/ui/Dialog';
@@ -24,10 +24,10 @@ const Users = () => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [showModal, setShowModal] = useState(false);
     const [editingUser, setEditingUser] = useState<UserData | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
     const { token } = useAuth();
     const { showConfirm, showError } = useDialog();
 
-    // Form state
     const [formData, setFormData] = useState<FormDataType>({
         username: '',
         password: '',
@@ -58,7 +58,7 @@ const Users = () => {
                 console.error('Error fetching users:', error);
             }
         };
-        
+
         if (token) {
             fetchUsers();
         }
@@ -79,7 +79,6 @@ const Users = () => {
 
             const method = editingUser ? 'PUT' : 'POST';
 
-            // Don't send empty password when editing if not changed
             const bodyData: Partial<FormDataType> = { ...formData };
             if (editingUser && !bodyData.password) {
                 delete bodyData.password;
@@ -96,7 +95,6 @@ const Users = () => {
 
             if (response.ok) {
                 resetForm();
-                // Refetch users
                 const usersResponse = await fetch(`${API_URL}/users`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
@@ -113,7 +111,7 @@ const Users = () => {
     };
 
     const handleDeleteUser = async (id: number) => {
-        const confirmed = await showConfirm('Are you sure you want to delete this user?');
+        const confirmed = await showConfirm('Bạn có chắc chắn muốn xóa nhân viên này?');
         if (!confirmed) return;
         try {
             const response = await fetch(`${API_URL}/users/${id}`, {
@@ -122,7 +120,6 @@ const Users = () => {
             });
 
             if (response.ok) {
-                // Refetch users
                 const usersResponse = await fetch(`${API_URL}/users`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
@@ -142,7 +139,7 @@ const Users = () => {
         setEditingUser(user);
         setFormData({
             username: user.username,
-            password: '', // Leave empty to keep existing
+            password: '',
             name: user.name,
             role: user.role,
             position: user.position || '',
@@ -150,40 +147,97 @@ const Users = () => {
         setShowModal(true);
     };
 
+    const filteredUsers = users.filter(user =>
+        user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        user.username.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const adminCount = users.filter(u => u.role === 'ADMIN').length;
+    const userCount = users.filter(u => u.role === 'USER').length;
+
     return (
-        <div className="space-y-4 lg:space-y-6">
-            {/* Header - Mobile Optimized */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="space-y-4 sm:space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                 <div>
-                    <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Quản lý nhân viên</h2>
-                    <p className="text-xs lg:text-sm text-gray-500 mt-1">Quản lý hệ thống tài khoản của nhân viên</p>
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Quản lý nhân viên</h2>
+                    <p className="text-gray-500 mt-0.5 sm:mt-1 text-sm sm:text-base">Quản lý hệ thống tài khoản</p>
                 </div>
                 <button
                     onClick={() => { resetForm(); setShowModal(true); }}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors shadow-sm text-sm font-medium touch-target shrink-0"
+                    className="flex items-center justify-center gap-1.5 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg sm:rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all shadow-lg shadow-purple-500/25 text-xs sm:text-sm font-medium active:scale-95"
                 >
-                    <Plus size={18} />
-                    <span>Thêm nhân viên</span>
+                    <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                    <span>Thêm</span>
                 </button>
             </div>
 
+            {/* Stats - Mobile Compact */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-purple-500/30 w-fit">
+                            <UsersIcon size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xl sm:text-2xl font-bold text-gray-900">{users.length}</p>
+                            <p className="text-xs sm:text-sm text-gray-500">Tổng</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg sm:rounded-xl text-white shadow-lg shadow-orange-500/30 w-fit">
+                            <Shield size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xl sm:text-2xl font-bold text-gray-900">{adminCount}</p>
+                            <p className="text-xs sm:text-sm text-gray-500">Admin</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-green-500/30 w-fit">
+                            <User size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xl sm:text-2xl font-bold text-gray-900">{userCount}</p>
+                            <p className="text-xs sm:text-sm text-gray-500">User</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+                <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Tìm kiếm..."
+                    className="w-full pl-9 sm:pl-11 pr-4 py-2.5 sm:py-3 bg-white border border-gray-200 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all shadow-lg shadow-gray-200/50 text-sm sm:text-base"
+                />
+            </div>
+
             {/* User List - Desktop Table */}
-            <div className="hidden lg:block bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="hidden lg:block bg-white rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 overflow-hidden">
                 <table className="w-full text-left">
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
                         <tr>
-                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
-                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Position</th>
-                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Actions</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Nhân viên</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Vai trò</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Chức vụ</th>
+                            <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right">Thao tác</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
-                        {users.map((user) => (
+                    <tbody className="divide-y divide-gray-100">
+                        {filteredUsers.map((user) => (
                             <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
+                                        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg shadow-purple-500/20">
                                             {user.name.charAt(0)}
                                         </div>
                                         <div>
@@ -193,20 +247,31 @@ const Users = () => {
                                     </div>
                                 </td>
                                 <td className="px-6 py-4">
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
+                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${user.role === 'ADMIN'
+                                        ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white shadow-lg shadow-orange-500/20'
+                                        : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-green-500/20'
                                         }`}>
+                                        {user.role === 'ADMIN' ? <Shield size={12} /> : <User size={12} />}
                                         {user.role}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-sm text-gray-600">
-                                    {user.position || '-'}
+                                    {user.position || <span className="text-gray-400">-</span>}
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button title="Chỉnh sửa" onClick={() => openEditModal(user)} className="p-1 text-gray-400 hover:text-blue-600">
+                                        <button
+                                            title="Chỉnh sửa"
+                                            onClick={() => openEditModal(user)}
+                                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        >
                                             <Pencil size={18} />
                                         </button>
-                                        <button title="Xóa" onClick={() => handleDeleteUser(user.id)} className="p-1 text-gray-400 hover:text-red-600">
+                                        <button
+                                            title="Xóa"
+                                            onClick={() => handleDeleteUser(user.id)}
+                                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        >
                                             <Trash2 size={18} />
                                         </button>
                                     </div>
@@ -218,19 +283,20 @@ const Users = () => {
             </div>
 
             {/* User List - Mobile Cards */}
-            <div className="lg:hidden space-y-3">
-                {users.length === 0 ? (
-                    <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                            <UsersIcon size={32} className="text-gray-400" />
+            <div className="lg:hidden space-y-2 sm:space-y-3">
+                {filteredUsers.length === 0 ? (
+                    <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 p-8 sm:p-12 text-center shadow-lg shadow-gray-200/50">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                            <UsersIcon size={24} className="text-gray-400 sm:w-8 sm:h-8" />
                         </div>
-                        <p className="text-gray-500 text-sm">Chưa có nhân viên nào</p>
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-1 sm:mb-2">Không tìm thấy</h3>
+                        <p className="text-gray-500 text-sm">Thử tìm kiếm khác</p>
                     </div>
                 ) : (
-                    users.map((user) => (
-                        <div key={user.id} className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 active:bg-gray-50 transition-colors">
+                    filteredUsers.map((user) => (
+                        <div key={user.id} className="bg-white rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 p-4 hover:shadow-xl transition-all">
                             <div className="flex items-start gap-3">
-                                <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-lg shrink-0">
+                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-purple-500/20 shrink-0">
                                     {user.name.charAt(0)}
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -239,8 +305,11 @@ const Users = () => {
                                             <p className="font-semibold text-gray-900 truncate">{user.name}</p>
                                             <p className="text-sm text-gray-500">@{user.username}</p>
                                         </div>
-                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${user.role === 'ADMIN' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'
+                                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${user.role === 'ADMIN'
+                                            ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white'
+                                            : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white'
                                             }`}>
+                                            {user.role === 'ADMIN' ? <Shield size={10} /> : <User size={10} />}
                                             {user.role}
                                         </span>
                                     </div>
@@ -251,16 +320,16 @@ const Users = () => {
                                         </div>
                                     )}
                                     <div className="flex gap-2">
-                                        <button 
-                                            onClick={() => openEditModal(user)} 
-                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 active:bg-blue-200 transition-colors text-sm font-medium touch-target"
+                                        <button
+                                            onClick={() => openEditModal(user)}
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-colors text-sm font-medium"
                                         >
                                             <Pencil size={16} />
                                             <span>Chỉnh sửa</span>
                                         </button>
-                                        <button 
-                                            onClick={() => handleDeleteUser(user.id)} 
-                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 active:bg-red-200 transition-colors text-sm font-medium touch-target"
+                                        <button
+                                            onClick={() => handleDeleteUser(user.id)}
+                                            className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors text-sm font-medium"
                                         >
                                             <Trash2 size={16} />
                                             <span>Xóa</span>
@@ -275,22 +344,27 @@ const Users = () => {
 
             {/* Create/Edit User Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
-                        <div className="flex justify-between items-center p-4 lg:p-6 border-b border-gray-200 shrink-0">
-                            <h3 className="text-lg lg:text-xl font-bold text-gray-900">{editingUser ? 'Chỉnh sửa nhân viên' : 'Thêm nhân viên mới'}</h3>
-                            <button title="Đóng" onClick={resetForm} className="p-2 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors touch-target">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
+                        <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gradient-to-r from-purple-50 to-pink-50 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl text-white">
+                                    {editingUser ? <Pencil size={20} /> : <Plus size={20} />}
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900">{editingUser ? 'Chỉnh sửa nhân viên' : 'Thêm nhân viên mới'}</h3>
+                            </div>
+                            <button title="Đóng" onClick={resetForm} className="p-2 text-gray-400 hover:bg-gray-100 rounded-xl transition-colors">
                                 <X size={20} />
                             </button>
                         </div>
-                        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-4">
+                        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Họ và tên <span className="text-red-500">*</span></label>
                                 <input
                                     type="text"
                                     required
                                     placeholder="Nhập họ tên"
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all"
                                     value={formData.name}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 />
@@ -301,7 +375,7 @@ const Users = () => {
                                     type="text"
                                     required
                                     placeholder="Nhập tên đăng nhập"
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all"
                                     value={formData.username}
                                     onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                                 />
@@ -314,7 +388,7 @@ const Users = () => {
                                     type="password"
                                     required={!editingUser}
                                     placeholder="Nhập mật khẩu"
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all"
                                     value={formData.password}
                                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 />
@@ -323,7 +397,7 @@ const Users = () => {
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Vai trò <span className="text-red-500">*</span></label>
                                 <select
                                     title="Chọn vai trò"
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all bg-white"
                                     value={formData.role}
                                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                                 >
@@ -336,24 +410,24 @@ const Users = () => {
                                 <input
                                     type="text"
                                     placeholder="Nhập chức vụ"
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all"
                                     value={formData.position}
                                     onChange={(e) => setFormData({ ...formData, position: e.target.value })}
                                 />
                             </div>
                         </form>
-                        <div className="flex gap-3 p-4 lg:p-6 border-t border-gray-200 shrink-0">
+                        <div className="flex gap-3 p-5 border-t border-gray-100 shrink-0">
                             <button
                                 type="button"
                                 onClick={resetForm}
-                                className="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 active:bg-gray-100 rounded-lg transition-colors touch-target"
+                                className="flex-1 px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors"
                             >
                                 Hủy
                             </button>
                             <button
                                 type="submit"
                                 onClick={handleSubmit}
-                                className="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-lg transition-colors shadow-sm touch-target"
+                                className="flex-1 px-4 py-3 text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-xl transition-all shadow-lg shadow-purple-500/25"
                             >
                                 {editingUser ? 'Cập nhật' : 'Tạo mới'}
                             </button>

@@ -271,17 +271,36 @@ export const notifyProjectAssignment = async (
     projectId: number,
     projectName: string,
     assignerName: string,
-    role: 'manager' | 'implementer' | 'follower'
+    role: 'manager' | 'implementer' | 'follower' | 'cooperator'
 ) => {
     const roleText = {
         manager: 'quản lý',
         implementer: 'thực hiện',
-        follower: 'theo dõi'
+        follower: 'theo dõi',
+        cooperator: 'phối hợp'
     };
 
+    const title = 'Phân công dự án mới';
+    const body = `${assignerName} đã thêm bạn vào dự án "${projectName}" với vai trò ${roleText[role]}`;
+
+    // Lưu notification vào database
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'PROJECT_ASSIGNED',
+                title,
+                message: body,
+                projectId
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving notification to database:', error);
+    }
+
     const payload: PushPayload = {
-        title: 'Phân công dự án mới',
-        body: `${assignerName} đã thêm bạn vào dự án "${projectName}" với vai trò ${roleText[role]}`,
+        title,
+        body,
         tag: `project-assign-${projectId}`,
         data: {
             type: 'project',

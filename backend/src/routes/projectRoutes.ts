@@ -17,7 +17,10 @@ import multer from 'multer';
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Project CRUD
-router.post('/', authenticateToken, isAdmin, upload.single('file'), createProject);
+// POST / accepts JSON body (no file)
+// POST /with-file accepts FormData with file
+router.post('/', authenticateToken, isAdmin, createProject);
+router.post('/with-file', authenticateToken, isAdmin, upload.single('file'), createProject);
 router.get('/', authenticateToken, getProjects);
 router.get('/:id', authenticateToken, getProjectById);
 router.put('/:id', authenticateToken, isAdmin, updateProject);

@@ -14,6 +14,7 @@ import ProjectDetails from './pages/ProjectDetails';
 import UserWorkflow from './pages/UserWorkflow';
 import UserProfile from './pages/UserProfile';
 import UserFolders from './pages/UserFolders';
+import Settings from './pages/Settings';
 import Login from './pages/Login';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/ui/Dialog';
@@ -39,6 +40,7 @@ function App() {
                   <Route path="folders" element={<UserFolders />} />
                   <Route path="workflow" element={<Workflow />} />
                   <Route path="create-project" element={<CreateProject />} />
+                  <Route path="settings" element={<Settings />} />
                 </Route>
               </Route>
 
@@ -52,6 +54,7 @@ function App() {
                   <Route path="folders" element={<UserFolders />} />
                   <Route path="workflow" element={<UserWorkflow />} />
                   <Route path="profile" element={<UserProfile />} />
+                  <Route path="settings" element={<Settings />} />
                 </Route>
               </Route>
             </Routes>
@@ -63,4 +66,3 @@ function App() {
 }
 
 export default App;
-

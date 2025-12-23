@@ -57,7 +57,6 @@ const UserProjects = () => {
             });
             const data = await response.json();
             if (Array.isArray(data)) {
-                // Filter projects where user is involved and only show root projects (no parentId)
                 const myProjects = data.filter((project: Project) =>
                     !project.parentId && (
                         project.manager?.id === user?.id ||
@@ -103,88 +102,114 @@ const UserProjects = () => {
     };
 
     const getStatusBadge = (status: string) => {
-        switch (status) {
-            case 'COMPLETED':
-                return (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                        <CheckCircle2 size={14} />
-                        Hoàn thành
-                    </span>
-                );
-            case 'PENDING_APPROVAL':
-                return (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded-full">
-                        <Clock size={14} />
-                        Chờ duyệt
-                    </span>
-                );
-            default:
-                return (
-                    <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                        <AlertCircle size={14} />
-                        Đang thực hiện
-                    </span>
-                );
-        }
+        const statusConfig = {
+            'COMPLETED': {
+                bg: 'bg-gradient-to-r from-emerald-500 to-green-500',
+                text: 'Hoàn thành',
+                icon: CheckCircle2
+            },
+            'PENDING_APPROVAL': {
+                bg: 'bg-gradient-to-r from-amber-500 to-orange-500',
+                text: 'Chờ duyệt',
+                icon: Clock
+            },
+            'IN_PROGRESS': {
+                bg: 'bg-gradient-to-r from-blue-500 to-indigo-500',
+                text: 'Đang thực hiện',
+                icon: AlertCircle
+            }
+        };
+        const config = statusConfig[status as keyof typeof statusConfig] || statusConfig['IN_PROGRESS'];
+        const Icon = config.icon;
+        return (
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 ${config.bg} text-white text-xs font-medium rounded-full shadow-lg shadow-blue-500/20`}>
+                <Icon size={12} />
+                {config.text}
+            </span>
+        );
     };
 
     return (
-        <div className="space-y-4 lg:space-y-6">
-            <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Dự án của tôi</h2>
+        <div className="space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">Dự án của tôi</h2>
+                    <p className="text-gray-500 mt-1">Quản lý và theo dõi tiến độ dự án</p>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Briefcase size={18} className="text-blue-600" />
+                    <span className="font-medium">{projects.length} dự án</span>
+                </div>
+            </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:gap-6">
+            <div className="grid grid-cols-1 gap-6">
                 {projects.length === 0 ? (
-                    <div className="col-span-full text-center py-8 lg:py-12 bg-white rounded-xl border border-gray-200 text-gray-500 text-sm lg:text-base">
-                        Chưa có dự án nào được giao cho bạn.
+                    <div className="col-span-full text-center py-16 bg-white rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Briefcase size={32} className="text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-700 mb-2">Chưa có dự án</h3>
+                        <p className="text-gray-500">Chưa có dự án nào được giao cho bạn.</p>
                     </div>
                 ) : (
                     projects.map((project) => (
-                        <div key={project.id} className="bg-white p-4 lg:p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md active:shadow-sm transition-shadow">
-                            <div className="flex flex-col gap-4 lg:gap-6">
-                                {/* Project Info */}
-                                <div className="flex-1">
-                                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
-                                        <div className="flex items-start gap-3">
-                                            <div className="p-2 lg:p-3 bg-blue-50 rounded-lg text-blue-600 shrink-0">
-                                                <Briefcase size={20} className="lg:w-6 lg:h-6" />
+                        <div key={project.id} className="bg-white rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 hover:shadow-xl transition-all duration-300 overflow-hidden">
+                            {/* Project Header */}
+                            <div className="p-5 lg:p-6">
+                                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                                    {/* Left: Project Info */}
+                                    <div className="flex-1">
+                                        <div className="flex items-start gap-4">
+                                            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl text-white shadow-lg shadow-blue-500/30 shrink-0">
+                                                <Briefcase size={24} />
                                             </div>
-                                            <div className="min-w-0">
-                                                <Link to={`/projects/${project.id}`} className="text-base lg:text-lg font-bold text-gray-900 hover:text-blue-600 active:text-blue-700 transition-colors line-clamp-2">
-                                                    {project.name}
-                                                </Link>
-                                                <p className="text-xs lg:text-sm text-gray-500 mt-1">Mã: {project.code}</p>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-3 flex-wrap mb-2">
+                                                    <Link to={`/projects/${project.id}`} className="text-lg lg:text-xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
+                                                        {project.name}
+                                                    </Link>
+                                                    {getStatusBadge(project.status)}
+                                                </div>
+                                                <p className="text-sm text-gray-500 mb-3">Mã dự án: <span className="font-medium text-gray-700">{project.code}</span></p>
+
+                                                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                                                    <div className="flex items-center gap-2">
+                                                        <User size={14} className="text-gray-400" />
+                                                        <span>PM: <span className="font-medium">{project.manager?.name || 'N/A'}</span></span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Calendar size={14} className="text-gray-400" />
+                                                        <span>
+                                                            {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
+                                                            {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                                        </span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-                                        <div className="self-start sm:shrink-0">
-                                            {getStatusBadge(project.status)}
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 lg:gap-3 mt-3 lg:mt-4">
-                                        <div className="flex items-center gap-2 text-xs lg:text-sm text-gray-600">
-                                            <User size={14} className="text-gray-400 shrink-0 lg:w-4 lg:h-4" />
-                                            <span className="truncate">PM: {project.manager?.name || 'N/A'}</span>
-                                        </div>
-                                        <div className="flex items-center gap-2 text-xs lg:text-sm text-gray-600">
-                                            <Calendar size={14} className="text-gray-400 shrink-0 lg:w-4 lg:h-4" />
-                                            <span className="truncate">
-                                                {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'} -
-                                                {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
+                                    {/* Right: Progress Control */}
+                                    <div className="lg:w-64 shrink-0">
+                                        <div className="p-4 bg-gradient-to-br from-gray-50 to-blue-50/50 rounded-xl border border-gray-100">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <span className="text-sm font-medium text-gray-700">Tiến độ</span>
+                                                <span className="text-2xl font-bold text-blue-600">{project.progress}%</span>
+                                            </div>
 
-                                {/* Progress Control */}
-                                <div className="border-t lg:border-t-0 lg:border-l border-gray-200 pt-4 lg:pt-0 lg:pl-6 lg:w-80">
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-medium text-gray-700">Tiến độ</span>
-                                            <span className="text-2xl font-bold text-blue-600">{project.progress}%</span>
-                                        </div>
+                                            {/* Progress Bar */}
+                                            <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden mb-2">
+                                                <div
+                                                    className={`h-full rounded-full transition-all duration-300 ${project.status === 'COMPLETED' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
+                                                            project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
+                                                                'bg-gradient-to-r from-blue-500 to-indigo-500'
+                                                        }`}
+                                                    style={{ width: `${project.progress}%` }}
+                                                />
+                                            </div>
 
-                                        {/* Progress Slider */}
-                                        <div className="relative">
+                                            {/* Progress Slider */}
                                             <input
                                                 type="range"
                                                 min="0"
@@ -192,37 +217,35 @@ const UserProjects = () => {
                                                 value={project.progress}
                                                 onChange={(e) => handleProgressChange(project.id, Number(e.target.value))}
                                                 disabled={project.status === 'COMPLETED' || project.status === 'PENDING_APPROVAL' || updatingProgress === project.id}
-                                                className={`w-full h-3 rounded-lg appearance-none cursor-pointer progress-slider ${project.status === 'COMPLETED' ? 'bg-green-200' :
-                                                    project.status === 'PENDING_APPROVAL' ? 'bg-orange-200' :
-                                                        'bg-blue-200'
-                                                    } ${project.status === 'COMPLETED' || project.status === 'PENDING_APPROVAL' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${project.status === 'COMPLETED' || project.status === 'PENDING_APPROVAL' ? 'opacity-50 cursor-not-allowed' : ''
+                                                    }`}
                                                 title={`Tiến độ: ${project.progress}%`}
                                             />
-                                        </div>
 
-                                        {/* Status Message */}
-                                        {project.status === 'PENDING_APPROVAL' && (
-                                            <p className="text-xs text-orange-600 font-medium text-center">
-                                                ⏳ Đang chờ quản trị viên duyệt
-                                            </p>
-                                        )}
-                                        {project.status === 'COMPLETED' && (
-                                            <p className="text-xs text-green-600 font-medium text-center">
-                                                ✅ Dự án đã hoàn thành
-                                            </p>
-                                        )}
-                                        {updatingProgress === project.id && (
-                                            <p className="text-xs text-blue-600 font-medium text-center">
-                                                Đang cập nhật...
-                                            </p>
-                                        )}
+                                            {/* Status Message */}
+                                            {project.status === 'PENDING_APPROVAL' && (
+                                                <p className="text-xs text-orange-600 font-medium text-center mt-2">
+                                                    ⏳ Đang chờ duyệt
+                                                </p>
+                                            )}
+                                            {project.status === 'COMPLETED' && (
+                                                <p className="text-xs text-green-600 font-medium text-center mt-2">
+                                                    ✅ Đã hoàn thành
+                                                </p>
+                                            )}
+                                            {updatingProgress === project.id && (
+                                                <p className="text-xs text-blue-600 font-medium text-center mt-2">
+                                                    Đang cập nhật...
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Sub Projects */}
                             {project.children && project.children.length > 0 && (
-                                <div className="border-t border-gray-200 pt-4 mt-2">
+                                <div className="border-t border-gray-100 px-5 lg:px-6 py-4 bg-gray-50/50">
                                     <button
                                         onClick={() => toggleExpanded(project.id)}
                                         className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors"
@@ -232,7 +255,7 @@ const UserProjects = () => {
                                         ) : (
                                             <ChevronRight size={16} />
                                         )}
-                                        <FolderTree size={16} className="text-blue-500" />
+                                        <FolderTree size={16} className="text-purple-500" />
                                         <span>Dự án con ({project.children.length})</span>
                                     </button>
 
@@ -242,13 +265,13 @@ const UserProjects = () => {
                                                 <Link
                                                     key={child.id}
                                                     to={`/projects/${child.id}`}
-                                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-blue-50 transition-colors group"
+                                                    className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all group"
                                                 >
-                                                    <div className={`p-1.5 rounded-lg text-white ${
-                                                        child.status === 'COMPLETED' ? 'bg-green-500' :
-                                                        child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                                    }`}>
-                                                        <FolderTree size={12} />
+                                                    <div className={`p-2 rounded-lg text-white ${child.status === 'COMPLETED' ? 'bg-gradient-to-br from-emerald-500 to-green-500' :
+                                                            child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-br from-amber-500 to-orange-500' :
+                                                                'bg-gradient-to-br from-blue-500 to-indigo-500'
+                                                        }`}>
+                                                        <FolderTree size={14} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <p className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-600">
@@ -258,18 +281,16 @@ const UserProjects = () => {
                                                     </div>
                                                     <div className="flex items-center gap-3">
                                                         <div className="text-right">
-                                                            <span className={`text-sm font-bold ${
-                                                                child.status === 'COMPLETED' ? 'text-green-600' :
-                                                                child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
-                                                            }`}>
+                                                            <span className={`text-sm font-bold ${child.status === 'COMPLETED' ? 'text-green-600' :
+                                                                    child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
+                                                                }`}>
                                                                 {child.progress}%
                                                             </span>
                                                             <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden mt-1">
-                                                                <div 
-                                                                    className={`h-full rounded-full ${
-                                                                        child.status === 'COMPLETED' ? 'bg-green-500' :
-                                                                        child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                                                    }`}
+                                                                <div
+                                                                    className={`h-full rounded-full ${child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                                            child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
+                                                                        }`}
                                                                     style={{ width: `${child.progress}%` }}
                                                                 />
                                                             </div>

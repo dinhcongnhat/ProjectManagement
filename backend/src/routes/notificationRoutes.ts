@@ -377,4 +377,169 @@ router.post('/test-email', authenticateToken, async (req: AuthRequest, res: Resp
     }
 });
 
+// ==================== NOTIFICATION LIST MANAGEMENT ====================
+
+// Get user notifications list
+router.get('/list', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const { limit = 20, page = 1 } = req.query;
+        const skip = (Number(page) - 1) * Number(limit);
+
+        const [notifications, total, unreadCount] = await Promise.all([
+            prisma.notification.findMany({
+                where: { userId },
+                orderBy: { createdAt: 'desc' },
+                take: Number(limit),
+                skip,
+                include: {
+                    project: {
+                        select: { id: true, name: true, code: true }
+                    }
+                }
+            }),
+            prisma.notification.count({ where: { userId } }),
+            prisma.notification.count({ where: { userId, isRead: false } })
+        ]);
+
+        res.json({
+            notifications,
+            total,
+            unreadCount,
+            page: Number(page),
+            totalPages: Math.ceil(total / Number(limit))
+        });
+    } catch (error) {
+        console.error('[NotificationRoutes] Get notifications error:', error);
+        res.status(500).json({ message: 'Failed to get notifications' });
+    }
+});
+
+// Get unread count
+router.get('/unread-count', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const unreadCount = await prisma.notification.count({
+            where: { userId, isRead: false }
+        });
+
+        res.json({ unreadCount });
+    } catch (error) {
+        console.error('[NotificationRoutes] Get unread count error:', error);
+        res.status(500).json({ message: 'Failed to get unread count' });
+    }
+});
+
+// Mark notification as read
+router.put('/:id/read', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const { id } = req.params;
+
+        const notification = await prisma.notification.findFirst({
+            where: { id: Number(id), userId }
+        });
+
+        if (!notification) {
+            return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        const updated = await prisma.notification.update({
+            where: { id: Number(id) },
+            data: {
+                isRead: true,
+                readAt: new Date()
+            }
+        });
+
+        res.json(updated);
+    } catch (error) {
+        console.error('[NotificationRoutes] Mark as read error:', error);
+        res.status(500).json({ message: 'Failed to mark as read' });
+    }
+});
+
+// Mark all notifications as read
+router.put('/mark-all-read', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        await prisma.notification.updateMany({
+            where: { userId, isRead: false },
+            data: {
+                isRead: true,
+                readAt: new Date()
+            }
+        });
+
+        res.json({ message: 'All notifications marked as read' });
+    } catch (error) {
+        console.error('[NotificationRoutes] Mark all read error:', error);
+        res.status(500).json({ message: 'Failed to mark all as read' });
+    }
+});
+
+// Delete notification
+router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const { id } = req.params;
+
+        const notification = await prisma.notification.findFirst({
+            where: { id: Number(id), userId }
+        });
+
+        if (!notification) {
+            return res.status(404).json({ message: 'Notification not found' });
+        }
+
+        await prisma.notification.delete({
+            where: { id: Number(id) }
+        });
+
+        res.json({ message: 'Notification deleted' });
+    } catch (error) {
+        console.error('[NotificationRoutes] Delete error:', error);
+        res.status(500).json({ message: 'Failed to delete notification' });
+    }
+});
+
+// Delete all read notifications
+router.delete('/delete-read', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        await prisma.notification.deleteMany({
+            where: { userId, isRead: true }
+        });
+
+        res.json({ message: 'All read notifications deleted' });
+    } catch (error) {
+        console.error('[NotificationRoutes] Delete read error:', error);
+        res.status(500).json({ message: 'Failed to delete read notifications' });
+    }
+});
+
 export default router;

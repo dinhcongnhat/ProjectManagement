@@ -7,12 +7,12 @@ const prisma = new PrismaClient();
 export const getActivities = async (req: Request, res: Response): Promise<void> => {
     try {
         const { projectId } = req.params;
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = parseInt(req.query.limit as string) || 50;
+        const page = parseInt(req.query.page as string || '1');
+        const limit = parseInt(req.query.limit as string || '50');
         const skip = (page - 1) * limit;
 
         const activities = await prisma.projectActivity.findMany({
-            where: { projectId: parseInt(projectId) },
+            where: { projectId: parseInt(projectId || '0') },
             include: {
                 user: {
                     select: { id: true, name: true, role: true }
@@ -24,7 +24,7 @@ export const getActivities = async (req: Request, res: Response): Promise<void> 
         });
 
         const total = await prisma.projectActivity.count({
-            where: { projectId: parseInt(projectId) }
+            where: { projectId: parseInt(projectId || '0') }
         });
 
         res.json({
@@ -55,9 +55,9 @@ export const createActivity = async (
         await prisma.projectActivity.create({
             data: {
                 action,
-                fieldName,
-                oldValue,
-                newValue,
+                fieldName: fieldName ?? null,
+                oldValue: oldValue ?? null,
+                newValue: newValue ?? null,
                 projectId,
                 userId
             }

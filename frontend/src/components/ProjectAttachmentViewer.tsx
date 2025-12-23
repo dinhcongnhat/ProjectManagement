@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Loader2, FileText, AlertCircle } from 'lucide-react';
+import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../config/api';
 
 interface ProjectAttachmentViewerProps {
@@ -156,55 +156,48 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
     }, [attachmentId, fileName, token]);
 
     return (
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full h-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col">
-                {/* Header */}
-                <div className="flex items-center justify-between p-3 sm:p-4 border-b border-gray-200 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shrink-0">
-                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                        <FileText size={20} className="shrink-0" />
-                        <span className="font-medium truncate text-sm sm:text-base">{fileName}</span>
+        <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
+            {/* Close button - floating on top right */}
+            <button
+                onClick={onClose}
+                className="absolute top-2 right-2 z-[10000] p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-lg"
+                title="Đóng (ESC)"
+            >
+                <X size={20} />
+            </button>
+
+            {/* OnlyOffice Editor - Full screen */}
+            <div className="flex-1 relative">
+                {loading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="text-center">
+                            <Loader2 size={48} className="animate-spin text-blue-500 mx-auto mb-4" />
+                            <p className="text-gray-300 font-medium">Đang tải tài liệu...</p>
+                            <p className="text-gray-500 text-sm mt-1">{fileName}</p>
+                        </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-white/20 rounded-lg transition-colors shrink-0"
-                        title="Đóng"
-                    >
-                        <X size={20} />
-                    </button>
-                </div>
+                )}
 
-                {/* Content */}
-                <div className="flex-1 relative min-h-0">
-                    {loading && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                            <div className="text-center">
-                                <Loader2 size={40} className="animate-spin text-blue-600 mx-auto mb-3" />
-                                <p className="text-gray-600">Đang tải tài liệu...</p>
-                            </div>
+                {error && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="text-center p-6 max-w-md">
+                            <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+                            <p className="text-red-400 font-medium mb-2">{error}</p>
+                            <button
+                                onClick={onClose}
+                                className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                            >
+                                Đóng
+                            </button>
                         </div>
-                    )}
+                    </div>
+                )}
 
-                    {error && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-                            <div className="text-center p-6">
-                                <AlertCircle size={48} className="text-red-500 mx-auto mb-3" />
-                                <p className="text-red-600 font-medium">{error}</p>
-                                <button
-                                    onClick={onClose}
-                                    className="mt-4 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-                                >
-                                    Đóng
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div
-                        ref={editorRef}
-                        className="w-full h-full"
-                        style={{ minHeight: '500px' }}
-                    />
-                </div>
+                <div
+                    ref={editorRef}
+                    className="w-full h-full"
+                    style={{ minHeight: '100vh' }}
+                />
             </div>
         </div>
     );

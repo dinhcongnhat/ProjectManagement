@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Loader2, FileText, AlertCircle } from 'lucide-react';
+import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../config/api';
 
 interface OnlyOfficeViewerProps {
@@ -29,12 +29,12 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     if (window._onlyofficeScriptLoading) {
         return window._onlyofficeScriptLoading;
     }
-    
+
     // Already loaded
     if (window.DocsAPI) {
         return Promise.resolve();
     }
-    
+
     // Start loading
     window._onlyofficeScriptLoading = new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -47,7 +47,7 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
         };
         document.body.appendChild(script);
     });
-    
+
     return window._onlyofficeScriptLoading;
 };
 
@@ -62,14 +62,14 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
     useEffect(() => {
         // Push a new state when viewer opens
         window.history.pushState({ onlyofficeViewer: true }, '');
-        
+
         const handlePopState = () => {
             // When user clicks back button, close the viewer
             onClose();
         };
-        
+
         window.addEventListener('popstate', handlePopState);
-        
+
         return () => {
             window.removeEventListener('popstate', handlePopState);
         };
@@ -83,13 +83,13 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
                 const checkResponse = await fetch(`${API_URL}/onlyoffice/check/${projectId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                
+
                 if (!checkResponse.ok) {
                     throw new Error('Không thể kiểm tra file');
                 }
-                
+
                 const checkData = await checkResponse.json();
-                
+
                 if (!checkData.supported) {
                     throw new Error('File này không được hỗ trợ bởi OnlyOffice');
                 }
@@ -133,7 +133,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
                 }
 
                 const data = await response.json();
-                
+
                 // Add token to config with mobile optimizations
                 const configWithToken = {
                     ...data.config,
@@ -163,7 +163,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
                 if (editorRef.current && window.DocsAPI) {
                     editorInstanceRef.current = new window.DocsAPI.DocEditor('onlyoffice-editor', configWithToken);
                 }
-                
+
                 setLoading(false);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Đã xảy ra lỗi');
@@ -175,44 +175,35 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
     }, [scriptLoaded, projectId, token]);
 
     return (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-1.5 bg-white border-b shadow-sm">
-                <div className="flex items-center gap-2">
-                    <FileText className="text-blue-600" size={12} />
-                    <span className="font-medium text-gray-800 text-sm">Xem tài liệu</span>
-                </div>
-                <button
-                    onClick={onClose}
-                    className="p-1 hover:bg-gray-100 rounded transition-colors"
-                    title="Đóng"
-                >
-                    <X size={15} className="text-gray-600" />
-                </button>
-            </div>
+        <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
+            {/* Close button - floating on top right */}
+            <button
+                onClick={onClose}
+                className="absolute top-2 right-2 z-[10000] p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-lg"
+                title="Đóng (ESC)"
+            >
+                <X size={20} />
+            </button>
 
-            {/* Editor Container */}
-            <div className="flex-1 relative bg-gray-100">
+            {/* Editor Container - Full screen */}
+            <div className="flex-1 relative">
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white">
-                        <div className="flex flex-col items-center gap-4">
-                            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                            <p className="text-gray-600 font-medium">Đang tải tài liệu...</p>
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="text-center">
+                            <Loader2 size={48} className="animate-spin text-blue-500 mx-auto mb-4" />
+                            <p className="text-gray-300 font-medium">Đang tải tài liệu...</p>
                         </div>
                     </div>
                 )}
 
                 {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white">
-                        <div className="flex flex-col items-center gap-4 max-w-md text-center p-6">
-                            <div className="p-4 bg-red-100 rounded-full">
-                                <AlertCircle className="w-12 h-12 text-red-600" />
-                            </div>
-                            <h3 className="text-xl font-semibold text-gray-800">Không thể mở tài liệu</h3>
-                            <p className="text-gray-600">{error}</p>
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="text-center p-6 max-w-md">
+                            <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
+                            <p className="text-red-400 font-medium mb-2">{error}</p>
                             <button
                                 onClick={onClose}
-                                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                                className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
                             >
                                 Đóng
                             </button>
@@ -220,11 +211,11 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
                     </div>
                 )}
 
-                <div 
-                    id="onlyoffice-editor" 
+                <div
+                    id="onlyoffice-editor"
                     ref={editorRef}
                     className="w-full h-full"
-                    style={{ display: loading || error ? 'none' : 'block' }}
+                    style={{ display: loading || error ? 'none' : 'block', minHeight: '100vh' }}
                 />
             </div>
         </div>

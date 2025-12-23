@@ -17,6 +17,7 @@ interface ParentProject {
     id: number;
     code: string;
     name: string;
+    children?: Array<{ id: number }>;
 }
 
 const CreateProject = () => {
@@ -31,20 +32,22 @@ const CreateProject = () => {
     const [isCreating, setIsCreating] = useState(false); // Loading state for creating project
 
     const [formData, setFormData] = useState({
-        code: '',
+        codeNumber: '',  // Chỉ nhập số phần sau tiền tố
         name: '',
+        investor: '',    // Chủ đầu tư
         startDate: '',
         endDate: '',
         duration: '',
         group: '',
         value: '',
-        progressMethod: 'Theo bình quân % tiến độ các công việc thuộc dự án',
         managerId: '',
         implementerIds: [] as string[],
-        followerIds: [] as string[],
+        cooperatorIds: [] as string[],  // Phối hợp thực hiện
         description: '',
         parentId: parentIdParam || ''
     });
+
+    const CODE_PREFIX = 'DA2026';  // Tiền tố cố định
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
     // Upload Progress State
@@ -84,7 +87,12 @@ const CreateProject = () => {
                 });
                 if (response.ok) {
                     const data = await response.json();
-                    setParentProject({ id: data.id, code: data.code, name: data.name });
+                    setParentProject({
+                        id: data.id,
+                        code: data.code,
+                        name: data.name,
+                        children: data.children || []
+                    });
                 }
             } catch (error) {
                 console.error('Error fetching parent project:', error);
@@ -125,7 +133,7 @@ const CreateProject = () => {
         }
     };
 
-    const handleMultiSelectChange = (name: 'implementerIds' | 'followerIds', userId: string) => {
+    const handleMultiSelectChange = (name: 'implementerIds' | 'cooperatorIds', userId: string) => {
         setFormData(prev => {
             const currentIds = prev[name];
             if (currentIds.includes(userId)) {
@@ -138,8 +146,13 @@ const CreateProject = () => {
 
     const handleSubmit = async () => {
         // Validate required fields
-        if (!formData.code.trim() || !formData.name.trim() || !formData.managerId) {
-            showError('Vui lòng điền đầy đủ các trường bắt buộc: Mã dự án, Tên dự án và Quản trị dự án');
+        // Dự án con không cần mã dự án
+        if (!parentProject && !formData.codeNumber.trim()) {
+            showError('Vui lòng nhập mã dự án');
+            return;
+        }
+        if (!formData.name.trim() || !formData.managerId) {
+            showError('Vui lòng điền đầy đủ các trường bắt buộc: Tên và Quản trị');
             return;
         }
 
@@ -161,100 +174,122 @@ const CreateProject = () => {
         }
 
         try {
-            const formDataToSend = new FormData();
-
-            // Append all text fields
-            Object.entries(formData).forEach(([key, value]) => {
-                if (key === 'implementerIds' || key === 'followerIds') {
-                    formDataToSend.append(key, JSON.stringify(value));
-                } else {
-                    formDataToSend.append(key, value as string);
-                }
-            });
-
-            // Append files if selected (multiple files support)
-            if (selectedFiles.length > 0) {
-                selectedFiles.forEach(file => {
-                    formDataToSend.append('files', file);
-                });
-            }
-
-            // Use XMLHttpRequest for progress tracking
-            const xhr = new XMLHttpRequest();
-
-            const uploadPromise = new Promise<{ ok: boolean, data?: any, message?: string }>((resolve, reject) => {
-                xhr.upload.addEventListener('progress', (event) => {
-                    if (event.lengthComputable) {
-                        const percentComplete = Math.round((event.loaded / event.total) * 100);
-                        setUploadProgress(percentComplete);
-
-                        // Update all files progress (simplified - all files progress together)
-                        setUploadFiles(prev => prev.map(f => ({
-                            ...f,
-                            progress: percentComplete,
-                            status: percentComplete < 100 ? 'uploading' : 'completed'
-                        })));
-                    }
-                });
-
-                xhr.addEventListener('load', () => {
-                    try {
-                        const response = JSON.parse(xhr.responseText);
-                        if (xhr.status >= 200 && xhr.status < 300) {
-                            resolve({ ok: true, data: response });
-                        } else {
-                            resolve({ ok: false, message: response.message || 'Lỗi không xác định' });
-                        }
-                    } catch {
-                        resolve({ ok: false, message: 'Lỗi phản hồi từ server' });
-                    }
-                });
-
-                xhr.addEventListener('error', () => {
-                    reject(new Error('Lỗi kết nối mạng'));
-                });
-
-                xhr.open('POST', `${API_URL}/projects`);
-                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-                xhr.send(formDataToSend);
-            });
-
-            const result = await uploadPromise;
-
-            if (result.ok) {
-                setUploadStatus('completed');
-                setUploadFiles(prev => prev.map(f => ({ ...f, status: 'completed', progress: 100 })));
-
-                // Wait a moment to show completion, then navigate
-                setTimeout(() => {
-                    setShowUploadDialog(false);
-                    showSuccess('Dự án đã được tạo thành công!');
-                    if (parentIdParam) {
-                        navigate(`/admin/projects/${parentIdParam}`);
-                    } else {
-                        navigate('/admin/projects');
-                    }
-                }, 1000);
+            // Step 1: Tạo project trước (không có file)
+            // Tạo mã dự án: nếu là dự án con thì dùng mã dự án cha làm tiền tố
+            let projectCode = '';
+            if (parentProject) {
+                // Dự án con: CODE dự án cha + tên công việc viết tắt hoặc số thứ tự
+                const childCount = parentProject.children?.length || 0;
+                projectCode = `${parentProject.code}.${String(childCount + 1).padStart(2, '0')}`;
             } else {
-                setUploadStatus('error');
-                setUploadFiles(prev => prev.map(f => ({ ...f, status: 'error', error: result.message })));
-                showError(`Lỗi: ${result.message}`);
+                // Dự án mới: DA2026 - XX
+                projectCode = CODE_PREFIX + ' - ' + formData.codeNumber;
             }
-        } catch (error) {
+
+            const projectData: Record<string, any> = {
+                code: projectCode,
+                name: formData.name,
+                investor: parentProject ? '' : formData.investor,
+                startDate: formData.startDate,
+                endDate: formData.endDate,
+                duration: parentProject ? '' : formData.duration,
+                group: parentProject ? '' : formData.group,
+                value: parentProject ? '' : formData.value,
+                managerId: formData.managerId,
+                description: formData.description,
+                parentId: formData.parentId,
+                implementerIds: JSON.stringify(formData.implementerIds),
+                cooperatorIds: JSON.stringify(formData.cooperatorIds),
+            };
+
+            // Create project first
+            const createResponse = await fetch(`${API_URL}/projects`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(projectData)
+            });
+
+            if (!createResponse.ok) {
+                const errorData = await createResponse.json();
+                throw new Error(errorData.message || 'Không thể tạo dự án');
+            }
+
+            const createdProject = await createResponse.json();
+
+            // Step 2: Upload files if any
+            if (selectedFiles.length > 0) {
+                const filesFormData = new FormData();
+                selectedFiles.forEach(file => {
+                    filesFormData.append('files', file);
+                });
+
+                const xhr = new XMLHttpRequest();
+
+                await new Promise<void>((resolve, reject) => {
+                    xhr.upload.addEventListener('progress', (event) => {
+                        if (event.lengthComputable) {
+                            const percentComplete = Math.round((event.loaded / event.total) * 100);
+                            setUploadProgress(percentComplete);
+                            setUploadFiles(prev => prev.map(f => ({
+                                ...f,
+                                progress: percentComplete,
+                                status: percentComplete < 100 ? 'uploading' : 'completed'
+                            })));
+                        }
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve();
+                        } else {
+                            console.error('Upload attachments failed but project was created');
+                            resolve(); // Still resolve since project is created
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => {
+                        console.error('Upload error');
+                        resolve(); // Still resolve since project is created
+                    });
+
+                    xhr.open('POST', `${API_URL}/projects/${createdProject.id}/attachments`);
+                    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                    xhr.send(filesFormData);
+                });
+            }
+
+            // Success  
+            setUploadStatus('completed');
+            setUploadFiles(prev => prev.map(f => ({ ...f, status: 'completed', progress: 100 })));
+
+            setTimeout(() => {
+                setShowUploadDialog(false);
+                showSuccess('Dự án đã được tạo thành công!');
+                if (parentIdParam) {
+                    navigate(`/admin/projects/${parentIdParam}`);
+                } else {
+                    navigate('/admin/projects');
+                }
+            }, 1000);
+
+        } catch (error: any) {
             console.error('Error creating project:', error);
             setUploadStatus('error');
             setUploadFiles(prev => prev.map(f => ({
                 ...f,
                 status: 'error',
-                error: error instanceof Error ? error.message : 'Có lỗi xảy ra'
+                error: error.message || 'Lỗi không xác định'
             })));
-            showError('Có lỗi xảy ra khi tạo dự án');
+            showError(`Lỗi: ${error.message || 'Lỗi không xác định'}`);
         } finally {
             setIsCreating(false);
         }
     };
 
-    const UserMultiSelect = ({ label, name, selectedIds }: { label: string, name: 'implementerIds' | 'followerIds', selectedIds: string[] }) => {
+    const UserMultiSelect = ({ label, name, selectedIds }: { label: string, name: 'implementerIds' | 'cooperatorIds', selectedIds: string[] }) => {
         const [isOpen, setIsOpen] = useState(false);
         const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -322,100 +357,32 @@ const CreateProject = () => {
         );
     };
 
-    const ProgressMethodSelector = () => {
-        const [isOpen, setIsOpen] = useState(false);
+    const FileAttachment = () => {
+        const fileInputRef = useRef<HTMLInputElement>(null);
+        const [showFolderModal, setShowFolderModal] = useState(false);
+        const [userFiles, setUserFiles] = useState<Array<{ id: number; name: string; fileSize: number; minioPath: string }>>([]);
+        const [loadingFiles, setLoadingFiles] = useState(false);
+        const [showDropdown, setShowDropdown] = useState(false);
         const dropdownRef = useRef<HTMLDivElement>(null);
 
-        const options = [
-            {
-                value: 'Theo bình quân % tiến độ các công việc thuộc dự án',
-                label: 'Theo bình quân % tiến độ các công việc thuộc dự án',
-                description: 'Ví dụ dự án gồm 2 công việc A và B.\nCông việc A tiến độ 40%, công việc B tiến độ 60%.\nTiến độ dự án là (60+40)/2 = 50%'
-            },
-            {
-                value: 'Theo tỷ trọng ngày thực hiện',
-                label: 'Theo tỷ trọng ngày thực hiện',
-                description: 'Ví dụ dự án gồm 2 công việc A và B.\nCông việc A yêu cầu thực hiện trong 4 ngày, tiến độ 40%.\nCông việc B yêu cầu thực hiện trong 6 ngày, tiến độ 50%.\nTiến độ dự án là ((4*40 + 6*50 )/(4*100 + 6*100)) * 100 = 46%'
-            },
-            {
-                value: 'Theo tỷ trọng công việc',
-                label: 'Theo tỷ trọng công việc',
-                description: 'Ví dụ Dự án gồm 2 công việc A và B.\nCông việc A có Tỷ trọng là 40, tiến độ là 50%\nCông việc B có Tỷ trọng là 30, tiến độ là 40%\nTiến độ của dự án là [(40x50)+(30x40)]/(40+50)=35%'
-            }
-        ];
-
+        // Close dropdown when clicking outside
         useEffect(() => {
             const handleClickOutside = (event: MouseEvent) => {
                 if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                    setIsOpen(false);
+                    setShowDropdown(false);
                 }
             };
             document.addEventListener('mousedown', handleClickOutside);
             return () => document.removeEventListener('mousedown', handleClickOutside);
         }, []);
 
-        return (
-            <div className="space-y-2" ref={dropdownRef}>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phương pháp tính tiến độ <span className="text-red-500">*</span></label>
-                <div className="relative">
-                    <div
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg cursor-pointer bg-white flex justify-between items-center"
-                        onClick={() => setIsOpen(!isOpen)}
-                    >
-                        <span className="text-gray-700">{formData.progressMethod}</span>
-                        <ChevronDown size={16} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                    </div>
-
-                    {isOpen && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg overflow-hidden">
-                            {options.map((option) => (
-                                <div
-                                    key={option.value}
-                                    className={`p-4 cursor-pointer hover:bg-gray-50 border-b last:border-b-0 ${formData.progressMethod === option.value ? 'bg-gray-50' : ''}`}
-                                    onClick={() => {
-                                        setFormData(prev => ({ ...prev, progressMethod: option.value }));
-                                        setIsOpen(false);
-                                    }}
-                                >
-                                    <div className="font-medium text-gray-900 mb-1">{option.label}</div>
-                                    <div className="text-sm text-gray-500 whitespace-pre-line italic">{option.description}</div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
-
-    const FileAttachment = () => {
-        const fileInputRef = useRef<HTMLInputElement>(null);
-        const [attachmentType, setAttachmentType] = useState<'url' | 'file'>('file');
-        const [urlInput, setUrlInput] = useState('');
-        const [urlList, setUrlList] = useState<string[]>([]);
-
         const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             if (e.target.files && e.target.files.length > 0) {
                 const newFiles = Array.from(e.target.files);
                 setSelectedFiles(prev => [...prev, ...newFiles]);
             }
-            // Reset input để có thể chọn lại cùng file
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
-            }
-        };
-
-        const handleDragOver = (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-        };
-
-        const handleDrop = (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                const newFiles = Array.from(e.dataTransfer.files);
-                setSelectedFiles(prev => [...prev, ...newFiles]);
             }
         };
 
@@ -429,15 +396,78 @@ const CreateProject = () => {
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         };
 
-        const handleAddUrl = () => {
-            if (urlInput.trim() && (urlInput.startsWith('http://') || urlInput.startsWith('https://'))) {
-                setUrlList(prev => [...prev, urlInput.trim()]);
-                setUrlInput('');
+        const [userFolders, setUserFolders] = useState<Array<{ id: number; name: string }>>([]);
+        const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
+        const [breadcrumbs, setBreadcrumbs] = useState<Array<{ id: number | null; name: string }>>([]);
+
+        const fetchUserFiles = async (folderId: number | null = null) => {
+            setLoadingFiles(true);
+            try {
+                const url = folderId
+                    ? `${API_URL}/folders?parentId=${folderId}`
+                    : `${API_URL}/folders`;
+                const response = await fetch(url, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setUserFiles(data.files || []);
+                    setUserFolders(data.folders || []);
+                    setCurrentFolderId(folderId);
+                    // Update breadcrumbs
+                    if (folderId === null) {
+                        setBreadcrumbs([]);
+                    } else if (data.breadcrumbs) {
+                        setBreadcrumbs(data.breadcrumbs);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching user files:', error);
+            } finally {
+                setLoadingFiles(false);
             }
         };
 
-        const removeUrl = (index: number) => {
-            setUrlList(prev => prev.filter((_, i) => i !== index));
+        const handleOpenFolderPicker = () => {
+            setShowDropdown(false);
+            setCurrentFolderId(null);
+            setBreadcrumbs([]);
+            fetchUserFiles(null);
+            setShowFolderModal(true);
+        };
+
+        const handleSelectFolderFile = async (file: { id: number; name: string; fileSize: number; minioPath: string }) => {
+            try {
+                // Get presigned URL and download file
+                const urlResponse = await fetch(`${API_URL}/folders/files/${file.id}/url`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (urlResponse.ok) {
+                    const { url } = await urlResponse.json();
+                    const fileResponse = await fetch(url);
+                    if (fileResponse.ok) {
+                        const blob = await fileResponse.blob();
+                        const newFile = new File([blob], file.name, { type: blob.type || 'application/octet-stream' });
+                        setSelectedFiles(prev => [...prev, newFile]);
+                        setShowFolderModal(false);
+                    }
+                }
+            } catch (error) {
+                console.error('Error downloading file:', error);
+            }
+        };
+
+        const handleNavigateFolder = (folderId: number) => {
+            fetchUserFiles(folderId);
+        };
+
+        const handleGoBack = () => {
+            if (breadcrumbs.length > 1) {
+                const parentFolder = breadcrumbs[breadcrumbs.length - 2];
+                fetchUserFiles(parentFolder.id);
+            } else {
+                fetchUserFiles(null);
+            }
         };
 
         return (
@@ -446,146 +476,205 @@ const CreateProject = () => {
                     Đính kèm
                 </label>
 
-                {/* Tab selection */}
-                <div className="flex rounded-lg bg-gray-100 p-1">
+                {/* Dropdown to select upload method */}
+                <div className="relative" ref={dropdownRef}>
                     <button
                         type="button"
-                        onClick={() => setAttachmentType('file')}
-                        className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${attachmentType === 'file'
-                                ? 'bg-white text-blue-600 shadow-sm'
-                                : 'text-gray-600 hover:text-gray-800'
-                            }`}
+                        onClick={() => setShowDropdown(!showDropdown)}
+                        className="w-full flex items-center justify-between px-4 py-3 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50/30 hover:bg-blue-50/50 transition-colors"
                     >
-                        <CloudUpload size={16} className="inline mr-2" />
-                        Tải lên file
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-500">
+                                <CloudUpload size={20} />
+                            </div>
+                            <span className="text-gray-600">Chọn phương thức đính kèm</span>
+                        </div>
+                        <ChevronDown size={20} className={`text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => setAttachmentType('url')}
-                        className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-all ${attachmentType === 'url'
-                                ? 'bg-white text-blue-600 shadow-sm'
-                                : 'text-gray-600 hover:text-gray-800'
-                            }`}
-                    >
-                        🔗 Nhập đường dẫn
-                    </button>
+
+                    {showDropdown && (
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowDropdown(false);
+                                    fileInputRef.current?.click();
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                            >
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
+                                    <CloudUpload size={20} />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-gray-800">Tải lên từ máy tính</p>
+                                    <p className="text-sm text-gray-500">Chọn tệp từ thiết bị của bạn</p>
+                                </div>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleOpenFolderPicker}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
+                            >
+                                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-green-600">
+                                    <FolderTree size={20} />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-gray-800">Chọn từ thư mục</p>
+                                    <p className="text-sm text-gray-500">Chọn tệp từ thư mục cá nhân của bạn</p>
+                                </div>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
-                {attachmentType === 'file' ? (
-                    /* File Upload Section */
-                    <div>
-                        <div
-                            className="border-2 border-dashed border-blue-200 rounded-lg p-6 flex flex-col items-center justify-center gap-3 bg-blue-50/30 hover:bg-blue-50/50 transition-colors"
-                            onDragOver={handleDragOver}
-                            onDrop={handleDrop}
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    aria-label="Chọn tệp đính kèm"
+                    onChange={handleFileChange}
+                    multiple
+                />
+
+                {/* Display selected files */}
+                {selectedFiles.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        <div className="text-xs text-gray-500">{selectedFiles.length} tệp đã chọn</div>
+                        {selectedFiles.map((file, index) => (
+                            <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
+                                <span className="flex-1 truncate">{file.name}</span>
+                                <span className="text-gray-400 text-xs shrink-0">{formatFileSize(file.size)}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => removeFile(index)}
+                                    className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                                    aria-label="Xóa tệp"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        ))}
+                        <button
+                            type="button"
+                            onClick={() => setSelectedFiles([])}
+                            className="text-xs text-red-500 hover:text-red-700"
                         >
-                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-500">
-                                <CloudUpload size={24} />
-                            </div>
-                            <p className="text-gray-600 text-sm text-center">Kéo thả file vào đây hoặc</p>
-                            <button
-                                type="button"
-                                onClick={() => fileInputRef.current?.click()}
-                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2 font-medium text-sm transition-colors"
-                            >
-                                <CloudUpload size={18} />
-                                <span>Chọn file</span>
-                            </button>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                className="hidden"
-                                aria-label="Chọn tệp đính kèm"
-                                onChange={handleFileChange}
-                                multiple
-                            />
-                        </div>
-
-                        {/* Display selected files */}
-                        {selectedFiles.length > 0 && (
-                            <div className="mt-3 space-y-2">
-                                <div className="text-xs text-gray-500">{selectedFiles.length} tệp đã chọn</div>
-                                {selectedFiles.map((file, index) => (
-                                    <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
-                                        <span className="flex-1 truncate">{file.name}</span>
-                                        <span className="text-gray-400 text-xs shrink-0">{formatFileSize(file.size)}</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => removeFile(index)}
-                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
-                                            aria-label="Xóa tệp"
-                                        >
-                                            <X size={16} />
-                                        </button>
-                                    </div>
-                                ))}
-                                <button
-                                    type="button"
-                                    onClick={() => setSelectedFiles([])}
-                                    className="text-xs text-red-500 hover:text-red-700"
-                                >
-                                    Xóa tất cả
-                                </button>
-                            </div>
-                        )}
+                            Xóa tất cả
+                        </button>
                     </div>
-                ) : (
-                    /* URL Input Section */
-                    <div>
-                        <div className="flex gap-2">
-                            <input
-                                type="url"
-                                value={urlInput}
-                                onChange={(e) => setUrlInput(e.target.value)}
-                                placeholder="Nhập URL (https://...)"
-                                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddUrl())}
-                            />
-                            <button
-                                type="button"
-                                onClick={handleAddUrl}
-                                disabled={!urlInput.trim() || (!urlInput.startsWith('http://') && !urlInput.startsWith('https://'))}
-                                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm transition-colors"
-                            >
-                                Thêm
-                            </button>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-2">Nhập đường dẫn URL bắt đầu bằng http:// hoặc https://</p>
+                )}
 
-                        {/* Display URL list */}
-                        {urlList.length > 0 && (
-                            <div className="mt-3 space-y-2">
-                                <div className="text-xs text-gray-500">{urlList.length} đường dẫn</div>
-                                {urlList.map((url, index) => (
-                                    <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
-                                        <span className="text-blue-500">🔗</span>
-                                        <a
-                                            href={url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex-1 truncate text-blue-600 hover:underline"
-                                        >
-                                            {url}
-                                        </a>
+                {/* Folder Picker Modal */}
+                {showFolderModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
+                            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                                <div className="flex items-center gap-2">
+                                    {currentFolderId !== null && (
                                         <button
                                             type="button"
-                                            onClick={() => removeUrl(index)}
-                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
-                                            aria-label="Xóa URL"
+                                            onClick={handleGoBack}
+                                            className="p-1 hover:bg-gray-200 rounded-lg transition-colors"
                                         >
-                                            <X size={16} />
+                                            <ArrowLeft size={18} className="text-gray-600" />
                                         </button>
-                                    </div>
-                                ))}
+                                    )}
+                                    <h3 className="font-semibold text-gray-900">
+                                        {breadcrumbs.length > 0 ? breadcrumbs[breadcrumbs.length - 1].name : 'Thư mục của tôi'}
+                                    </h3>
+                                </div>
                                 <button
                                     type="button"
-                                    onClick={() => setUrlList([])}
-                                    className="text-xs text-red-500 hover:text-red-700"
+                                    onClick={() => setShowFolderModal(false)}
+                                    className="p-1 hover:bg-gray-200 rounded-lg transition-colors"
                                 >
-                                    Xóa tất cả
+                                    <X size={20} className="text-gray-500" />
                                 </button>
                             </div>
-                        )}
+
+                            {/* Breadcrumbs */}
+                            {breadcrumbs.length > 0 && (
+                                <div className="px-4 py-2 bg-gray-100 flex items-center gap-1 text-sm overflow-x-auto">
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchUserFiles(null)}
+                                        className="text-blue-600 hover:underline shrink-0"
+                                    >
+                                        Thư mục
+                                    </button>
+                                    {breadcrumbs.map((bc, index) => (
+                                        <span key={bc.id} className="flex items-center gap-1">
+                                            <span className="text-gray-400">/</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => fetchUserFiles(bc.id)}
+                                                className={`hover:underline shrink-0 ${index === breadcrumbs.length - 1 ? 'text-gray-700 font-medium' : 'text-blue-600'}`}
+                                            >
+                                                {bc.name}
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="p-4 overflow-y-auto max-h-96">
+                                {loadingFiles ? (
+                                    <div className="flex items-center justify-center py-12 text-gray-500">
+                                        <Loader2 size={24} className="animate-spin mr-2" />
+                                        <span>Đang tải danh sách...</span>
+                                    </div>
+                                ) : userFolders.length === 0 && userFiles.length === 0 ? (
+                                    <div className="text-center py-12 text-gray-500">
+                                        <FolderTree size={48} className="mx-auto mb-3 text-gray-400" />
+                                        <p className="font-medium">Thư mục này đang trống</p>
+                                        <p className="text-sm mt-1">Hãy vào "Thư mục" để tải lên file trước</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {/* Folders first */}
+                                        {userFolders.map((folder) => (
+                                            <div
+                                                key={`folder-${folder.id}`}
+                                                onClick={() => handleNavigateFolder(folder.id)}
+                                                className="flex items-center gap-3 px-3 py-3 hover:bg-yellow-50 cursor-pointer rounded-lg border transition-colors"
+                                            >
+                                                <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center text-yellow-600">
+                                                    📁
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-gray-800 truncate">{folder.name}</p>
+                                                    <p className="text-xs text-gray-500">Thư mục</p>
+                                                </div>
+                                                <ChevronDown size={16} className="text-gray-400 -rotate-90" />
+                                            </div>
+                                        ))}
+
+                                        {/* Files */}
+                                        {userFiles.map((file) => (
+                                            <div
+                                                key={`file-${file.id}`}
+                                                onClick={() => handleSelectFolderFile(file)}
+                                                className="flex items-center gap-3 px-3 py-3 hover:bg-blue-50 cursor-pointer rounded-lg border transition-colors"
+                                            >
+                                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
+                                                    📄
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-gray-800 truncate">{file.name}</p>
+                                                    <p className="text-xs text-gray-500">{formatFileSize(file.fileSize)}</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-medium"
+                                                >
+                                                    Chọn
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -593,24 +682,27 @@ const CreateProject = () => {
     };
 
     return (
-        <div className="space-y-4 lg:space-y-6">
+        <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-start sm:items-center justify-between gap-3">
-                <div className="flex items-start sm:items-center gap-2 lg:gap-3 flex-1 min-w-0">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
                     {parentProject && (
                         <Link
                             to={`/admin/projects/${parentProject.id}`}
-                            className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors touch-target shrink-0"
+                            className="p-2.5 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-600 transition-colors shadow-lg shadow-gray-200/50 shrink-0"
                         >
                             <ArrowLeft size={20} />
                         </Link>
                     )}
                     <div className="flex-1 min-w-0">
-                        <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 truncate">
+                        <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 flex items-center gap-3">
+                            <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl text-white shadow-lg shadow-blue-500/30">
+                                <FolderTree size={24} />
+                            </div>
                             {parentProject ? 'Tạo dự án con' : 'Tạo dự án mới'}
                         </h2>
                         {parentProject && (
-                            <p className="text-xs lg:text-sm text-gray-500 mt-1 truncate">
+                            <p className="text-sm text-gray-500 mt-2">
                                 Dự án cha: <span className="font-medium text-blue-600">{parentProject.name}</span> ({parentProject.code})
                             </p>
                         )}
@@ -620,47 +712,77 @@ const CreateProject = () => {
 
             {/* Parent Project Info Banner */}
             {parentProject && (
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 lg:p-4 flex items-center gap-3">
-                    <div className="p-2 bg-blue-600 text-white rounded-lg shrink-0">
-                        <FolderTree size={18} className="lg:w-5 lg:h-5" />
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 lg:p-5 flex items-center gap-4">
+                    <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-500/30 shrink-0">
+                        <FolderTree size={22} />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-xs lg:text-sm font-medium text-blue-800">Đang tạo dự án con cho:</p>
-                        <p className="text-blue-600 font-semibold text-sm lg:text-base truncate">{parentProject.name}</p>
+                        <p className="text-sm font-medium text-blue-700">Đang tạo dự án con cho:</p>
+                        <p className="text-blue-800 font-bold text-lg truncate">{parentProject.name}</p>
                     </div>
                 </div>
             )}
 
             {/* Form */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 lg:p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 p-5 lg:p-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
                     {/* Basic Info */}
-                    <div className="space-y-4">
-                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 border-b pb-2">Thông tin chung</h3>
+                    <div className="space-y-5">
+                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 pb-3 border-b border-gray-100">
+                            <span className="w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-full"></span>
+                            {parentProject ? 'Thông tin công việc' : 'Thông tin chung'}
+                        </h3>
+
+                        {/* Mã dự án - Chỉ hiển thị khi tạo dự án mới (không có parentProject) */}
+                        {!parentProject && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Mã dự án <span className="text-red-500">*</span></label>
+                                <div className="flex">
+                                    <span className="inline-flex items-center px-3 py-2.5 border border-r-0 border-gray-300 bg-gray-100 text-gray-600 rounded-l-lg font-medium text-base">
+                                        {CODE_PREFIX} -
+                                    </span>
+                                    <input
+                                        type="text"
+                                        name="codeNumber"
+                                        value={formData.codeNumber}
+                                        onChange={handleChange}
+                                        className="flex-1 px-3 py-2.5 border border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                        placeholder="01, 02, 03..."
+                                        pattern="[0-9]*"
+                                    />
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">Mã đầy đủ: {CODE_PREFIX} - {formData.codeNumber || '...'}</p>
+                            </div>
+                        )}
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Mã dự án <span className="text-red-500">*</span></label>
-                            <input
-                                type="text"
-                                name="code"
-                                value={formData.code}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                                placeholder="VD: DA001"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Tên dự án <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                {parentProject ? 'Tên công việc' : 'Tên dự án'} <span className="text-red-500">*</span>
+                            </label>
                             <input
                                 type="text"
                                 name="name"
                                 value={formData.name}
                                 onChange={handleChange}
                                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                                placeholder="Nhập tên dự án"
+                                placeholder={parentProject ? 'Nhập tên công việc' : 'Nhập tên dự án'}
                             />
                         </div>
+
+                        {/* Chủ đầu tư - Chỉ hiển thị khi tạo dự án mới */}
+                        {!parentProject && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Chủ đầu tư</label>
+                                <input
+                                    type="text"
+                                    name="investor"
+                                    value={formData.investor}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    placeholder="Nhập tên chủ đầu tư"
+                                />
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-2 gap-3 lg:gap-4">
                             <div>
@@ -678,12 +800,12 @@ const CreateProject = () => {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày kết thúc</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày kết thúc dự kiến</label>
                                 <div className="relative">
                                     <input
                                         type="date"
                                         name="endDate"
-                                        title="Chọn ngày kết thúc"
+                                        title="Chọn ngày kết thúc dự kiến"
                                         value={formData.endDate}
                                         onChange={handleChange}
                                         className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
@@ -693,60 +815,70 @@ const CreateProject = () => {
                             </div>
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Thời hạn (ngày)</label>
-                            <input
-                                type="number"
-                                name="duration"
-                                title="Thời hạn dự án"
-                                placeholder="Nhập số ngày"
-                                value={formData.duration}
-                                onChange={handleChange}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                            />
-                        </div>
+                        {/* Thời hạn - Chỉ hiển thị khi tạo dự án mới */}
+                        {!parentProject && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Thời hạn (ngày)</label>
+                                <input
+                                    type="number"
+                                    name="duration"
+                                    title="Thời hạn dự án"
+                                    placeholder="Nhập số ngày"
+                                    value={formData.duration}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                />
+                            </div>
+                        )}
                     </div>
 
                     {/* Additional Info */}
                     <div className="space-y-4">
-                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 border-b pb-2">Chi tiết & Phân quyền</h3>
+                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 border-b pb-2">
+                            {parentProject ? 'Phân quyền' : 'Chi tiết & Phân quyền'}
+                        </h3>
+
+                        {/* Nhóm dự án và Giá trị hợp đồng - Chỉ hiển thị khi tạo dự án mới */}
+                        {!parentProject && (
+                            <>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Nhóm dự án</label>
+                                    <input
+                                        type="text"
+                                        name="group"
+                                        value={formData.group}
+                                        onChange={handleChange}
+                                        placeholder="Nhập nhóm dự án"
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Giá trị hợp đồng</label>
+                                    <input
+                                        type="text"
+                                        name="value"
+                                        value={formData.value}
+                                        onChange={handleChange}
+                                        placeholder="Nhập giá trị hợp đồng"
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    />
+                                </div>
+                            </>
+                        )}
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Nhóm dự án</label>
-                            <input
-                                type="text"
-                                name="group"
-                                value={formData.group}
-                                onChange={handleChange}
-                                placeholder="Nhập nhóm dự án"
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Giá trị hợp đồng</label>
-                            <input
-                                type="text"
-                                name="value"
-                                value={formData.value}
-                                onChange={handleChange}
-                                placeholder="Nhập giá trị hợp đồng"
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                            />
-                        </div>
-
-                        <ProgressMethodSelector />
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Quản trị dự án <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                {parentProject ? 'Quản trị công việc' : 'Quản trị dự án'} <span className="text-red-500">*</span>
+                            </label>
                             <select
                                 name="managerId"
-                                title="Chọn quản trị dự án"
+                                title="Chọn quản trị"
                                 value={formData.managerId}
                                 onChange={handleChange}
                                 className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white"
                             >
-                                <option value="">-- Chọn quản trị dự án --</option>
+                                <option value="">-- Chọn quản trị --</option>
                                 {users.map(user => (
                                     <option key={user.id} value={user.id}>{user.name} ({user.role})</option>
                                 ))}
@@ -754,18 +886,20 @@ const CreateProject = () => {
                         </div>
 
                         <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={formData.implementerIds} />
-                        <UserMultiSelect label="Người theo dõi" name="followerIds" selectedIds={formData.followerIds} />
+                        <UserMultiSelect label="Phối hợp thực hiện" name="cooperatorIds" selectedIds={formData.cooperatorIds} />
 
                     </div>
 
                     <div className="col-span-1 lg:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Mô tả dự án</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                            {parentProject ? 'Mô tả công việc' : 'Mô tả dự án'}
+                        </label>
                         <textarea
                             name="description"
                             value={formData.description}
                             onChange={handleChange}
                             rows={4}
-                            placeholder="Nhập mô tả dự án"
+                            placeholder={parentProject ? 'Nhập mô tả công việc' : 'Nhập mô tả dự án'}
                             className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base resize-none"
                         ></textarea>
                     </div>

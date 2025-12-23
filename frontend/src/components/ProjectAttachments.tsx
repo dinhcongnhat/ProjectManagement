@@ -273,9 +273,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const adminAttachments = attachments.filter(a => a.category === 'TaiLieuDinhKem');
     const employeeAttachments = attachments.filter(a => a.category === 'NhanVienDinhKem');
 
-    // Determine if implementer can upload (only after project completion)
-    const implementerCanUpload = isImplementer && !isAdmin && !isManager &&
-        (projectStatus === 'PENDING_APPROVAL' || projectStatus === 'COMPLETED');
+    // Determine if implementer can upload - always allowed now (removed status check)
+    const implementerCanUpload = isImplementer && !isAdmin && !isManager;
 
     const showUploadSection = canUpload || implementerCanUpload;
 

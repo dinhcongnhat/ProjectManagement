@@ -2659,62 +2659,55 @@ const ChatPopup: React.FC = () => {
         const otherStatus = getOtherUserStatus();
 
         return (
-            <div className="fixed inset-0 z-50 bg-white flex flex-col">
-                {/* Header - Clean White Design with safe area */}
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-white border-b border-gray-100 shrink-0 chat-header" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 10px)' }}>
-                    <button
-                        onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
-                        className="w-9 h-9 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors"
-                    >
-                        <ArrowLeft size={20} className="text-gray-600" />
-                    </button>
-                    <div className="relative">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden shadow-sm">
-                            {mobileActiveChat.conversation.displayAvatar ? (
-                                <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="font-semibold text-white text-sm">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
-                            )}
-                        </div>
-                        <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${otherStatus.isOnline ? 'bg-green-500' : 'bg-gray-400'} rounded-full border-2 border-white`}></div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <span className="font-semibold text-gray-800 truncate block">{mobileActiveChat.conversation.displayName}</span>
-                        <div className="flex items-center gap-1">
-                            {isTyping ? (
-                                <span className="text-xs text-blue-500 font-medium">đang soạn tin...</span>
-                            ) : (
-                                <>
-                                    {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
-                                    <span className={`text-xs ${otherStatus.isOnline ? 'text-green-600' : 'text-gray-500'}`}>
-                                        {formatLastActive(otherStatus.lastActive, otherStatus.isOnline)}
-                                    </span>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                    {/* 3 Control Buttons */}
-                    <div className="flex items-center">
+            <div className="fixed inset-0 z-50 bg-gray-50 flex flex-col">
+                {/* Header - Modern Gradient Design with safe area */}
+                <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shrink-0 shadow-lg" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 10px)' }}>
+                    <div className="flex items-center gap-3 px-3 py-3">
                         <button
                             onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
-                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500"
-                            title="Thu nhỏ"
+                            className="w-10 h-10 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl transition-colors"
                         >
-                            <Minimize2 size={18} />
+                            <ArrowLeft size={22} className="text-white" />
                         </button>
-                        <button
-                            onClick={() => { }}
-                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full transition-colors text-gray-500"
-                            title="Phóng to"
-                        >
-                            <Maximize2 size={18} />
-                        </button>
+                        <div className="relative">
+                            <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center overflow-hidden shadow-lg ring-2 ring-white/30">
+                                {mobileActiveChat.conversation.displayAvatar ? (
+                                    <img src={mobileActiveChat.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="font-bold text-white text-lg">{mobileActiveChat.conversation.displayName.charAt(0).toUpperCase()}</span>
+                                )}
+                            </div>
+                            <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 ${otherStatus.isOnline ? 'bg-green-400' : 'bg-gray-300'} rounded-full border-2 border-white shadow-sm`}></div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <span className="font-bold text-white truncate block text-base">{mobileActiveChat.conversation.displayName}</span>
+                            <div className="flex items-center gap-1.5">
+                                {isTyping ? (
+                                    <span className="text-xs text-white/80 font-medium flex items-center gap-1">
+                                        <span className="inline-flex gap-0.5">
+                                            <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                            <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                            <span className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                        </span>
+                                        đang soạn...
+                                    </span>
+                                ) : (
+                                    <>
+                                        {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>}
+                                        <span className={`text-xs ${otherStatus.isOnline ? 'text-green-300' : 'text-white/60'}`}>
+                                            {formatLastActive(otherStatus.lastActive, otherStatus.isOnline)}
+                                        </span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        {/* Control Button */}
                         <button
                             onClick={() => setMobileActiveChat(null)}
-                            className="w-8 h-8 flex items-center justify-center hover:bg-red-50 rounded-full transition-colors text-gray-500 hover:text-red-500"
+                            className="w-10 h-10 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl transition-colors"
                             title="Đóng"
                         >
-                            <X size={18} />
+                            <X size={22} className="text-white" />
                         </button>
                     </div>
                 </div>
@@ -2927,18 +2920,19 @@ const ChatPopup: React.FC = () => {
 
                 {/* Upload Progress */}
                 {progress !== undefined && (
-                    <div className="px-4 py-2 bg-blue-50 border-t">
-                        <div className="flex items-center gap-2">
-                            <div className="flex-1 h-2 bg-blue-200 rounded-full overflow-hidden">
-                                <div className="h-full bg-blue-600" style={{ width: `${progress}%` }} />
+                    <div className="px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-blue-100">
+                        <div className="flex items-center gap-3">
+                            <Loader2 size={18} className="animate-spin text-blue-600" />
+                            <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }} />
                             </div>
-                            <span className="text-sm text-blue-600">{progress}%</span>
+                            <span className="text-sm font-medium text-blue-600">{progress}%</span>
                         </div>
                     </div>
                 )}
 
-                {/* Input */}
-                <div className="p-3 border-t bg-white shrink-0 safe-area-bottom">
+                {/* Input - Modern Design */}
+                <div className="p-3 bg-white border-t border-gray-100 shrink-0 safe-area-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
                     {isRecording === conversationId ? (
                         <div className="flex items-center gap-3 px-3 py-2">
                             <div
@@ -3045,7 +3039,7 @@ const ChatPopup: React.FC = () => {
                                         }
                                     }}
                                     placeholder="Nhập tin nhắn..."
-                                    className="w-full px-3 py-2.5 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-4 py-2.5 bg-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-white focus:shadow-sm text-base transition-all border border-transparent focus:border-blue-200"
                                     data-mobile-conversation-id={conversationId}
                                 />
 
@@ -3078,12 +3072,12 @@ const ChatPopup: React.FC = () => {
                                     </div>
                                 )}
                             </div>
-                            {/* Send Button - Always visible */}
+                            {/* Send Button - Gradient Design */}
                             <button
                                 onClick={() => sendMessage(conversationId, messageInput)}
                                 disabled={!messageInput.trim()}
-                                className={`p-2.5 rounded-full transition-colors shrink-0 ${messageInput.trim()
-                                    ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white'
+                                className={`p-2.5 rounded-xl transition-all duration-300 shrink-0 ${messageInput.trim()
+                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-95 text-white shadow-lg shadow-blue-500/30'
                                     : 'bg-gray-200 text-gray-400'
                                     }`}
                             >
@@ -3299,36 +3293,48 @@ const ChatPopup: React.FC = () => {
 
     return (
         <>
-            {/* Chat Button */}
+            {/* Chat Button - Modern Design */}
             <div className="relative">
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors relative"
+                    className="relative p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all duration-300 active:scale-95 group"
                 >
-                    <MessageCircle size={22} className="text-gray-600" />
+                    <MessageCircle size={22} className="text-white group-hover:scale-110 transition-transform" />
                     {totalUnread > 0 && (
-                        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1">
-                            {totalUnread > 9 ? '9+' : totalUnread}
-                        </span>
+                        <>
+                            {/* Pulse animation */}
+                            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 rounded-full animate-pulse" />
+                            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5 shadow-lg shadow-red-500/50">
+                                {totalUnread > 9 ? '9+' : totalUnread}
+                            </span>
+                        </>
                     )}
                 </button>
 
                 {/* Chat List Panel */}
                 {isOpen && (
                     <div className={`absolute ${isMobile ? 'fixed inset-0 z-50' : 'top-full right-0 mt-2 w-96'} bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${isMobile ? '' : 'max-h-[580px]'}`}>
-                        {/* Header - Clean White Style with safe area for mobile */}
-                        <div className="bg-white border-b border-gray-100 shrink-0 chat-header" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' } : undefined}>
+                        {/* Panel Header - Gradient Design */}
+                        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shrink-0" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' } : undefined}>
                             <div className="p-4 pb-3">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-2">
-                                        <h3 className="font-bold text-xl text-gray-800">Chat</h3>
+                                        <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
+                                            <MessageCircle size={20} className="text-white" />
+                                        </div>
+                                        <h3 className="font-bold text-xl text-white">Tin nhắn</h3>
+                                        {totalUnread > 0 && (
+                                            <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full">
+                                                {totalUnread}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex items-center gap-1">
                                         <button
-                                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
+                                            className="p-2.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white"
                                             title="Cài đặt"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                 <circle cx="12" cy="12" r="3" />
                                                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                                             </svg>
@@ -3338,10 +3344,10 @@ const ChatPopup: React.FC = () => {
                                                 setShowCreateGroup(true);
                                                 fetchAllUsers();
                                             }}
-                                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
+                                            className="p-2.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white"
                                             title="Tạo nhóm mới"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                 <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
                                                 <circle cx="9" cy="7" r="4" />
                                                 <line x1="19" y1="8" x2="19" y2="14" />
@@ -3351,24 +3357,23 @@ const ChatPopup: React.FC = () => {
                                         {isMobile && (
                                             <button
                                                 onClick={() => setIsOpen(false)}
-                                                className="w-11 h-11 flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors text-gray-600"
-                                                style={{ minWidth: '44px', minHeight: '44px' }}
+                                                className="w-10 h-10 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl transition-colors text-white"
                                             >
-                                                <X size={24} />
+                                                <X size={22} />
                                             </button>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Search - Clean style */}
+                                {/* Search - Glass morphism style */}
                                 <div className="relative">
-                                    <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/60" />
                                     <input
                                         type="text"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="Tìm kiếm mọi người..."
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-full bg-gray-100 text-gray-800 placeholder-gray-500 focus:outline-none focus:bg-gray-200 transition-all"
+                                        placeholder="Tìm kiếm cuộc trò chuyện..."
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/20 backdrop-blur-sm text-white placeholder-white/60 focus:outline-none focus:bg-white/30 transition-all border border-white/10"
                                     />
                                 </div>
                             </div>

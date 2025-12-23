@@ -22,8 +22,8 @@ interface Task {
 }
 
 // Note Tooltip Component
-const NoteButton = ({ task, onOpenNote, formatDateTime }: { 
-    task: Task; 
+const NoteButton = ({ task, onOpenNote, formatDateTime }: {
+    task: Task;
     onOpenNote: (task: Task) => void;
     formatDateTime: (date: string | null) => string;
 }) => {
@@ -31,17 +31,17 @@ const NoteButton = ({ task, onOpenNote, formatDateTime }: {
 
     return (
         <div className="relative">
-            <button 
+            <button
                 onClick={(e) => { e.stopPropagation(); onOpenNote(task); }}
                 onMouseEnter={() => setShowTooltip(true)}
                 onMouseLeave={() => setShowTooltip(false)}
                 onPointerDown={(e) => e.stopPropagation()}
-                className={`p-1.5 rounded touch-target transition-colors ${task.note ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100'}`} 
+                className={`p-1.5 rounded touch-target transition-colors ${task.note ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100'}`}
                 title="Ghi chú"
             >
                 <MessageSquare size={14} />
             </button>
-            
+
             {/* Tooltip popup khi hover */}
             {showTooltip && task.note && (
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
@@ -84,8 +84,15 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
         id: id,
     });
 
+    const columnConfig = {
+        'TODO': { bg: 'bg-gradient-to-b from-blue-50 to-slate-50', border: 'border-blue-200/50' },
+        'IN_PROGRESS': { bg: 'bg-gradient-to-b from-amber-50 to-orange-50/50', border: 'border-amber-200/50' },
+        'COMPLETED': { bg: 'bg-gradient-to-b from-emerald-50 to-green-50/50', border: 'border-emerald-200/50' }
+    };
+    const config = columnConfig[id as keyof typeof columnConfig] || columnConfig['TODO'];
+
     return (
-        <div ref={setNodeRef} className="bg-gray-100 p-4 rounded-xl flex flex-col gap-3 h-full min-h-[200px]">
+        <div ref={setNodeRef} className={`${config.bg} p-4 rounded-2xl flex flex-col gap-3 h-full min-h-[200px] border ${config.border}`}>
             {children}
         </div>
     );
@@ -149,7 +156,7 @@ const MyTasks = () => {
     // Save note
     const handleSaveNote = async () => {
         if (!selectedTaskForNote) return;
-        
+
         try {
             const response = await fetch(`${API_URL}/tasks/${selectedTaskForNote.id}`, {
                 method: 'PUT',
@@ -277,86 +284,100 @@ const MyTasks = () => {
     };
 
     return (
-        <div className="space-y-4 lg:space-y-6">
-            {/* Header - Responsive */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h2 className="text-xl lg:text-2xl font-bold text-gray-900">Công việc của tôi</h2>
+        <div className="space-y-4 sm:space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+                <div>
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Công việc của tôi</h2>
+                    <p className="text-gray-500 mt-0.5 sm:mt-1 text-sm sm:text-base">Quản lý và theo dõi các nhiệm vụ</p>
+                </div>
                 <div className="flex gap-2">
-                    {/* View Toggle - With labels for better UX */}
-                    <div className="flex bg-white rounded-lg border border-gray-200 p-0.5 lg:p-1 shadow-sm">
-                        <button 
-                            onClick={() => setView('list')} 
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                                view === 'list' 
-                                    ? 'bg-blue-600 text-white shadow-sm' 
-                                    : 'text-gray-600 hover:bg-gray-100'
-                            }`}
+                    {/* View Toggle */}
+                    <div className="flex bg-white rounded-lg sm:rounded-xl border border-gray-200 p-0.5 sm:p-1 shadow-lg shadow-gray-200/50">
+                        <button
+                            onClick={() => setView('list')}
+                            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium transition-all ${view === 'list'
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
                             title="Xem dạng danh sách"
                         >
-                            <List size={18} />
-                            <span className="hidden md:inline">List</span>
+                            <List size={16} className="sm:w-[18px] sm:h-[18px]" />
+                            <span className="hidden sm:inline">List</span>
                         </button>
-                        <button 
-                            onClick={() => setView('kanban')} 
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                                view === 'kanban' 
-                                    ? 'bg-blue-600 text-white shadow-sm' 
-                                    : 'text-gray-600 hover:bg-gray-100'
-                            }`}
+                        <button
+                            onClick={() => setView('kanban')}
+                            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium transition-all ${view === 'kanban'
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
                             title="Xem dạng Kanban"
                         >
-                            <Layout size={18} />
-                            <span className="hidden md:inline">Kanban</span>
+                            <Layout size={16} className="sm:w-[18px] sm:h-[18px]" />
+                            <span className="hidden sm:inline">Kanban</span>
                         </button>
-                        <button 
-                            onClick={() => setView('gantt')} 
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                                view === 'gantt' 
-                                    ? 'bg-blue-600 text-white shadow-sm' 
-                                    : 'text-gray-600 hover:bg-gray-100'
-                            }`}
+                        <button
+                            onClick={() => setView('gantt')}
+                            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium transition-all ${view === 'gantt'
+                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
+                                : 'text-gray-600 hover:bg-gray-100'
+                                }`}
                             title="Xem dạng Gantt"
                         >
-                            <Calendar size={18} />
-                            <span className="hidden md:inline">Gantt</span>
+                            <Calendar size={16} className="sm:w-[18px] sm:h-[18px]" />
+                            <span className="hidden sm:inline">Gantt</span>
                         </button>
                     </div>
-                    <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 text-sm lg:text-base touch-target shadow-sm">
-                        <Plus size={18} className="lg:w-5 lg:h-5" /> <span className="hidden sm:inline">Tạo việc cá nhân</span><span className="sm:hidden">Thêm</span>
+                    <button
+                        onClick={() => { resetForm(); setShowModal(true); }}
+                        className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg sm:rounded-xl hover:from-blue-700 hover:to-indigo-700 text-xs sm:text-sm font-medium shadow-lg shadow-blue-500/25 transition-all active:scale-95"
+                    >
+                        <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                        <span>Thêm</span>
                     </button>
                 </div>
             </div>
 
-            {/* Stats Grid - Responsive */}
-            <div className="grid grid-cols-3 gap-2 lg:gap-6">
-                <div className="bg-blue-50 p-3 lg:p-6 rounded-xl border border-blue-100">
-                    <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
-                        <CheckSquare className="text-blue-600 w-4 h-4 lg:w-5 lg:h-5" />
-                        <h3 className="font-semibold text-blue-900 text-xs lg:text-base">Cần làm</h3>
+            {/* Stats Grid - Mobile Optimized */}
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
+                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-blue-500/30 w-fit">
+                            <CheckSquare size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-2 sm:mt-0">{stats.todo}</span>
                     </div>
-                    <p className="text-xl lg:text-3xl font-bold text-blue-700">{stats.todo}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">Cần làm</p>
                 </div>
-                <div className="bg-orange-50 p-3 lg:p-6 rounded-xl border border-orange-100">
-                    <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
-                        <Clock className="text-orange-600 w-4 h-4 lg:w-5 lg:h-5" />
-                        <h3 className="font-semibold text-orange-900 text-xs lg:text-base">Đang làm</h3>
+                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-orange-500/30 w-fit">
+                            <Clock size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-2 sm:mt-0">{stats.inProgress}</span>
                     </div>
-                    <p className="text-xl lg:text-3xl font-bold text-orange-700">{stats.inProgress}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">Đang làm</p>
                 </div>
-                <div className="bg-green-50 p-3 lg:p-6 rounded-xl border border-green-100">
-                    <div className="flex items-center gap-2 lg:gap-3 mb-1 lg:mb-2">
-                        <AlertCircle className="text-green-600 w-4 h-4 lg:w-5 lg:h-5" />
-                        <h3 className="font-semibold text-green-900 text-xs lg:text-base">Xong</h3>
+                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-green-500/30 w-fit">
+                            <AlertCircle size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-2 sm:mt-0">{stats.completed}</span>
                     </div>
-                    <p className="text-xl lg:text-3xl font-bold text-green-700">{stats.completed}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500">Xong</p>
                 </div>
             </div>
 
             {view === 'list' && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 overflow-hidden">
                     {tasks.length === 0 ? (
-                        <div className="p-6 lg:p-8 text-center text-gray-500">
-                            <p>Chưa có công việc nào. Hãy tạo công việc mới!</p>
+                        <div className="p-8 sm:p-12 text-center">
+                            <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                                <CheckSquare size={24} className="text-gray-400 sm:w-8 sm:h-8" />
+                            </div>
+                            <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-1 sm:mb-2">Chưa có công việc</h3>
+                            <p className="text-gray-500 text-sm">Hãy tạo công việc mới!</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-100">
@@ -489,7 +510,7 @@ const MyTasks = () => {
             {view === 'gantt' && (
                 <div className="bg-white p-4 lg:p-6 rounded-xl border border-gray-200">
                     <h3 className="font-bold text-gray-900 mb-4">📅 Timeline</h3>
-                    
+
                     {/* Mobile: Card layout */}
                     <div className="lg:hidden space-y-3">
                         {tasks.map(task => (
@@ -513,11 +534,10 @@ const MyTasks = () => {
                                         )}
                                     </div>
                                 </div>
-                                <div className={`text-xs px-2 py-1 rounded inline-block ${
-                                    task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
+                                <div className={`text-xs px-2 py-1 rounded inline-block ${task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
                                     task.status === 'IN_PROGRESS' ? 'bg-orange-100 text-orange-600' :
-                                    'bg-green-100 text-green-600'
-                                }`}>
+                                        'bg-green-100 text-green-600'
+                                    }`}>
                                     {task.status === 'TODO' ? 'Todo' : task.status === 'IN_PROGRESS' ? 'Đang làm' : 'Xong'}
                                 </div>
                                 {task.startDate && task.endDate ? (
