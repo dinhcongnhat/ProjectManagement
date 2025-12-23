@@ -679,7 +679,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-180px)] sm:h-[calc(100vh-220px)] min-h-[350px] max-h-[800px] isolate overscroll-none">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-full isolate overscroll-none translate-Z-0">
             {/* Header */}
             <div className="p-3 sm:p-4 border-b border-gray-100 flex-shrink-0">
                 <div className="flex items-center justify-between">
@@ -833,7 +833,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
             {/* Input area */}
             <div className="p-3 sm:p-4 border-t border-gray-100 flex-shrink-0 bg-white safe-area-bottom sticky bottom-0">
-                <div className="flex items-end gap-1 sm:gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                     {/* File attachment button */}
                     <input
                         ref={fileInputRef}

@@ -163,10 +163,10 @@ export const ProjectWorkflow = ({
                             className={`
                                 relative flex items-center gap-4 p-4 rounded-xl transition-all
                                 ${step.isCompleted
-                                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200'
+                                    ? 'bg-green-50 border border-green-200'
                                     : step.isCurrent
-                                        ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200'
-                                        : 'bg-gray-50 border border-gray-200'
+                                        ? 'bg-blue-50 border border-blue-200'
+                                        : 'bg-white border border-gray-200'
                                 }
                             `}
                         >
@@ -218,7 +218,7 @@ export const ProjectWorkflow = ({
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h4 className={`font-semibold ${step.isCompleted ? 'text-green-700' :
-                                            step.isCurrent ? 'text-blue-700' : 'text-gray-500'
+                                        step.isCurrent ? 'text-blue-700' : 'text-gray-500'
                                         }`}>
                                         {step.name}
                                     </h4>

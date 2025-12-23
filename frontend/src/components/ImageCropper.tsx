@@ -7,9 +7,9 @@ interface ImageCropperProps {
     onCancel: () => void;
 }
 
-const ImageCropper: React.FC<ImageCropperProps> = ({ 
-    imageUrl, 
-    onCrop, 
+const ImageCropper: React.FC<ImageCropperProps> = ({
+    imageUrl,
+    onCrop,
     onCancel
 }) => {
     const [scale, setScale] = useState(1);
@@ -19,7 +19,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [imageLoaded, setImageLoaded] = useState(false);
-    
+
     const containerRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -30,14 +30,14 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
             const img = imageRef.current;
             const container = containerRef.current;
             const containerRect = container.getBoundingClientRect();
-            
+
             // Crop circle is 80% of container (40% radius * 2)
             const cropDiameter = Math.min(containerRect.width, containerRect.height) * 0.8;
-            
+
             // Calculate scale to fit the whole image inside the crop circle
             const imgAspect = img.naturalWidth / img.naturalHeight;
             let fitScale: number;
-            
+
             if (imgAspect > 1) {
                 // Landscape image - fit by width
                 fitScale = cropDiameter / img.naturalWidth;
@@ -45,11 +45,11 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                 // Portrait image - fit by height
                 fitScale = cropDiameter / img.naturalHeight;
             }
-            
+
             // Set min scale to allow seeing the whole image (with some margin)
             const calculatedMinScale = fitScale * 0.5;
             setMinScale(Math.max(0.05, calculatedMinScale));
-            
+
             // Set initial scale to show the whole image with a bit of margin
             const initialScale = fitScale * 1.2;
             setScale(Math.max(0.1, Math.min(1.5, initialScale)));
@@ -116,21 +116,21 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
         const img = imageRef.current;
         const maxSize = Math.max(img.naturalWidth, img.naturalHeight);
         const outputSize = Math.min(maxSize, 1024); // Cap at 1024px for performance
-        
+
         canvas.width = outputSize;
         canvas.height = outputSize;
 
         const cropArea = containerRef.current?.getBoundingClientRect();
-        
+
         if (!cropArea) return;
 
         // Calculate the crop region
         const cropSize = Math.min(cropArea.width, cropArea.height) * 0.8;
         const imgRect = img.getBoundingClientRect();
-        
+
         // Clear canvas
         ctx.clearRect(0, 0, outputSize, outputSize);
-        
+
         // Create circular clip
         ctx.beginPath();
         ctx.arc(outputSize / 2, outputSize / 2, outputSize / 2, 0, Math.PI * 2);
@@ -138,10 +138,10 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
 
         // Calculate source coordinates
         const scaleRatio = img.naturalWidth / imgRect.width;
-        
+
         const centerX = cropArea.width / 2;
         const centerY = cropArea.height / 2;
-        
+
         const srcX = ((centerX - imgRect.left + cropArea.left) - cropSize / 2) * scaleRatio;
         const srcY = ((centerY - imgRect.top + cropArea.top) - cropSize / 2) * scaleRatio;
         const srcWidth = cropSize * scaleRatio;
@@ -181,7 +181,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/90 z-[200] flex flex-col items-center justify-center">
+        <div className="fixed inset-0 bg-black/90 z-[10000] flex flex-col items-center justify-center">
             {/* Header - hidden on mobile, controls are at bottom */}
             <div className="absolute top-0 left-0 right-0 hidden md:flex items-center justify-between p-4 pt-6 bg-gradient-to-b from-black/50 to-transparent safe-area-top">
                 <button
@@ -205,7 +205,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
             </div>
 
             {/* Crop Area */}
-            <div 
+            <div
                 ref={containerRef}
                 className="relative w-full h-[60vh] overflow-hidden cursor-move"
                 onMouseDown={handleMouseDown}
@@ -242,18 +242,18 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
                                 <circle cx="50%" cy="50%" r="40%" fill="black" />
                             </mask>
                         </defs>
-                        <rect 
-                            width="100%" 
-                            height="100%" 
-                            fill="rgba(0,0,0,0.6)" 
-                            mask="url(#cropMask)" 
+                        <rect
+                            width="100%"
+                            height="100%"
+                            fill="rgba(0,0,0,0.6)"
+                            mask="url(#cropMask)"
                         />
-                        <circle 
-                            cx="50%" 
-                            cy="50%" 
-                            r="40%" 
-                            fill="none" 
-                            stroke="white" 
+                        <circle
+                            cx="50%"
+                            cy="50%"
+                            r="40%"
+                            fill="none"
+                            stroke="white"
                             strokeWidth="2"
                             strokeDasharray="8 4"
                         />

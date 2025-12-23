@@ -144,17 +144,17 @@ const ProjectDetailsAdmin = () => {
     const getStatusBadge = (status: string) => {
         const statusConfig = {
             'COMPLETED': {
-                bg: 'bg-gradient-to-r from-emerald-500 to-green-500',
+                bg: 'bg-green-500',
                 text: 'Hoàn thành',
                 icon: CheckCircle2
             },
             'PENDING_APPROVAL': {
-                bg: 'bg-gradient-to-r from-amber-500 to-orange-500',
+                bg: 'bg-orange-500',
                 text: 'Chờ duyệt',
                 icon: Clock
             },
             'IN_PROGRESS': {
-                bg: 'bg-gradient-to-r from-blue-500 to-indigo-500',
+                bg: 'bg-blue-500',
                 text: 'Đang thực hiện',
                 icon: TrendingUp
             }
@@ -210,9 +210,9 @@ const ProjectDetailsAdmin = () => {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
-            {/* Header with gradient */}
-            <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 text-white">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+            {/* Header with solid color */}
+            <div className="bg-blue-600 text-white shadow-md">
+                <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-start gap-4">
                             <Link
@@ -250,7 +250,7 @@ const ProjectDetailsAdmin = () => {
                                 <button
                                     onClick={handleApprove}
                                     disabled={approving}
-                                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600 text-white font-medium rounded-xl shadow-lg shadow-emerald-500/30 disabled:opacity-50 flex items-center gap-2 transition-all duration-200"
+                                    className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-xl shadow-lg shadow-emerald-500/30 disabled:opacity-50 flex items-center gap-2 transition-all duration-200"
                                 >
                                     {approving ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
                                     {approving ? 'Đang duyệt...' : 'Duyệt hoàn thành'}
@@ -267,7 +267,7 @@ const ProjectDetailsAdmin = () => {
                         </div>
                         <div className="h-2.5 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
                             <div
-                                className="h-full bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 rounded-full transition-all duration-700 ease-out"
+                                className="h-full bg-blue-300 rounded-full transition-all duration-700 ease-out"
                                 style={{ width: `${project.progress}%` }}
                             />
                         </div>
@@ -292,7 +292,7 @@ const ProjectDetailsAdmin = () => {
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
                                     className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium transition-all ${isActive
-                                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
+                                        ? 'bg-blue-600 text-white shadow-md'
                                         : 'text-gray-600 hover:bg-gray-100'
                                         }`}
                                 >
@@ -311,8 +311,8 @@ const ProjectDetailsAdmin = () => {
                         <div className="lg:col-span-2 space-y-6">
                             {/* Quick Stats */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="bg-white rounded-2xl p-4 shadow-lg shadow-gray-100 border border-gray-100 group hover:shadow-xl transition-shadow">
-                                    <div className="p-3 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl w-fit mb-3 group-hover:scale-110 transition-transform">
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                    <div className="p-3 bg-blue-50 rounded-xl w-fit mb-3">
                                         <Calendar size={20} className="text-blue-600" />
                                     </div>
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày bắt đầu</p>
@@ -320,8 +320,8 @@ const ProjectDetailsAdmin = () => {
                                         {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'}
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-lg shadow-gray-100 border border-gray-100 group hover:shadow-xl transition-shadow">
-                                    <div className="p-3 bg-gradient-to-br from-orange-100 to-orange-200 rounded-xl w-fit mb-3 group-hover:scale-110 transition-transform">
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                    <div className="p-3 bg-orange-50 rounded-xl w-fit mb-3">
                                         <Clock size={20} className="text-orange-600" />
                                     </div>
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày kết thúc dự kiến</p>
@@ -329,15 +329,15 @@ const ProjectDetailsAdmin = () => {
                                         {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-lg shadow-gray-100 border border-gray-100 group hover:shadow-xl transition-shadow">
-                                    <div className="p-3 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl w-fit mb-3 group-hover:scale-110 transition-transform">
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                    <div className="p-3 bg-purple-50 rounded-xl w-fit mb-3">
                                         <Target size={20} className="text-purple-600" />
                                     </div>
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Thời lượng</p>
                                     <p className="font-bold text-gray-900">{project.duration || 'N/A'} ngày</p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-lg shadow-gray-100 border border-gray-100 group hover:shadow-xl transition-shadow">
-                                    <div className="p-3 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-xl w-fit mb-3 group-hover:scale-110 transition-transform">
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                    <div className="p-3 bg-emerald-50 rounded-xl w-fit mb-3">
                                         <Briefcase size={20} className="text-emerald-600" />
                                     </div>
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Giá trị HĐ</p>
@@ -345,10 +345,9 @@ const ProjectDetailsAdmin = () => {
                                 </div>
                             </div>
 
-                            {/* Description Card */}
-                            <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
+                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl text-white">
+                                    <div className="p-2.5 bg-blue-600 rounded-xl text-white">
                                         <FileText size={20} />
                                     </div>
                                     <h2 className="text-lg font-bold text-gray-900">Mô tả dự án</h2>
@@ -361,19 +360,19 @@ const ProjectDetailsAdmin = () => {
                             </div>
 
                             {/* Details Grid */}
-                            <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
+                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2.5 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl text-white">
+                                    <div className="p-2.5 bg-purple-600 rounded-xl text-white">
                                         <FileText size={20} />
                                     </div>
                                     <h2 className="text-lg font-bold text-gray-900">Thông tin chi tiết</h2>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl">
+                                    <div className="p-4 bg-blue-50 rounded-xl">
                                         <p className="text-xs text-blue-600 font-semibold mb-1 uppercase tracking-wide">Nhóm dự án</p>
                                         <p className="font-bold text-gray-900">{project.group || 'N/A'}</p>
                                     </div>
-                                    <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl">
+                                    <div className="p-4 bg-emerald-50 rounded-xl">
                                         <p className="text-xs text-emerald-600 font-semibold mb-1 uppercase tracking-wide">Giá trị</p>
                                         <p className="font-bold text-gray-900">{project.value || 'N/A'}</p>
                                     </div>
@@ -397,9 +396,9 @@ const ProjectDetailsAdmin = () => {
                         {/* Sidebar */}
                         <div className="space-y-6">
                             {/* Team Members Card */}
-                            <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
+                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
                                 <div className="flex items-center gap-3 mb-5">
-                                    <div className="p-2.5 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl text-white">
+                                    <div className="p-2.5 bg-violet-600 rounded-xl text-white">
                                         <Users size={20} />
                                     </div>
                                     <h2 className="text-lg font-bold text-gray-900">Thành viên dự án</h2>
@@ -408,8 +407,8 @@ const ProjectDetailsAdmin = () => {
                                 {/* Manager */}
                                 <div className="mb-5">
                                     <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide">Quản trị dự án</p>
-                                    <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-purple-100 to-violet-100 rounded-xl">
-                                        <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-violet-600 rounded-full flex items-center justify-center text-white font-bold">
+                                    <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
+                                        <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
                                             {project.manager?.name?.charAt(0) || '?'}
                                         </div>
                                         <span className="font-semibold text-gray-900">{project.manager?.name || 'Chưa gán'}</span>
@@ -426,7 +425,7 @@ const ProjectDetailsAdmin = () => {
                                         {project.implementers?.map(user => (
                                             <span
                                                 key={user.id}
-                                                className="px-3 py-1.5 bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700 text-sm font-medium rounded-full"
+                                                className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-full"
                                             >
                                                 {user.name}
                                             </span>
@@ -447,7 +446,7 @@ const ProjectDetailsAdmin = () => {
                                         {project.followers?.map(user => (
                                             <span
                                                 key={user.id}
-                                                className="px-3 py-1.5 bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-sm font-medium rounded-full"
+                                                className="px-3 py-1.5 bg-green-100 text-green-700 text-sm font-medium rounded-full"
                                             >
                                                 {user.name}
                                             </span>
@@ -483,16 +482,16 @@ const ProjectDetailsAdmin = () => {
                             {project.parent && (
                                 <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
                                     <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl text-white">
+                                        <div className="p-2.5 bg-indigo-600 rounded-xl text-white">
                                             <FolderTree size={20} />
                                         </div>
                                         <h2 className="text-lg font-bold text-gray-900">Dự án cha</h2>
                                     </div>
                                     <Link
                                         to={`/admin/projects/${project.parent.id}`}
-                                        className="flex items-center gap-3 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl hover:from-indigo-100 hover:to-purple-100 transition-colors group"
+                                        className="flex items-center gap-3 p-4 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors group"
                                     >
-                                        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white">
+                                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
                                             <FolderTree size={18} />
                                         </div>
                                         <div className="flex-1 min-w-0">
@@ -510,7 +509,7 @@ const ProjectDetailsAdmin = () => {
                             <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-3">
-                                        <div className="p-2.5 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl text-white">
+                                        <div className="p-2.5 bg-cyan-600 rounded-xl text-white">
                                             <FolderTree size={20} />
                                         </div>
                                         <h2 className="text-lg font-bold text-gray-900">
@@ -519,7 +518,7 @@ const ProjectDetailsAdmin = () => {
                                     </div>
                                     <Link
                                         to={`/admin/create-project?parentId=${project.id}`}
-                                        className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg shadow-blue-500/25"
+                                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-all shadow-md"
                                     >
                                         <Plus size={16} />
                                         Thêm
@@ -534,9 +533,9 @@ const ProjectDetailsAdmin = () => {
                                                 to={`/admin/projects/${child.id}`}
                                                 className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
                                             >
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${child.status === 'COMPLETED' ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
-                                                    child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-br from-orange-500 to-amber-600' :
-                                                        'bg-gradient-to-br from-blue-500 to-indigo-600'
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${child.status === 'COMPLETED' ? 'bg-green-600' :
+                                                    child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
+                                                        'bg-blue-600'
                                                     }`}>
                                                     <FolderTree size={16} />
                                                 </div>
@@ -557,9 +556,9 @@ const ProjectDetailsAdmin = () => {
                                                 <div className="flex flex-col items-end gap-1.5">
                                                     <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
                                                         <div
-                                                            className={`h-full rounded-full transition-all ${child.status === 'COMPLETED' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                                                                child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
-                                                                    'bg-gradient-to-r from-blue-500 to-indigo-500'
+                                                            className={`h-full rounded-full transition-all ${child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                                child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
+                                                                    'bg-blue-500'
                                                                 }`}
                                                             style={{ width: `${child.progress}%` }}
                                                         />
@@ -593,13 +592,13 @@ const ProjectDetailsAdmin = () => {
                 )}
 
                 {activeTab === 'discussion' && (
-                    <div className="bg-white rounded-2xl shadow-lg shadow-gray-100 overflow-hidden border border-gray-100">
+                    <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 sticky top-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
                         <DiscussionPanel projectId={project.id} />
                     </div>
                 )}
 
                 {activeTab === 'activity' && (
-                    <div className="bg-white rounded-2xl shadow-lg shadow-gray-100 overflow-hidden border border-gray-100">
+                    <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 sticky top-4">
                         <ActivityHistoryPanel projectId={project.id} />
                     </div>
                 )}

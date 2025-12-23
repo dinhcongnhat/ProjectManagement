@@ -75,7 +75,7 @@ const Dashboard = () => {
     return (
         <div className="space-y-4 sm:space-y-6">
             {/* Welcome Header - Mobile Optimized */}
-            <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 text-white shadow-xl shadow-purple-500/25 overflow-hidden relative">
+            <div className="bg-blue-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 text-white shadow-xl shadow-blue-500/25 overflow-hidden relative">
                 <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRjMC0yIDItNCAyLTRzMiAyIDIgNC0yIDQtMiA0LTItMi0yLTR6TTAgMzRjMC0yIDItNCAyLTRzMiAyIDIgNC0yIDQtMiA0LTItMi0yLTR6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-20" />
                 <div className="relative">
                     <div className="flex items-start gap-3 sm:gap-4">
@@ -140,8 +140,8 @@ const Dashboard = () => {
                                 <div className="flex justify-between items-center mb-2 sm:mb-3">
                                     <span className="font-medium text-gray-800 text-sm sm:text-base truncate mr-3">{project.name}</span>
                                     <span className={`text-xs sm:text-sm font-bold shrink-0 ${project.status === 'COMPLETED' ? 'text-green-600' :
-                                            project.status === 'PENDING_APPROVAL' ? 'text-orange-600' :
-                                                'text-blue-600'
+                                        project.status === 'PENDING_APPROVAL' ? 'text-orange-600' :
+                                            'text-blue-600'
                                         }`}>
                                         {project.progress}%
                                     </span>
@@ -149,8 +149,8 @@ const Dashboard = () => {
                                 <div className="h-2 sm:h-2.5 bg-gray-200 rounded-full overflow-hidden">
                                     <div
                                         className={`h-full rounded-full transition-all duration-500 ${project.status === 'COMPLETED' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
-                                                project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
-                                                    'bg-gradient-to-r from-blue-500 to-indigo-500'
+                                            project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
+                                                'bg-gradient-to-r from-blue-500 to-indigo-500'
                                             }`}
                                         style={{ width: `${project.progress}%` }}
                                     />

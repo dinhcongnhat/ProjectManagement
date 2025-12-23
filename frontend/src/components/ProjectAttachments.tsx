@@ -65,7 +65,7 @@ const getFileIcon = (mimeType: string) => {
 export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     projectId,
     projectName: _projectName, // eslint-disable-line @typescript-eslint/no-unused-vars
-    projectStatus,
+    projectStatus: _projectStatus, // eslint-disable-line @typescript-eslint/no-unused-vars
     canUpload,
     isImplementer,
     isAdmin,

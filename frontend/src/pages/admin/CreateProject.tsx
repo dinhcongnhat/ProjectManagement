@@ -228,7 +228,7 @@ const CreateProject = () => {
 
                 const xhr = new XMLHttpRequest();
 
-                await new Promise<void>((resolve, reject) => {
+                await new Promise<void>((resolve) => {
                     xhr.upload.addEventListener('progress', (event) => {
                         if (event.lengthComputable) {
                             const percentComplete = Math.round((event.loaded / event.total) * 100);

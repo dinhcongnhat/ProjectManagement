@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
     MessageCircle, X, Search, Users, MessageSquare, Send, Smile,
     Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
@@ -460,7 +461,7 @@ const ImageViewer: React.FC<{
     return (
         <div
             ref={containerRef}
-            className="fixed inset-0 bg-black/95 z-[100] flex flex-col"
+            className="fixed inset-0 bg-black/95 z-[10000] flex flex-col"
             onClick={handleBackgroundClick}
         >
             {/* Top Controls */}
@@ -2142,8 +2143,8 @@ const ChatPopup: React.FC = () => {
 
         const baseRight = 100 + index * 340;
         const windowStyle: React.CSSProperties = window.isMaximized
-            ? { position: 'fixed', bottom: 20, right: baseRight, width: 500, height: 600, zIndex: 50 }
-            : { position: 'fixed', bottom: 20, right: baseRight, width: 360, height: window.isMinimized ? 48 : 500, zIndex: 50 };
+            ? { position: 'fixed', bottom: 20, right: baseRight, width: 500, height: 600, zIndex: 60 }
+            : { position: 'fixed', bottom: 20, right: baseRight, width: 360, height: window.isMinimized ? 48 : 500, zIndex: 60 };
 
         return (
             <div
@@ -2158,7 +2159,7 @@ const ChatPopup: React.FC = () => {
                 >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                         <div className="relative">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+                            <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
                                 {window.conversation.displayAvatar ? (
                                     <img src={window.conversation.displayAvatar} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -2251,7 +2252,7 @@ const ChatPopup: React.FC = () => {
                                                     {!isOwn && (
                                                         <div className="w-8 h-8 mr-2 shrink-0">
                                                             {isLastInGroup ? (
-                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
+                                                                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
                                                                     {msg.sender.avatar ? (
                                                                         <img
                                                                             src={resolveAttachmentUrl(msg.sender.avatar) || ''}
@@ -2293,7 +2294,7 @@ const ChatPopup: React.FC = () => {
                                                         )}
                                                         <div className="relative">
                                                             <div className={`px-3 py-2 rounded-2xl shadow-sm ${isOwn
-                                                                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
+                                                                ? 'bg-blue-600 text-white'
                                                                 : 'bg-white text-gray-800 border border-gray-100'
                                                                 } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
                                                                 {renderMessage({ ...msg, content: displayContent }, isOwn)}
@@ -2431,7 +2432,7 @@ const ChatPopup: React.FC = () => {
 
                         {/* Upload Progress */}
                         {progress !== undefined && (
-                            <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-blue-100">
+                            <div className="px-4 py-3 bg-blue-50 border-t border-blue-100">
                                 <div className="flex items-center gap-3">
                                     <Loader2 className="animate-spin text-blue-600" size={18} />
                                     <div className="flex-1">
@@ -2441,7 +2442,7 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                         <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
                                             <div
-                                                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-300"
+                                                className="h-full bg-blue-600 rounded-full transition-all duration-300"
                                                 style={{ width: `${progress}%` }}
                                             />
                                         </div>
@@ -2659,9 +2660,9 @@ const ChatPopup: React.FC = () => {
         const otherStatus = getOtherUserStatus();
 
         return (
-            <div className="fixed inset-0 z-50 bg-gray-50 flex flex-col">
-                {/* Header - Modern Gradient Design with safe area */}
-                <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shrink-0 shadow-lg" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 10px)' }}>
+            <div className="fixed inset-0 z-50 bg-white flex flex-col">
+                {/* Header - Clean Design with safe area */}
+                <div className="bg-blue-600 shrink-0 shadow-sm" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 10px)' }}>
                     <div className="flex items-center gap-3 px-3 py-3">
                         <button
                             onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
@@ -2747,7 +2748,7 @@ const ChatPopup: React.FC = () => {
                                     {!isOwn && (
                                         <div className="w-8 h-8 mr-2 shrink-0">
                                             {isLastInGroup ? (
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center overflow-hidden">
+                                                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden">
                                                     {msg.sender.id ? (
                                                         <img
                                                             src={`/api/users/${msg.sender.id}/avatar`}
@@ -2920,11 +2921,11 @@ const ChatPopup: React.FC = () => {
 
                 {/* Upload Progress */}
                 {progress !== undefined && (
-                    <div className="px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-blue-100">
+                    <div className="px-4 py-2 bg-blue-50 border-t border-blue-100">
                         <div className="flex items-center gap-3">
                             <Loader2 size={18} className="animate-spin text-blue-600" />
                             <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
-                                <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+                                <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${progress}%` }} />
                             </div>
                             <span className="text-sm font-medium text-blue-600">{progress}%</span>
                         </div>
@@ -3077,7 +3078,7 @@ const ChatPopup: React.FC = () => {
                                 onClick={() => sendMessage(conversationId, messageInput)}
                                 disabled={!messageInput.trim()}
                                 className={`p-2.5 rounded-xl transition-all duration-300 shrink-0 ${messageInput.trim()
-                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 active:scale-95 text-white shadow-lg shadow-blue-500/30'
+                                    ? 'bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-sm'
                                     : 'bg-gray-200 text-gray-400'
                                     }`}
                             >
@@ -3103,10 +3104,10 @@ const ChatPopup: React.FC = () => {
         if (!showCreateGroup) return null;
 
         return (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
                 <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl animate-scaleIn">
                     {/* Header */}
-                    <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-t-2xl">
+                    <div className="flex items-center justify-between p-4 border-b bg-blue-600 text-white rounded-t-2xl">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-sm">
                                 <Users size={22} />
@@ -3143,7 +3144,7 @@ const ChatPopup: React.FC = () => {
                                 />
                                 <label
                                     htmlFor="group-avatar-input"
-                                    className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 border-2 border-dashed border-blue-300 flex items-center justify-center cursor-pointer hover:border-blue-400 overflow-hidden transition-all relative group"
+                                    className="w-20 h-20 rounded-2xl bg-blue-100 border-2 border-dashed border-blue-300 flex items-center justify-center cursor-pointer hover:border-blue-400 overflow-hidden transition-all relative group"
                                 >
                                     <img id="group-avatar-preview" src="" alt="" className="w-full h-full object-cover hidden" />
                                     <div id="group-avatar-placeholder" className="flex flex-col items-center text-blue-400 group-hover:text-blue-500">
@@ -3229,7 +3230,7 @@ const ChatPopup: React.FC = () => {
                                             : 'hover:bg-gray-50 border-l-4 border-l-transparent'
                                             }`}
                                     >
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center overflow-hidden shadow-sm">
+                                        <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden shadow-sm">
                                             {u.avatarUrl || u.avatar ? (
                                                 <img src={resolveAttachmentUrl(u.avatarUrl || u.avatar || null) || ''} alt="" className="w-full h-full object-cover" />
                                             ) : (
@@ -3275,7 +3276,7 @@ const ChatPopup: React.FC = () => {
                         <button
                             onClick={createGroupChat}
                             disabled={!groupName.trim() || selectedMembers.length === 0}
-                            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium shadow-lg shadow-blue-500/25"
+                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium shadow-sm"
                         >
                             Tạo nhóm
                         </button>
@@ -3297,405 +3298,445 @@ const ChatPopup: React.FC = () => {
             <div className="relative">
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="relative p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all duration-300 active:scale-95 group"
+                    className="relative p-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm hover:shadow transition-all duration-300 active:scale-95 group"
                 >
                     <MessageCircle size={22} className="text-white group-hover:scale-110 transition-transform" />
                     {totalUnread > 0 && (
                         <>
                             {/* Pulse animation */}
                             <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 rounded-full animate-pulse" />
-                            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5 shadow-lg shadow-red-500/50">
+                            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1.5">
                                 {totalUnread > 9 ? '9+' : totalUnread}
                             </span>
                         </>
                     )}
                 </button>
+            </div>
 
-                {/* Chat List Panel */}
+            {createPortal(<> {/* Chat List Panel - OUTSIDE relative container */}
                 {isOpen && (
-                    <div className={`absolute ${isMobile ? 'fixed inset-0 z-50' : 'top-full right-0 mt-2 w-96'} bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col ${isMobile ? '' : 'max-h-[580px]'}`}>
-                        {/* Panel Header - Gradient Design */}
-                        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shrink-0" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' } : undefined}>
-                            <div className="p-4 pb-3">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-2">
-                                        <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
-                                            <MessageCircle size={20} className="text-white" />
+                    <>
+                        {/* Backdrop - click to close */}
+                        <div
+                            style={{
+                                position: 'fixed',
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                                zIndex: 9998
+                            }}
+                            onClick={() => setIsOpen(false)}
+                        />
+                        {/* Chat Panel */}
+                        <div
+                            style={{
+                                position: 'fixed',
+                                zIndex: 9999,
+                                backgroundColor: 'white',
+                                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                overflow: 'hidden',
+                                ...(isMobile ? {
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    height: '85vh',
+                                    borderTopLeftRadius: '16px',
+                                    borderTopRightRadius: '16px'
+                                } : {
+                                    right: '16px',
+                                    bottom: '80px',
+                                    width: '384px',
+                                    height: '500px',
+                                    borderRadius: '12px'
+                                })
+                            }}
+                        >
+                            {/* Panel Header - Gradient Design */}
+                            <div className="bg-blue-600 shrink-0" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' } : undefined}>
+                                <div className="p-4 pb-3">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-2">
+                                            <div className="p-2 bg-white/20 backdrop-blur-sm rounded-xl">
+                                                <MessageCircle size={20} className="text-white" />
+                                            </div>
+                                            <h3 className="font-bold text-xl text-white">Tin nhắn</h3>
+                                            {totalUnread > 0 && (
+                                                <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full">
+                                                    {totalUnread}
+                                                </span>
+                                            )}
                                         </div>
-                                        <h3 className="font-bold text-xl text-white">Tin nhắn</h3>
-                                        {totalUnread > 0 && (
-                                            <span className="px-2 py-0.5 bg-white/20 backdrop-blur-sm text-white text-xs font-bold rounded-full">
-                                                {totalUnread}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            className="p-2.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white"
-                                            title="Cài đặt"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <circle cx="12" cy="12" r="3" />
-                                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setShowCreateGroup(true);
-                                                fetchAllUsers();
-                                            }}
-                                            className="p-2.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white"
-                                            title="Tạo nhóm mới"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                                                <circle cx="9" cy="7" r="4" />
-                                                <line x1="19" y1="8" x2="19" y2="14" />
-                                                <line x1="22" y1="11" x2="16" y2="11" />
-                                            </svg>
-                                        </button>
-                                        {isMobile && (
+                                        <div className="flex items-center gap-1">
                                             <button
-                                                onClick={() => setIsOpen(false)}
-                                                className="w-10 h-10 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl transition-colors text-white"
+                                                className="p-2.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white"
+                                                title="Cài đặt"
                                             >
-                                                <X size={22} />
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <circle cx="12" cy="12" r="3" />
+                                                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                                                </svg>
                                             </button>
-                                        )}
+                                            <button
+                                                onClick={() => {
+                                                    setShowCreateGroup(true);
+                                                    fetchAllUsers();
+                                                }}
+                                                className="p-2.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white"
+                                                title="Tạo nhóm mới"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                                    <circle cx="9" cy="7" r="4" />
+                                                    <line x1="19" y1="8" x2="19" y2="14" />
+                                                    <line x1="22" y1="11" x2="16" y2="11" />
+                                                </svg>
+                                            </button>
+                                            {isMobile && (
+                                                <button
+                                                    onClick={() => setIsOpen(false)}
+                                                    className="w-10 h-10 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl transition-colors text-white"
+                                                >
+                                                    <X size={22} />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
 
-                                {/* Search - Glass morphism style */}
-                                <div className="relative">
-                                    <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/60" />
-                                    <input
-                                        type="text"
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="Tìm kiếm cuộc trò chuyện..."
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/20 backdrop-blur-sm text-white placeholder-white/60 focus:outline-none focus:bg-white/30 transition-all border border-white/10"
-                                    />
+                                    {/* Search - Glass morphism style */}
+                                    <div className="relative">
+                                        <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/60" />
+                                        <input
+                                            type="text"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            placeholder="Tìm kiếm cuộc trò chuyện..."
+                                            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/20 backdrop-blur-sm text-white placeholder-white/60 focus:outline-none focus:bg-white/30 transition-all border border-white/10"
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Recent conversations label */}
-                        <div className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2 bg-white border-b border-gray-100">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <polyline points="12 6 12 12 16 14" />
-                            </svg>
-                            Trò chuyện gần đây
-                        </div>
+                            {/* Recent conversations label */}
+                            <div className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2 bg-white border-b border-gray-100">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <polyline points="12 6 12 12 16 14" />
+                                </svg>
+                                Trò chuyện gần đây
+                            </div>
 
-                        {/* Hidden Tabs - keep for functionality */}
-                        <div className="hidden">
-                            <button
-                                onClick={() => setSearchMode('conversations')}
-                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${searchMode === 'conversations'
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                            >
-                                <MessageSquare size={16} />
-                                Trò chuyện
-                            </button>
-                            <button
-                                onClick={() => setSearchMode('users')}
-                                className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${searchMode === 'users'
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                            >
-                                <Users size={16} />
-                                Người dùng
-                            </button>
-                        </div>
+                            {/* Hidden Tabs - keep for functionality */}
+                            <div className="hidden">
+                                <button
+                                    onClick={() => setSearchMode('conversations')}
+                                    className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${searchMode === 'conversations'
+                                        ? 'bg-white text-blue-600 shadow-sm'
+                                        : 'text-gray-600 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    <MessageSquare size={16} />
+                                    Trò chuyện
+                                </button>
+                                <button
+                                    onClick={() => setSearchMode('users')}
+                                    className={`flex-1 py-2.5 px-4 text-sm font-medium transition-all rounded-lg flex items-center justify-center gap-2 ${searchMode === 'users'
+                                        ? 'bg-white text-blue-600 shadow-sm'
+                                        : 'text-gray-600 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    <Users size={16} />
+                                    Người dùng
+                                </button>
+                            </div>
 
-                        {/* Content */}
-                        <div className="flex-1 overflow-y-auto bg-white">
-                            {loading ? (
-                                <div className="flex items-center justify-center py-16">
-                                    <div className="text-center">
-                                        <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-2" />
-                                        <p className="text-sm text-gray-500">Đang tải...</p>
-                                    </div>
-                                </div>
-                            ) : searchMode === 'conversations' ? (
-                                filteredConversations.length === 0 ? (
-                                    <div className="text-center py-16 px-6">
-                                        <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
-                                            <MessageSquare size={32} className="text-blue-400" />
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto bg-white">
+                                {loading ? (
+                                    <div className="flex items-center justify-center py-16">
+                                        <div className="text-center">
+                                            <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-2" />
+                                            <p className="text-sm text-gray-500">Đang tải...</p>
                                         </div>
-                                        <p className="text-base font-semibold text-gray-700 mb-1">Chưa có tin nhắn</p>
-                                        <p className="text-sm text-gray-400">Bắt đầu trò chuyện với ai đó ngay nào!</p>
-                                        <button
-                                            onClick={() => setSearchMode('users')}
-                                            className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-                                        >
-                                            Tìm người dùng
-                                        </button>
                                     </div>
-                                ) : (
-                                    <div className="py-1">
-                                        {filteredConversations.map(conv => (
-                                            <div
-                                                key={conv.id}
-                                                className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
-                                                    } ${pinnedConversations.has(conv.id) ? 'bg-amber-50/50' : ''}`}
-                                            >
-                                                {/* Pin indicator */}
-                                                {pinnedConversations.has(conv.id) && (
-                                                    <div className="absolute top-1 left-1">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
-                                                            <line x1="12" y1="17" x2="12" y2="22" />
-                                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-                                                        </svg>
-                                                    </div>
-                                                )}
-                                                <div className="flex-1 flex items-center gap-3" onClick={() => openConversation(conv)}>
-                                                    <div className="relative shrink-0">
-                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${conv.type === 'GROUP'
-                                                            ? 'bg-gradient-to-br from-purple-500 to-indigo-600'
-                                                            : 'bg-gradient-to-br from-blue-500 to-blue-600'
-                                                            }`}>
-                                                            {conv.displayAvatar ? (
-                                                                <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
-                                                            ) : conv.type === 'GROUP' ? (
-                                                                <Users size={22} className="text-white" />
-                                                            ) : (
-                                                                conv.displayName.charAt(0).toUpperCase()
-                                                            )}
-                                                        </div>
-                                                        {/* Online indicator */}
-                                                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                                                        {conv.unreadCount > 0 && (
-                                                            <div className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1">
-                                                                {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center justify-between mb-0.5">
-                                                            <p className={`font-semibold truncate ${conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
-                                                                }`}>
-                                                                {conv.displayName}
-                                                            </p>
-                                                            {conv.lastMessage && (
-                                                                <span className={`text-xs shrink-0 ml-2 ${conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
-                                                                    }`}>
-                                                                    {formatMessageTime(conv.lastMessage.createdAt)}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {typingUsers[conv.id] && typingUsers[conv.id].length > 0 ? (
-                                                            <p className="text-sm text-blue-600 font-medium italic flex items-center gap-1">
-                                                                <span className="inline-flex gap-0.5">
-                                                                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                                                                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                                                                    <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                                                                </span>
-                                                                đang soạn...
-                                                            </p>
-                                                        ) : conv.lastMessage ? (
-                                                            <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
-                                                                {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
-                                                                {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
-                                                                    conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
-                                                                        conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
-                                                                            conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
-                                                            </p>
-                                                        ) : (
-                                                            <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {/* Menu 3 chấm */}
-                                                <div className="relative shrink-0">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setConversationMenuOpen(conversationMenuOpen === conv.id ? null : conv.id);
-                                                        }}
-                                                        className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-all"
-                                                    >
-                                                        <MoreVertical size={18} />
-                                                    </button>
-
-                                                    {conversationMenuOpen === conv.id && (
-                                                        <>
-                                                            <div className="fixed inset-0 z-[9998]" onClick={() => setConversationMenuOpen(null)} />
-                                                            <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999]">
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setConversationMenuOpen(null);
-                                                                        togglePinConversation(conv.id);
-                                                                    }}
-                                                                    className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-sm"
-                                                                >
-                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={pinnedConversations.has(conv.id) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                        <line x1="12" y1="17" x2="12" y2="22" />
-                                                                        <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-                                                                    </svg>
-                                                                    {pinnedConversations.has(conv.id) ? 'Bỏ ghim' : 'Ghim cuộc trò chuyện'}
-                                                                </button>
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setConversationMenuOpen(null);
-                                                                        deleteConversation(conv.id);
-                                                                    }}
-                                                                    className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 text-sm"
-                                                                >
-                                                                    <Trash2 size={16} />
-                                                                    Xóa cuộc trò chuyện
-                                                                </button>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-
-                                        {/* XEM TẤT CẢ button */}
-                                        {filteredConversations.length > 0 && (
-                                            <div className="py-3 text-center border-t border-gray-100">
-                                                <button
-                                                    onClick={() => setSearchMode('users')}
-                                                    className="text-blue-500 hover:text-blue-600 font-medium text-sm"
-                                                >
-                                                    TÌM NGƯỜI DÙNG KHÁC
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )
-                            ) : (
-                                <>
-                                    {/* Back to conversations button */}
-                                    <div className="px-4 py-2 border-b border-gray-100">
-                                        <button
-                                            onClick={() => {
-                                                setSearchMode('conversations');
-                                                setSearchQuery('');
-                                                setSearchUsers([]);
-                                            }}
-                                            className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                                        >
-                                            <ArrowLeft size={16} />
-                                            Quay lại trò chuyện gần đây
-                                        </button>
-                                    </div>
-                                    {searchUsers.length === 0 ? (
+                                ) : searchMode === 'conversations' ? (
+                                    filteredConversations.length === 0 ? (
                                         <div className="text-center py-16 px-6">
-                                            <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
-                                                <Users size={32} className="text-purple-400" />
+                                            <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                                                <MessageSquare size={32} className="text-blue-400" />
                                             </div>
-                                            <p className="text-base font-semibold text-gray-700 mb-1">
-                                                {loading ? 'Đang tải...' : (searchQuery ? 'Không tìm thấy người dùng' : 'Đang tải danh sách...')}
-                                            </p>
-                                            <p className="text-sm text-gray-400">
-                                                {searchQuery ? 'Thử tìm với từ khóa khác' : 'Vui lòng đợi trong giây lát'}
-                                            </p>
+                                            <p className="text-base font-semibold text-gray-700 mb-1">Chưa có tin nhắn</p>
+                                            <p className="text-sm text-gray-400">Bắt đầu trò chuyện với ai đó ngay nào!</p>
+                                            <button
+                                                onClick={() => setSearchMode('users')}
+                                                className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                                            >
+                                                Tìm người dùng
+                                            </button>
                                         </div>
                                     ) : (
                                         <div className="py-1">
-                                            {searchUsers.map(u => (
+                                            {filteredConversations.map(conv => (
                                                 <div
-                                                    key={u.id}
-                                                    onClick={() => openChatWithUser(u)}
-                                                    className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 cursor-pointer transition-all group"
+                                                    key={conv.id}
+                                                    className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
+                                                        } ${pinnedConversations.has(conv.id) ? 'bg-amber-50/50' : ''}`}
                                                 >
-                                                    <div className="relative shrink-0">
-                                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-md">
-                                                            {u.avatarUrl || u.avatar ? (
-                                                                <img src={resolveAttachmentUrl(u.avatarUrl || u.avatar || null) || ''} alt="" className="w-full h-full object-cover" />
-                                                            ) : (
-                                                                u.name.charAt(0).toUpperCase()
+                                                    {/* Pin indicator */}
+                                                    {pinnedConversations.has(conv.id) && (
+                                                        <div className="absolute top-1 left-1">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500">
+                                                                <line x1="12" y1="17" x2="12" y2="22" />
+                                                                <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+                                                            </svg>
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 flex items-center gap-3" onClick={() => openConversation(conv)}>
+                                                        <div className="relative shrink-0">
+                                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${conv.type === 'GROUP'
+                                                                ? 'bg-purple-600'
+                                                                : 'bg-blue-600'
+                                                                }`}>
+                                                                {conv.displayAvatar ? (
+                                                                    <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
+                                                                ) : conv.type === 'GROUP' ? (
+                                                                    <Users size={22} className="text-white" />
+                                                                ) : (
+                                                                    conv.displayName.charAt(0).toUpperCase()
+                                                                )}
+                                                            </div>
+                                                            {/* Online indicator */}
+                                                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                                                            {conv.unreadCount > 0 && (
+                                                                <div className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1">
+                                                                    {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
+                                                                </div>
                                                             )}
                                                         </div>
-                                                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between mb-0.5">
+                                                                <p className={`font-semibold truncate ${conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
+                                                                    }`}>
+                                                                    {conv.displayName}
+                                                                </p>
+                                                                {conv.lastMessage && (
+                                                                    <span className={`text-xs shrink-0 ml-2 ${conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
+                                                                        }`}>
+                                                                        {formatMessageTime(conv.lastMessage.createdAt)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {typingUsers[conv.id] && typingUsers[conv.id].length > 0 ? (
+                                                                <p className="text-sm text-blue-600 font-medium italic flex items-center gap-1">
+                                                                    <span className="inline-flex gap-0.5">
+                                                                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                                        <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                                                    </span>
+                                                                    đang soạn...
+                                                                </p>
+                                                            ) : conv.lastMessage ? (
+                                                                <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                                                                    {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
+                                                                    {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
+                                                                        conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
+                                                                            conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
+                                                                                conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
+                                                                </p>
+                                                            ) : (
+                                                                <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
-                                                        <p className="text-sm text-gray-500 truncate">@{u.username}</p>
-                                                    </div>
-                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <MessageCircle size={18} className="text-emerald-500" />
+
+                                                    {/* Menu 3 chấm */}
+                                                    <div className="relative shrink-0">
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setConversationMenuOpen(conversationMenuOpen === conv.id ? null : conv.id);
+                                                            }}
+                                                            className="p-1.5 hover:bg-gray-200 rounded-full text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-all"
+                                                        >
+                                                            <MoreVertical size={18} />
+                                                        </button>
+
+                                                        {conversationMenuOpen === conv.id && (
+                                                            <>
+                                                                <div className="fixed inset-0 z-[9998]" onClick={() => setConversationMenuOpen(null)} />
+                                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999]">
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setConversationMenuOpen(null);
+                                                                            togglePinConversation(conv.id);
+                                                                        }}
+                                                                        className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-sm"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={pinnedConversations.has(conv.id) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                            <line x1="12" y1="17" x2="12" y2="22" />
+                                                                            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+                                                                        </svg>
+                                                                        {pinnedConversations.has(conv.id) ? 'Bỏ ghim' : 'Ghim cuộc trò chuyện'}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setConversationMenuOpen(null);
+                                                                            deleteConversation(conv.id);
+                                                                        }}
+                                                                        className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 text-sm"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                        Xóa cuộc trò chuyện
+                                                                    </button>
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             ))}
+
+                                            {/* XEM TẤT CẢ button */}
+                                            {filteredConversations.length > 0 && (
+                                                <div className="py-3 text-center border-t border-gray-100">
+                                                    <button
+                                                        onClick={() => setSearchMode('users')}
+                                                        className="text-blue-500 hover:text-blue-600 font-medium text-sm"
+                                                    >
+                                                        TÌM NGƯỜI DÙNG KHÁC
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </>
-                            )}
+                                    )
+                                ) : (
+                                    <>
+                                        {/* Back to conversations button */}
+                                        <div className="px-4 py-2 border-b border-gray-100">
+                                            <button
+                                                onClick={() => {
+                                                    setSearchMode('conversations');
+                                                    setSearchQuery('');
+                                                    setSearchUsers([]);
+                                                }}
+                                                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                                            >
+                                                <ArrowLeft size={16} />
+                                                Quay lại trò chuyện gần đây
+                                            </button>
+                                        </div>
+                                        {searchUsers.length === 0 ? (
+                                            <div className="text-center py-16 px-6">
+                                                <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
+                                                    <Users size={32} className="text-purple-400" />
+                                                </div>
+                                                <p className="text-base font-semibold text-gray-700 mb-1">
+                                                    {loading ? 'Đang tải...' : (searchQuery ? 'Không tìm thấy người dùng' : 'Đang tải danh sách...')}
+                                                </p>
+                                                <p className="text-sm text-gray-400">
+                                                    {searchQuery ? 'Thử tìm với từ khóa khác' : 'Vui lòng đợi trong giây lát'}
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="py-1">
+                                                {searchUsers.map(u => (
+                                                    <div
+                                                        key={u.id}
+                                                        onClick={() => openChatWithUser(u)}
+                                                        className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 cursor-pointer transition-all group"
+                                                    >
+                                                        <div className="relative shrink-0">
+                                                            <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-sm">
+                                                                {u.avatarUrl || u.avatar ? (
+                                                                    <img src={resolveAttachmentUrl(u.avatarUrl || u.avatar || null) || ''} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    u.name.charAt(0).toUpperCase()
+                                                                )}
+                                                            </div>
+                                                            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
+                                                            <p className="text-sm text-gray-500 truncate">@{u.username}</p>
+                                                        </div>
+                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <MessageCircle size={18} className="text-emerald-500" />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    </>
                 )}
-            </div>
 
-            {/* Mobile Chat View */}
-            {isMobile && mobileActiveChat && renderMobileChat()}
+                {/* Mobile Chat View - Outside relative container */}
+                {isMobile && mobileActiveChat && renderMobileChat()}
 
-            {/* Desktop Chat Windows */}
-            {!isMobile && chatWindows.map((w, i) => renderChatWindow(w, i))}
+                {/* Desktop Chat Windows - Outside relative container */}
+                {!isMobile && chatWindows.map((w, i) => renderChatWindow(w, i))}
 
-            {/* Create Group Modal */}
-            {renderCreateGroupModal()}
+                {/* Create Group Modal */}
+                {renderCreateGroupModal()}
 
-            {/* Image Preview Modal with Zoom */}
-            {imagePreview && (
-                <ImageViewer
-                    src={imagePreview}
-                    onClose={() => setImagePreview(null)}
-                />
-            )}
+                {/* Image Preview Modal with Zoom */}
+                {imagePreview && (
+                    <ImageViewer
+                        src={imagePreview}
+                        onClose={() => setImagePreview(null)}
+                    />
+                )}
 
-            {/* OnlyOffice Viewer */}
-            {showOnlyOffice && token && (
-                <DiscussionOnlyOfficeViewer
-                    messageId={showOnlyOffice.messageId}
-                    fileName={showOnlyOffice.filename}
-                    onClose={() => setShowOnlyOffice(null)}
-                    token={token}
-                    type="chat"
-                />
-            )}
+                {/* OnlyOffice Viewer */}
+                {showOnlyOffice && token && (
+                    <DiscussionOnlyOfficeViewer
+                        messageId={showOnlyOffice.messageId}
+                        fileName={showOnlyOffice.filename}
+                        onClose={() => setShowOnlyOffice(null)}
+                        token={token}
+                        type="chat"
+                    />
+                )}
 
-            {/* Image Cropper */}
-            {showImageCropper && cropImageUrl && (
-                <ImageCropper
-                    imageUrl={cropImageUrl}
-                    onCrop={(croppedBlob) => {
-                        if (cropTarget === 'group') {
-                            // Convert blob to file for upload
-                            const file = new File([croppedBlob], 'group-avatar.jpg', { type: 'image/jpeg' });
-                            (window as any)._groupAvatarFile = file;
+                {/* Image Cropper */}
+                {showImageCropper && cropImageUrl && (
+                    <ImageCropper
+                        imageUrl={cropImageUrl}
+                        onCrop={(croppedBlob) => {
+                            if (cropTarget === 'group') {
+                                // Convert blob to file for upload
+                                const file = new File([croppedBlob], 'group-avatar.jpg', { type: 'image/jpeg' });
+                                (window as any)._groupAvatarFile = file;
 
-                            // Update preview
-                            const url = URL.createObjectURL(croppedBlob);
-                            const preview = document.getElementById('group-avatar-preview') as HTMLImageElement;
-                            const placeholder = document.getElementById('group-avatar-placeholder') as HTMLElement;
-                            if (preview && placeholder) {
-                                preview.src = url;
-                                preview.classList.remove('hidden');
-                                placeholder.classList.add('hidden');
+                                // Update preview
+                                const url = URL.createObjectURL(croppedBlob);
+                                const preview = document.getElementById('group-avatar-preview') as HTMLImageElement;
+                                const placeholder = document.getElementById('group-avatar-placeholder') as HTMLElement;
+                                if (preview && placeholder) {
+                                    preview.src = url;
+                                    preview.classList.remove('hidden');
+                                    placeholder.classList.add('hidden');
+                                }
                             }
-                        }
-                        setShowImageCropper(false);
-                        setCropImageUrl(null);
-                    }}
-                    onCancel={() => {
-                        setShowImageCropper(false);
-                        setCropImageUrl(null);
-                    }}
-                />
-            )}
+                            setShowImageCropper(false);
+                            setCropImageUrl(null);
+                        }}
+                        onCancel={() => {
+                            setShowImageCropper(false);
+                            setCropImageUrl(null);
+                        }}
+                    />
+                )}
+            </>, document.body)}
         </>
     );
 };
 
 export default ChatPopup;
-

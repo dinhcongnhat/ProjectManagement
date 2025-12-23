@@ -86,9 +86,9 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
     const getStatusBadge = (status: string) => {
         const config = {
-            'COMPLETED': { bg: 'bg-gradient-to-r from-emerald-500 to-green-500', text: 'Hoàn thành' },
-            'PENDING_APPROVAL': { bg: 'bg-gradient-to-r from-amber-500 to-orange-500', text: 'Chờ duyệt' },
-            'IN_PROGRESS': { bg: 'bg-gradient-to-r from-blue-500 to-indigo-500', text: 'Đang thực hiện' }
+            'COMPLETED': { bg: 'bg-green-600', text: 'Hoàn thành' },
+            'PENDING_APPROVAL': { bg: 'bg-amber-500', text: 'Chờ duyệt' },
+            'IN_PROGRESS': { bg: 'bg-blue-600', text: 'Đang thực hiện' }
         };
         const statusConfig = config[status as keyof typeof config] || config['IN_PROGRESS'];
         return (
@@ -134,7 +134,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                                         onClick={() => handleSelectProject(project.id)}
                                         className="px-3 py-3 hover:bg-gray-50 cursor-pointer flex items-center gap-3 rounded-xl transition-colors"
                                     >
-                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20">
+                                        <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0 shadow-sm">
                                             <Briefcase size={18} className="text-white" />
                                         </div>
                                         <div className="flex-1 min-w-0">
@@ -186,7 +186,7 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                     >
                         <Bell size={20} className="text-gray-600" />
                         {unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-gradient-to-r from-red-500 to-pink-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1.5 shadow-lg shadow-red-500/30">
+                            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1.5">
                                 {unreadCount > 99 ? '99+' : unreadCount}
                             </span>
                         )}
