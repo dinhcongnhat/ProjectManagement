@@ -259,19 +259,7 @@ const ProjectDetailsAdmin = () => {
                         </div>
                     </div>
 
-                    {/* Progress indicator */}
-                    <div className="mt-6">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-blue-200">Tiến độ dự án</span>
-                            <span className="text-lg font-bold">{project.progress}%</span>
-                        </div>
-                        <div className="h-2.5 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
-                            <div
-                                className="h-full bg-blue-300 rounded-full transition-all duration-700 ease-out"
-                                style={{ width: `${project.progress}%` }}
-                            />
-                        </div>
-                    </div>
+
                 </div>
             </div>
 
@@ -310,7 +298,7 @@ const ProjectDetailsAdmin = () => {
                         {/* Main Content */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* Quick Stats */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
                                     <div className="p-3 bg-blue-50 rounded-xl w-fit mb-3">
                                         <Calendar size={20} className="text-blue-600" />
@@ -329,20 +317,6 @@ const ProjectDetailsAdmin = () => {
                                         {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
-                                    <div className="p-3 bg-purple-50 rounded-xl w-fit mb-3">
-                                        <Target size={20} className="text-purple-600" />
-                                    </div>
-                                    <p className="text-xs text-gray-500 font-medium mb-0.5">Thời lượng</p>
-                                    <p className="font-bold text-gray-900">{project.duration || 'N/A'} ngày</p>
-                                </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
-                                    <div className="p-3 bg-emerald-50 rounded-xl w-fit mb-3">
-                                        <Briefcase size={20} className="text-emerald-600" />
-                                    </div>
-                                    <p className="text-xs text-gray-500 font-medium mb-0.5">Giá trị HĐ</p>
-                                    <p className="font-bold text-gray-900">{project.value || 'N/A'}</p>
-                                </div>
                             </div>
 
                             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
@@ -360,24 +334,7 @@ const ProjectDetailsAdmin = () => {
                             </div>
 
                             {/* Details Grid */}
-                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2.5 bg-purple-600 rounded-xl text-white">
-                                        <FileText size={20} />
-                                    </div>
-                                    <h2 className="text-lg font-bold text-gray-900">Thông tin chi tiết</h2>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-blue-50 rounded-xl">
-                                        <p className="text-xs text-blue-600 font-semibold mb-1 uppercase tracking-wide">Nhóm dự án</p>
-                                        <p className="font-bold text-gray-900">{project.group || 'N/A'}</p>
-                                    </div>
-                                    <div className="p-4 bg-emerald-50 rounded-xl">
-                                        <p className="text-xs text-emerald-600 font-semibold mb-1 uppercase tracking-wide">Giá trị</p>
-                                        <p className="font-bold text-gray-900">{project.value || 'N/A'}</p>
-                                    </div>
-                                </div>
-                            </div>
+
 
                             {/* Project Attachments */}
                             <ProjectAttachments
@@ -405,67 +362,47 @@ const ProjectDetailsAdmin = () => {
                                 </div>
 
                                 {/* Manager */}
-                                <div className="mb-5">
-                                    <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide">Quản trị dự án</p>
-                                    <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
-                                        <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                                            {project.manager?.name?.charAt(0) || '?'}
+                                {project.manager?.name && (
+                                    <div className="mb-5">
+                                        <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide">Quản trị dự án</p>
+                                        <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
+                                            <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                                                {project.manager.name.charAt(0)}
+                                            </div>
+                                            <span className="font-semibold text-gray-900">{project.manager.name}</span>
                                         </div>
-                                        <span className="font-semibold text-gray-900">{project.manager?.name || 'Chưa gán'}</span>
                                     </div>
-                                </div>
+                                )}
 
                                 {/* Implementers */}
-                                <div className="mb-5">
-                                    <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide flex items-center gap-2">
-                                        <Users size={14} />
-                                        Người thực hiện ({project.implementers?.length || 0})
-                                    </p>
-                                    <div className="flex flex-wrap gap-2">
-                                        {project.implementers?.map(user => (
-                                            <span
-                                                key={user.id}
-                                                className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-full"
-                                            >
-                                                {user.name}
-                                            </span>
-                                        ))}
-                                        {(!project.implementers || project.implementers.length === 0) && (
-                                            <span className="text-gray-400 text-sm italic">Chưa có</span>
-                                        )}
+                                {project.implementers && project.implementers.length > 0 && (
+                                    <div className="mb-5">
+                                        <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide flex items-center gap-2">
+                                            <Users size={14} />
+                                            Người thực hiện ({project.implementers.length})
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {project.implementers.map(user => (
+                                                <span
+                                                    key={user.id}
+                                                    className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-full"
+                                                >
+                                                    {user.name}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-
-                                {/* Followers */}
-                                <div className="mb-5">
-                                    <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide flex items-center gap-2">
-                                        <Eye size={14} />
-                                        Người theo dõi ({project.followers?.length || 0})
-                                    </p>
-                                    <div className="flex flex-wrap gap-2">
-                                        {project.followers?.map(user => (
-                                            <span
-                                                key={user.id}
-                                                className="px-3 py-1.5 bg-green-100 text-green-700 text-sm font-medium rounded-full"
-                                            >
-                                                {user.name}
-                                            </span>
-                                        ))}
-                                        {(!project.followers || project.followers.length === 0) && (
-                                            <span className="text-gray-400 text-sm italic">Chưa có</span>
-                                        )}
-                                    </div>
-                                </div>
+                                )}
 
                                 {/* Cooperators */}
                                 {project.cooperators && project.cooperators.length > 0 && (
                                     <div>
                                         <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide flex items-center gap-2">
                                             <Briefcase size={14} />
-                                            Phối hợp thực hiện ({project.cooperators?.length || 0})
+                                            Phối hợp thực hiện ({project.cooperators.length})
                                         </p>
                                         <div className="flex flex-wrap gap-2">
-                                            {project.cooperators?.map(user => (
+                                            {project.cooperators.map(user => (
                                                 <span
                                                     key={user.id}
                                                     className="px-3 py-1.5 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-700 text-sm font-medium rounded-full"

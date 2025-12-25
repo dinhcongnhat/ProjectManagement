@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 const EXPORT_HEADERS = [
     'Mã dự án',
     'Tên dự án',
+    'Chủ đầu tư',
     'Ngày bắt đầu',
     'Ngày kết thúc',
     'Thời hạn',
@@ -18,6 +19,7 @@ const EXPORT_HEADERS = [
     'Trạng thái',
     'Người quản lý',
     'Người thực hiện',
+    'Người phối hợp',
     'Người theo dõi',
     'Ngày tạo'
 ];
@@ -25,6 +27,7 @@ const EXPORT_HEADERS = [
 const IMPORT_HEADERS = [
     'Mã dự án (*)',
     'Tên dự án (*)',
+    'Chủ đầu tư',
     'Ngày bắt đầu (DD/MM/YYYY)',
     'Ngày kết thúc (DD/MM/YYYY)',
     'Thời hạn',
@@ -34,6 +37,7 @@ const IMPORT_HEADERS = [
     'Mô tả',
     'Username người quản lý (*)',
     'Username người thực hiện (phân cách bởi dấu phẩy)',
+    'Username người phối hợp (phân cách bởi dấu phẩy)',
     'Username người theo dõi (phân cách bởi dấu phẩy)'
 ];
 
@@ -120,6 +124,7 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             include: {
                 manager: { select: { username: true, name: true } },
                 implementers: { select: { username: true, name: true } },
+                cooperators: { select: { username: true, name: true } },
                 followers: { select: { username: true, name: true } }
             },
             orderBy: { createdAt: 'desc' }
@@ -133,6 +138,7 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
         const excelData = projects.map(project => ({
             'Mã dự án': project.code,
             'Tên dự án': project.name,
+            'Chủ đầu tư': project.investor || '',
             'Ngày bắt đầu': formatDateForExcel(project.startDate),
             'Ngày kết thúc': formatDateForExcel(project.endDate),
             'Thời hạn': project.duration || '',
@@ -144,6 +150,7 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             'Trạng thái': getStatusText(project.status),
             'Người quản lý': `${project.manager.name} (${project.manager.username})`,
             'Người thực hiện': project.implementers.map(u => `${u.name} (${u.username})`).join(', '),
+            'Người phối hợp': project.cooperators.map(u => `${u.name} (${u.username})`).join(', '),
             'Người theo dõi': project.followers.map(u => `${u.name} (${u.username})`).join(', '),
             'Ngày tạo': formatDateForExcel(project.createdAt)
         }));
@@ -156,6 +163,7 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
         ws['!cols'] = [
             { wch: 15 }, // Mã dự án
             { wch: 40 }, // Tên dự án
+            { wch: 25 }, // Chủ đầu tư
             { wch: 15 }, // Ngày bắt đầu
             { wch: 15 }, // Ngày kết thúc
             { wch: 12 }, // Thời hạn
@@ -167,6 +175,7 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             { wch: 15 }, // Trạng thái
             { wch: 25 }, // Người quản lý
             { wch: 40 }, // Người thực hiện
+            { wch: 40 }, // Người phối hợp
             { wch: 40 }, // Người theo dõi
             { wch: 15 }  // Ngày tạo
         ];
@@ -217,6 +226,7 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             {
                 'Mã dự án (*)': 'DA-001',
                 'Tên dự án (*)': 'Dự án mẫu',
+                'Chủ đầu tư': 'Công ty XYZ',
                 'Ngày bắt đầu (DD/MM/YYYY)': '01/01/2025',
                 'Ngày kết thúc (DD/MM/YYYY)': '31/03/2025',
                 'Thời hạn': '3 tháng',
@@ -226,7 +236,8 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
                 'Mô tả': 'Mô tả chi tiết về dự án...',
                 'Username người quản lý (*)': 'manager1',
                 'Username người thực hiện (phân cách bởi dấu phẩy)': 'user1, user2',
-                'Username người theo dõi (phân cách bởi dấu phẩy)': 'user3, user4'
+                'Username người phối hợp (phân cách bởi dấu phẩy)': 'user3, user4',
+                'Username người theo dõi (phân cách bởi dấu phẩy)': 'user5, user6'
             }
         ];
 
@@ -236,6 +247,7 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
         ws['!cols'] = [
             { wch: 18 }, // Mã dự án
             { wch: 35 }, // Tên dự án
+            { wch: 25 }, // Chủ đầu tư
             { wch: 22 }, // Ngày bắt đầu
             { wch: 22 }, // Ngày kết thúc
             { wch: 12 }, // Thời hạn
@@ -245,6 +257,7 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             { wch: 40 }, // Mô tả
             { wch: 28 }, // Username người quản lý
             { wch: 45 }, // Username người thực hiện
+            { wch: 45 }, // Username người phối hợp
             { wch: 45 }  // Username người theo dõi
         ];
 
@@ -272,7 +285,7 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             { 'Hướng dẫn': '2. Mã dự án phải là duy nhất, không được trùng với dự án đã có.' },
             { 'Hướng dẫn': '3. Định dạng ngày: DD/MM/YYYY (ví dụ: 25/12/2025)' },
             { 'Hướng dẫn': '4. Username người quản lý phải tồn tại trong hệ thống.' },
-            { 'Hướng dẫn': '5. Nhiều người thực hiện/theo dõi: nhập username phân cách bởi dấu phẩy.' },
+            { 'Hướng dẫn': '5. Nhiều người thực hiện/phối hợp/theo dõi: nhập username phân cách bởi dấu phẩy.' },
             { 'Hướng dẫn': '' },
             { 'Hướng dẫn': '=== PHƯƠNG PHÁP TIẾN ĐỘ ===' },
             { 'Hướng dẫn': '- Theo giai đoạn' },
@@ -378,6 +391,7 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                 // Get values with flexible key matching
                 const code = row['Mã dự án (*)'] || row['Mã dự án'] || '';
                 const name = row['Tên dự án (*)'] || row['Tên dự án'] || '';
+                const investor = row['Chủ đầu tư'] || '';
                 const startDateStr = row['Ngày bắt đầu (DD/MM/YYYY)'] || row['Ngày bắt đầu'] || '';
                 const endDateStr = row['Ngày kết thúc (DD/MM/YYYY)'] || row['Ngày kết thúc'] || '';
                 const duration = row['Thời hạn'] || '';
@@ -387,6 +401,7 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                 const description = row['Mô tả'] || '';
                 const managerUsername = row['Username người quản lý (*)'] || row['Username người quản lý'] || '';
                 const implementersStr = row['Username người thực hiện (phân cách bởi dấu phẩy)'] || row['Username người thực hiện'] || '';
+                const cooperatorsStr = row['Username người phối hợp (phân cách bởi dấu phẩy)'] || row['Username người phối hợp'] || '';
                 const followersStr = row['Username người theo dõi (phân cách bởi dấu phẩy)'] || row['Username người theo dõi'] || '';
 
                 // Validate required fields
@@ -430,37 +445,28 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                 }
                 const managerId = managerResult.id;
 
-                // Parse implementers - support both username and name
-                const implementerIds: number[] = [];
-                if (implementersStr.trim()) {
-                    const implementerNames = implementersStr.split(',').map((s: string) => s.trim());
-                    for (const nameOrUsername of implementerNames) {
-                        if (nameOrUsername) {
-                            const result = findUserId(nameOrUsername);
-                            if (result.found && result.id) {
-                                implementerIds.push(result.id);
-                            } else {
-                                results.errors.push(`Dòng ${rowNum}: Không tìm thấy người thực hiện "${nameOrUsername}"`);
+                // Function to parse users lists
+                const parseUsersList = (str: string, roleName: string): number[] => {
+                    const ids: number[] = [];
+                    if (str.trim()) {
+                        const names = str.split(',').map((s: string) => s.trim());
+                        for (const nameOrUsername of names) {
+                            if (nameOrUsername) {
+                                const result = findUserId(nameOrUsername);
+                                if (result.found && result.id) {
+                                    ids.push(result.id);
+                                } else {
+                                    results.errors.push(`Dòng ${rowNum}: Không tìm thấy ${roleName} "${nameOrUsername}"`);
+                                }
                             }
                         }
                     }
-                }
+                    return ids;
+                };
 
-                // Parse followers - support both username and name
-                const followerIds: number[] = [];
-                if (followersStr.trim()) {
-                    const followerNames = followersStr.split(',').map((s: string) => s.trim());
-                    for (const nameOrUsername of followerNames) {
-                        if (nameOrUsername) {
-                            const result = findUserId(nameOrUsername);
-                            if (result.found && result.id) {
-                                followerIds.push(result.id);
-                            } else {
-                                results.errors.push(`Dòng ${rowNum}: Không tìm thấy người theo dõi "${nameOrUsername}"`);
-                            }
-                        }
-                    }
-                }
+                const implementerIds = parseUsersList(implementersStr, 'người thực hiện');
+                const cooperatorIds = parseUsersList(cooperatorsStr, 'người phối hợp');
+                const followerIds = parseUsersList(followersStr, 'người theo dõi');
 
                 // Parse dates
                 const startDate = parseDateFromExcel(startDateStr);
@@ -471,6 +477,7 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                     data: {
                         code: code.trim(),
                         name: name.trim(),
+                        investor: investor.trim() || null,
                         startDate,
                         endDate,
                         duration: duration.trim() || null,
@@ -484,6 +491,9 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                         createdById: userId,
                         implementers: {
                             connect: implementerIds.map(id => ({ id }))
+                        },
+                        cooperators: {
+                            connect: cooperatorIds.map(id => ({ id }))
                         },
                         followers: {
                             connect: followerIds.map(id => ({ id }))

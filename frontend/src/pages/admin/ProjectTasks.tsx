@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, FileSpreadsheet, Check, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
@@ -18,48 +18,92 @@ interface Project {
     name: string;
     manager?: { id: number, name: string };
     implementers?: { id: number, name: string }[];
-    followers?: { id: number, name: string }[];
+    cooperators?: { id: number, name: string }[];
     startDate: string | null;
     endDate: string | null;
     duration: number;
     group: string;
     value: string;
-    progressMethod: string;
+    investor?: string;
     description: string;
     managerId: number;
     parentId?: number | null;
     children?: Project[];
 }
 
-interface UserMultiSelectProps {
-    label: string;
-    name: 'implementerIds' | 'followerIds';
-    selectedIds: string[];
-    users: UserData[];
-    onSelectionChange: (name: 'implementerIds' | 'followerIds', userId: string) => void;
-}
+const UserMultiSelect = ({ label, name, selectedIds, users, onSelectionChange }: {
+    label: string,
+    name: 'implementerIds' | 'cooperatorIds',
+    selectedIds: string[],
+    users: UserData[],
+    onSelectionChange: (name: 'implementerIds' | 'cooperatorIds', userId: string) => void
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
-const UserMultiSelect = ({ label, name, selectedIds, users, onSelectionChange }: UserMultiSelectProps) => (
-    <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">{label}</label>
-        <div className="border border-gray-300 rounded-lg p-3 max-h-32 overflow-y-auto bg-white">
-            {users.map(user => (
-                <div key={user.id} className="flex items-center gap-2 py-1">
-                    <input
-                        type="checkbox"
-                        id={`edit-${name}-${user.id}`}
-                        checked={selectedIds.includes(String(user.id))}
-                        onChange={() => onSelectionChange(name, String(user.id))}
-                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                    />
-                    <label htmlFor={`edit-${name}-${user.id}`} className="text-sm text-gray-700 cursor-pointer select-none">
-                        {user.name}
-                    </label>
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div className="space-y-2" ref={dropdownRef}>
+            <label className="block text-sm font-medium text-gray-700">{label}</label>
+            <div className="relative">
+                <div
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg cursor-pointer bg-white flex justify-between items-center min-h-[42px]"
+                    onClick={() => setIsOpen(!isOpen)}
+                >
+                    <div className="flex flex-wrap gap-1">
+                        {selectedIds.length === 0 && <span className="text-gray-400">-- Chọn {label.toLowerCase()} --</span>}
+                        {selectedIds.map(id => {
+                            const user = users.find(u => String(u.id) === id);
+                            return user ? (
+                                <span key={id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                    {user.name}
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onSelectionChange(name, id);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </span>
+                            ) : null;
+                        })}
+                    </div>
+                    <ChevronDown size={16} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </div>
-            ))}
+
+                {isOpen && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {users.map(user => {
+                            const isSelected = selectedIds.includes(String(user.id));
+                            return (
+                                <div
+                                    key={user.id}
+                                    className={`px-3 py-2 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${isSelected ? 'bg-blue-50' : ''}`}
+                                    onClick={() => onSelectionChange(name, String(user.id))}
+                                >
+                                    <span className="text-sm text-gray-700">{user.name} ({user.role})</span>
+                                    {isSelected && <Check size={16} className="text-blue-600" />}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const ProjectTasks = () => {
     const [projects, setProjects] = useState<Project[]>([]);
@@ -83,10 +127,10 @@ const ProjectTasks = () => {
         duration: '',
         group: '',
         value: '',
-        progressMethod: '',
+        investor: '',
         managerId: '',
         implementerIds: [] as string[],
-        followerIds: [] as string[],
+        cooperatorIds: [] as string[],
         description: ''
     });
 
@@ -149,10 +193,10 @@ const ProjectTasks = () => {
             duration: String(project.duration || ''),
             group: project.group || '',
             value: project.value || '',
-            progressMethod: project.progressMethod,
+            investor: project.investor || '',
             managerId: String(project.manager?.id || ''),
             implementerIds: project.implementers?.map(u => String(u.id)) || [],
-            followerIds: project.followers?.map(u => String(u.id)) || [],
+            cooperatorIds: project.cooperators?.map(u => String(u.id)) || [],
             description: project.description || ''
         });
         setShowEditModal(true);
@@ -176,7 +220,7 @@ const ProjectTasks = () => {
         });
     };
 
-    const handleMultiSelectChange = (name: 'implementerIds' | 'followerIds', userId: string) => {
+    const handleMultiSelectChange = (name: 'implementerIds' | 'cooperatorIds', userId: string) => {
         setEditFormData(prev => {
             const currentIds = prev[name];
             if (currentIds.includes(userId)) {
@@ -384,10 +428,19 @@ const ProjectTasks = () => {
                                                 <div className="p-4 space-y-4">
                                                     {/* Header */}
                                                     <div className="flex items-center justify-between">
-                                                        <h4 className="font-semibold text-gray-900 text-sm md:text-base">Chi tiết dự án con</h4>
+                                                        <div className="flex items-center gap-3">
+                                                            <h4 className="font-semibold text-gray-900 text-sm md:text-base">Chi tiết dự án con</h4>
+                                                            <Link
+                                                                to={`/admin/projects/${project.id}`}
+                                                                className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium hover:underline bg-blue-50 px-2 py-1 rounded-md border border-blue-100 transition-colors"
+                                                            >
+                                                                Xem chi tiết
+                                                                <ChevronRight size={14} />
+                                                            </Link>
+                                                        </div>
                                                         <button
                                                             onClick={(e) => toggleChildDetail(project.id, e)}
-                                                            className="text-gray-400 hover:text-gray-600"
+                                                            className="text-gray-400 hover:text-gray-600 p-1 hover:bg-white rounded-full transition-colors"
                                                             title="Đóng"
                                                         >
                                                             <X size={20} />
@@ -416,78 +469,41 @@ const ProjectTasks = () => {
                                                                 {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'Chưa xác định'}
                                                             </p>
                                                         </div>
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium">Thời hạn:</span>
-                                                            <p className="text-gray-900 mt-1">{project.duration || 0} ngày</p>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium">Nhóm dự án:</span>
-                                                            <p className="text-gray-900 mt-1">{project.group || 'N/A'}</p>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium">Giá trị:</span>
-                                                            <p className="text-gray-900 mt-1">{project.value || 'N/A'}</p>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium">Quản trị:</span>
-                                                            <p className="text-gray-900 mt-1">{project.manager?.name || 'Chưa gán'}</p>
-                                                        </div>
+                                                        {project.manager?.name && (
+                                                            <div>
+                                                                <span className="text-gray-600 font-medium">Quản trị:</span>
+                                                                <p className="text-gray-900 mt-1">{project.manager.name}</p>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     {/* Team Members */}
-                                                    <div className="space-y-2">
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium text-sm">Người thực hiện:</span>
-                                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                                {project.implementers && project.implementers.length > 0 ? (
-                                                                    project.implementers.map(impl => (
+                                                    <div className="space-y-4">
+                                                        {project.implementers && project.implementers.length > 0 && (
+                                                            <div>
+                                                                <span className="text-gray-600 font-medium text-sm">Người thực hiện:</span>
+                                                                <div className="flex flex-wrap gap-2 mt-2">
+                                                                    {project.implementers.map(impl => (
                                                                         <span key={impl.id} className="px-2 py-1 bg-white rounded-full text-xs border border-gray-300">
                                                                             {impl.name}
                                                                         </span>
-                                                                    ))
-                                                                ) : (
-                                                                    <span className="text-gray-500 text-xs">Chưa có</span>
-                                                                )}
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium text-sm">Người theo dõi:</span>
-                                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                                {project.followers && project.followers.length > 0 ? (
-                                                                    project.followers.map(fol => (
-                                                                        <span key={fol.id} className="px-2 py-1 bg-white rounded-full text-xs border border-gray-300">
-                                                                            {fol.name}
+                                                        )}
+
+                                                        {project.cooperators && project.cooperators.length > 0 && (
+                                                            <div>
+                                                                <span className="text-gray-600 font-medium text-sm">Người phối hợp thực hiện:</span>
+                                                                <div className="flex flex-wrap gap-2 mt-2">
+                                                                    {project.cooperators.map(coop => (
+                                                                        <span key={coop.id} className="px-2 py-1 bg-white rounded-full text-xs border border-gray-300">
+                                                                            {coop.name}
                                                                         </span>
-                                                                    ))
-                                                                ) : (
-                                                                    <span className="text-gray-500 text-xs">Chưa có</span>
-                                                                )}
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Description */}
-                                                    {project.description && (
-                                                        <div>
-                                                            <span className="text-gray-600 font-medium text-sm">Mô tả:</span>
-                                                            <p className="text-gray-900 mt-1 text-sm leading-relaxed">{project.description}</p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Actions */}
-                                                    <div className="flex gap-2 pt-2 border-t border-blue-200">
-                                                        <Link
-                                                            to={`/admin/projects/${project.id}`}
-                                                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm transition-colors"
-                                                        >
-                                                            Xem chi tiết đầy đủ
-                                                        </Link>
-                                                        <button
-                                                            onClick={() => openEditModal(project)}
-                                                            className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm transition-colors"
-                                                        >
-                                                            Chỉnh sửa
-                                                        </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -528,6 +544,10 @@ const ProjectTasks = () => {
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Tên dự án <span className="text-red-500">*</span></label>
                                     <input type="text" name="name" value={editFormData.name} onChange={handleEditChange} placeholder="Nhập tên dự án" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                 </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Chủ đầu tư</label>
+                                    <input type="text" name="investor" value={editFormData.investor} onChange={handleEditChange} placeholder="Nhập tên chủ đầu tư" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu</label>
@@ -556,15 +576,6 @@ const ProjectTasks = () => {
                             <div className="space-y-4">
                                 <h4 className="font-semibold border-b pb-2">Chi tiết & Phân quyền</h4>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Phương pháp tính tiến độ <span className="text-red-500">*</span></label>
-                                    <select name="progressMethod" value={editFormData.progressMethod} onChange={handleEditChange} title="Phương pháp tính tiến độ" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
-                                        <option value="">-- Chọn phương pháp --</option>
-                                        <option value="Theo bình quân % tiến độ các công việc thuộc dự án">Theo bình quân % tiến độ các công việc</option>
-                                        <option value="Theo tỷ trọng ngày thực hiện">Theo tỷ trọng ngày thực hiện</option>
-                                        <option value="Theo tỷ trọng công việc">Theo tỷ trọng công việc</option>
-                                    </select>
-                                </div>
-                                <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Quản trị dự án <span className="text-red-500">*</span></label>
                                     <select name="managerId" value={editFormData.managerId} onChange={handleEditChange} title="Quản trị dự án" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
                                         <option value="">-- Chọn quản trị --</option>
@@ -572,7 +583,7 @@ const ProjectTasks = () => {
                                     </select>
                                 </div>
                                 <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={editFormData.implementerIds} users={users} onSelectionChange={handleMultiSelectChange} />
-                                <UserMultiSelect label="Người theo dõi" name="followerIds" selectedIds={editFormData.followerIds} users={users} onSelectionChange={handleMultiSelectChange} />
+                                <UserMultiSelect label="Phối hợp thực hiện" name="cooperatorIds" selectedIds={editFormData.cooperatorIds} users={users} onSelectionChange={handleMultiSelectChange} />
                             </div>
                         </div>
 

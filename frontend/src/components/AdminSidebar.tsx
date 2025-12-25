@@ -45,21 +45,21 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
             <aside
                 className={clsx(
                     'bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out shadow-sm',
-                    'w-72 lg:w-64',
+                    'w-72 lg:w-72',
                     isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
                 )}
             >
                 {/* Header */}
                 <div
-                    className="p-4 lg:p-5 flex items-center justify-between gap-3 border-b border-gray-100 bg-white"
+                    className="p-4 lg:p-6 flex items-center justify-between gap-3 border-b border-gray-100 bg-white"
                     style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 1rem)' }}
                 >
-                    <div className="flex items-center gap-3 mt-2">
-                        <img src="/Logo.png" alt="Logo" className="h-16 lg:h-14 w-auto transition-all duration-300" />
+                    <div className="flex items-center gap-3 mt-2 justify-center w-full">
+                        <img src="/Logo.png" alt="Logo" className="h-28 lg:h-22 w-auto object-contain transition-all duration-300" />
                     </div>
                     <button
                         onClick={onClose}
-                        className="lg:hidden p-2 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors"
+                        className="lg:hidden p-2 rounded-xl bg-gray-100 hover:bg-gray-200 transition-colors absolute right-4 top-6"
                     >
                         <X size={22} className="text-gray-600" />
                     </button>

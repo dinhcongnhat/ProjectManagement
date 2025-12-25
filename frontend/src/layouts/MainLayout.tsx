@@ -20,7 +20,7 @@ const MainLayout = () => {
             <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
 
             {/* Main Content */}
-            <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+            <div className="flex-1 lg:ml-72 flex flex-col min-h-screen overflow-x-hidden">
                 <Header onMenuClick={toggleSidebar} />
                 <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-auto pwa-safe-bottom max-w-full">
                     <div className="max-w-7xl mx-auto w-full">
