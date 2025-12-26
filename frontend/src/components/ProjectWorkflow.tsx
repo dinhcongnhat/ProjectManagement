@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CheckCircle2, Clock, Circle, Send, Loader2, AlertCircle, Check, Square } from 'lucide-react';
+import { useState } from 'react';
+import { CheckCircle2, Clock, Circle, Send, Loader2, AlertCircle, Check } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { useDialog } from './ui/Dialog';
 
@@ -32,7 +32,7 @@ export const ProjectWorkflow = ({
     projectId,
     workflow,
     isManager,
-    isImplementer,
+    isImplementer: _isImplementer,
     isAdmin,
     token,
     onRefresh
