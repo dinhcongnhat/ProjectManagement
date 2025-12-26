@@ -460,11 +460,15 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'Request body is missing' });
         }
 
-        const content = req.body.content;
+        const { content, messageType, attachment } = req.body;
 
-        if (!content?.trim()) {
+        if ((!messageType || messageType === 'TEXT') && !content?.trim()) {
             console.log('sendMessage - Empty content. Body received:', req.body);
             return res.status(400).json({ message: 'Content is required' });
+        }
+
+        if (messageType === 'LINK' && !attachment) {
+            return res.status(400).json({ message: 'Link URL is required' });
         }
 
         // Kiểm tra quyền
@@ -483,8 +487,9 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
 
         const message = await prisma.chatMessage.create({
             data: {
-                content: content.trim(),
-                messageType: 'TEXT',
+                content: content?.trim() || null,
+                messageType: (messageType as any) || 'TEXT',
+                attachment: attachment || null,
                 conversationId: Number(id),
                 senderId: userId
             },

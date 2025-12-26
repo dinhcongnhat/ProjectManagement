@@ -14,7 +14,12 @@ import {
     onlyofficeCallback,
     downloadFileForOnlyOffice,
     renameFolder,
-    renameFile
+    renameFile,
+    saveFileFromUrl,
+    getSharedWithMe,
+    searchUsersForShare,
+    shareFolder,
+    shareFile
 } from '../controllers/folderController.js';
 
 const router = Router();
@@ -60,10 +65,19 @@ router.get('/files/:id/onlyoffice-check', authenticateToken, checkOnlyOfficeSupp
 // Get OnlyOffice config
 router.get('/files/:id/onlyoffice-config', authenticateToken, getOnlyOfficeConfig);
 
+// Save file from URL (OnlyOffice Save As)
+router.post('/files/save-from-url', authenticateToken, saveFileFromUrl);
+
 // OnlyOffice callback (no auth needed for OnlyOffice server)
 router.post('/files/onlyoffice-callback', onlyofficeCallback);
 
 // Download file for OnlyOffice (no auth - OnlyOffice needs direct access)
 router.get('/files/:id/onlyoffice-download', downloadFileForOnlyOffice);
+
+// Sharing System
+router.get('/shared', authenticateToken, getSharedWithMe);
+router.get('/users/search', authenticateToken, searchUsersForShare);
+router.post('/folders/:id/share', authenticateToken, shareFolder);
+router.post('/files/:id/share', authenticateToken, shareFile);
 
 export default router;

@@ -9,11 +9,61 @@ const userFolderPrefix = 'users/';
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
 const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
-// Get username-based folder path
+// Helper: Get username-based folder path
 const getUserFolderPath = (username: string): string => {
     // Capitalize first letter of username for folder name
     const folderName = username.charAt(0).toUpperCase() + username.slice(1);
     return `${userFolderPrefix}${folderName}`;
+};
+
+// Helper: Check folder permission (Recursive)
+export const getEffectiveFolderPermission = async (folderId: number, userId: number): Promise<'VIEW' | 'EDIT' | null> => {
+    let currentId: number | null = folderId;
+
+    // Safety break for cycles (though unlikely with tree structure)
+    let depth = 0;
+    while (currentId !== null && depth < 20) {
+        const folder = await prisma.userFolder.findUnique({
+            where: { id: currentId },
+            include: { shares: true }
+        });
+
+        if (!folder) return null;
+
+        // Owner has full access
+        if (folder.userId === userId) return 'EDIT';
+
+        // Check explicit share
+        const share = folder.shares.find(s => s.userId === userId);
+        if (share) return share.permission as 'VIEW' | 'EDIT';
+
+        currentId = folder.parentId;
+        depth++;
+    }
+
+    return null;
+};
+
+// Helper: Check file permission
+export const getEffectiveFilePermission = async (fileId: number, userId: number): Promise<'VIEW' | 'EDIT' | null> => {
+    const file = await prisma.userFile.findUnique({
+        where: { id: fileId },
+        include: { shares: true }
+    });
+
+    if (!file) return null;
+    if (file.userId === userId) return 'EDIT';
+
+    // Direct share
+    const directShare = file.shares.find(s => s.userId === userId);
+    if (directShare) return directShare.permission as 'VIEW' | 'EDIT';
+
+    // Inherited from folder
+    if (file.folderId) {
+        return await getEffectiveFolderPermission(file.folderId, userId);
+    }
+
+    return null;
 };
 
 // Get all folders and files for current user
@@ -26,23 +76,39 @@ export const getFoldersAndFiles = async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
-        // Get folders
-        const folders = await prisma.userFolder.findMany({
-            where: {
-                userId,
-                parentId
-            },
-            orderBy: { name: 'asc' }
-        });
+        // Access Check if checking a specific folder
+        if (parentId) {
+            const permission = await getEffectiveFolderPermission(parentId, userId);
+            if (!permission) {
+                return res.status(403).json({ message: 'Bạn không có quyền truy cập thư mục này' });
+            }
+        }
 
-        // Get files
-        const files = await prisma.userFile.findMany({
-            where: {
-                userId,
-                folderId: parentId
-            },
-            orderBy: { name: 'asc' }
-        });
+        let folders, files;
+
+        if (parentId) {
+            // Inside a folder: List ALL items regardless of owner (since we have access to the folder)
+            folders = await prisma.userFolder.findMany({
+                where: { parentId },
+                orderBy: { name: 'asc' }
+            });
+
+            files = await prisma.userFile.findMany({
+                where: { folderId: parentId },
+                orderBy: { name: 'asc' }
+            });
+        } else {
+            // Root: Only my items
+            folders = await prisma.userFolder.findMany({
+                where: { userId, parentId: null },
+                orderBy: { name: 'asc' }
+            });
+
+            files = await prisma.userFile.findMany({
+                where: { userId, folderId: null },
+                orderBy: { name: 'asc' }
+            });
+        }
 
         // Get current folder info if in subfolder
         let currentFolder = null;
@@ -62,7 +128,13 @@ export const getFoldersAndFiles = async (req: AuthRequest, res: Response) => {
                     id: folder.id,
                     name: folder.name
                 });
-                folder = folder.parent;
+                if (folder.parentId) {
+                    // This is slightly inefficient (N queries), but simple for now. 
+                    // Could be optimized by fetching all parents in one go if needed.
+                    folder = await prisma.userFolder.findUnique({ where: { id: folder.parentId } });
+                } else {
+                    folder = null;
+                }
             }
         }
 
@@ -270,7 +342,7 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
 export const deleteFolder = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const folderId = parseInt(req.params.id);
+        const folderId = parseInt(req.params.id || '0');
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
@@ -326,7 +398,7 @@ export const deleteFolder = async (req: AuthRequest, res: Response) => {
 export const deleteFile = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
@@ -368,7 +440,7 @@ export const deleteFile = async (req: AuthRequest, res: Response) => {
 export const getFileUrl = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
@@ -401,7 +473,7 @@ export const getFileUrl = async (req: AuthRequest, res: Response) => {
 export const streamFile = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
@@ -438,10 +510,15 @@ export const streamFile = async (req: AuthRequest, res: Response) => {
 export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const permission = await getEffectiveFilePermission(fileId, userId);
+        if (!permission) {
+            return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
         }
 
         // Get file
@@ -451,10 +528,6 @@ export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) =>
 
         if (!file) {
             return res.status(404).json({ message: 'File không tồn tại' });
-        }
-
-        if (file.userId !== userId) {
-            return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
         }
 
         const supported = isOfficeFile(file.name);
@@ -496,10 +569,15 @@ const getDocumentType = (filename: string): string => {
 export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        const permission = await getEffectiveFilePermission(fileId, userId);
+        if (!permission) {
+            return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
         }
 
         // Get file
@@ -512,10 +590,6 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'File không tồn tại' });
         }
 
-        if (file.userId !== userId) {
-            return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
-        }
-
         if (!isOfficeFile(file.name)) {
             return res.status(400).json({ message: 'File không được hỗ trợ bởi OnlyOffice' });
         }
@@ -526,37 +600,60 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
         const downloadUrl = await getPresignedUrl(file.minioPath, 3600); // 1 hour expiry
 
+        // Should use a consistent key for the file to enable collaborative editing (if shared)
+        // or to allow saving back to the same file.
+        // Format: userfile_<id>_<last_updated_timestamp>
+        const documentKey = `userfile_${fileId}_${file.updatedAt.getTime()}`;
+
+        const canEdit = permission === 'EDIT';
+
         const config = {
             document: {
                 fileType: ext,
-                key: `userfile_${fileId}_${file.updatedAt.getTime()}`,
+                key: documentKey,
                 title: file.name,
                 url: downloadUrl,
+                permissions: {
+                    download: true,
+                    edit: canEdit,
+                    print: true,
+                    review: canEdit,
+                    comment: true,
+                    copy: true,
+                    modifyContentControl: canEdit,
+                    modifyFilter: canEdit,
+                    fillForms: canEdit,
+                },
             },
             documentType,
             editorConfig: {
-                mode: 'view', // View only mode for personal files
+                mode: canEdit ? 'edit' : 'view',
                 lang: 'vi',
-                callbackUrl: `${BACKEND_URL}/folders/files/onlyoffice-callback`,
+                callbackUrl: `${BACKEND_URL}/folders/files/onlyoffice-callback?fileId=${fileId}`, // Append fileId to query for callback identification
                 user: {
                     id: String(userId),
-                    name: file.user.name
+                    name: req.user?.name || file.user.name
                 },
                 customization: {
-                    chat: false,
-                    comments: false,
-                    compactHeader: true,
-                    compactToolbar: true,
+                    autosave: true,
+                    forcesave: true,
+                    chat: true,
+                    comments: true,
+                    compactHeader: false,
+                    compactToolbar: false,
                     feedback: false,
-                    forcesave: false,
-                    help: false,
-                    hideRightMenu: true,
-                    hideRulers: true,
+                    goback: false,
+                    help: true,
+                    hideRightMenu: false,
+                    hideRulers: false,
                     leftMenu: true,
                     rightMenu: false,
                     statusBar: true,
                     toolbarHideFileName: false,
-                    toolbarNoTabs: false
+                    toolbarNoTabs: false,
+                    features: {
+                        saveAs: true, // Enable Save As
+                    },
                 }
             }
         };
@@ -568,10 +665,70 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
     }
 };
 
-// OnlyOffice callback (for save - not used in view mode)
+// OnlyOffice callback (for save)
 export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
     try {
-        // Just acknowledge the callback
+        const { status, url, users } = req.body;
+        const fileId = parseInt(req.query.fileId as string);
+
+        // Status codes:
+        // 2 - document is ready for saving
+        // 6 - document is being edited, but the current document state is saved
+        if (status === 2 || status === 6) {
+            console.log(`[OnlyOffice Callback] Saving file ${fileId}, status: ${status}`);
+
+            if (!url) {
+                console.error('No URL provided in callback');
+                return res.json({ error: 1 });
+            }
+
+            const file = await prisma.userFile.findUnique({
+                where: { id: fileId }
+            });
+
+            if (!file) {
+                console.error(`File not found: ${fileId}`);
+                return res.json({ error: 0 }); // File deleted? Return 0 to stop retries
+            }
+
+            // Download the edited file from OnlyOffice
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error('Failed to download edited file from OnlyOffice');
+                return res.json({ error: 1 });
+            }
+
+            const buffer = Buffer.from(await response.arrayBuffer());
+
+            // Upload the updated file back to MinIO with the same path
+            // We need to re-import minioClient here if it was not available in context?
+            // Actually minioClient is imported at top level, so it should be fine.
+            // But we need to handle Readable stream for putObject?
+            // putObject accepts Buffer as well.
+
+            await minioClient.putObject(
+                bucketName,
+                file.minioPath,
+                buffer,
+                buffer.length,
+                {
+                    'Content-Type': file.fileType,
+                    // Preserve original filename metadata if needed
+                }
+            );
+
+            // Update file size and timestamp in DB
+            await prisma.userFile.update({
+                where: { id: fileId },
+                data: {
+                    fileSize: buffer.length,
+                    updatedAt: new Date()
+                }
+            });
+
+            console.log(`File saved successfully: ${fileId}`);
+        }
+
         res.json({ error: 0 });
     } catch (error) {
         console.error('OnlyOffice callback error:', error);
@@ -582,7 +739,7 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
 // Download file for OnlyOffice (no auth - OnlyOffice needs direct access)
 export const downloadFileForOnlyOffice = async (req: any, res: Response) => {
     try {
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
 
         // Get file
         const file = await prisma.userFile.findUnique({
@@ -613,7 +770,7 @@ export const downloadFileForOnlyOffice = async (req: any, res: Response) => {
 export const renameFolder = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const folderId = parseInt(req.params.id);
+        const folderId = parseInt(req.params.id || '0');
         const { name } = req.body;
 
         if (!userId) {
@@ -668,7 +825,7 @@ export const renameFolder = async (req: AuthRequest, res: Response) => {
 export const renameFile = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
         const { name } = req.body;
 
         if (!userId) {
@@ -702,5 +859,234 @@ export const renameFile = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error renaming file:', error);
         res.status(500).json({ message: 'Lỗi khi đổi tên file' });
+    }
+};
+
+// Save file from URL (for OnlyOffice Save As)
+export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const { url, name, folderId } = req.body;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        if (!url || !name) {
+            return res.status(400).json({ message: 'URL và tên file là bắt buộc' });
+        }
+
+        // Get user info
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Determine destination folder path
+        let basePath = getUserFolderPath(user.username);
+        if (folderId) {
+            const folder = await prisma.userFolder.findUnique({
+                where: { id: parseInt(folderId) }
+            });
+            if (folder && folder.userId === userId) {
+                basePath = folder.minioPath;
+            }
+        }
+
+        const minioPath = `${basePath}/${name.trim()}`;
+
+        // Download file from URL
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error('Failed to download file from URL');
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const fileSize = buffer.length;
+
+        // Determine File Type
+        const ext = name.split('.').pop()?.toLowerCase() || '';
+        let mimeType = 'application/octet-stream';
+        // Simple mime mapping
+        if (ext === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else if (ext === 'xlsx') mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        else if (ext === 'pptx') mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        else if (ext === 'pdf') mimeType = 'application/pdf';
+
+
+        // Upload to MinIO
+        await minioClient.putObject(
+            bucketName,
+            minioPath,
+            buffer,
+            fileSize,
+            {
+                'Content-Type': mimeType,
+            }
+        );
+
+        // Save to DB
+        const existingFile = await prisma.userFile.findFirst({
+            where: {
+                userId,
+                folderId: folderId ? parseInt(folderId) : null,
+                name: name.trim()
+            }
+        });
+
+        let file;
+        if (existingFile) {
+            file = await prisma.userFile.update({
+                where: { id: existingFile.id },
+                data: {
+                    fileSize,
+                    fileType: mimeType,
+                    updatedAt: new Date()
+                }
+            });
+        } else {
+            file = await prisma.userFile.create({
+                data: {
+                    name: name.trim(),
+                    minioPath,
+                    fileType: mimeType,
+                    fileSize,
+                    userId,
+                    folderId: folderId ? parseInt(folderId) : null
+                }
+            });
+        }
+
+        res.json(file);
+    } catch (error) {
+        console.error('Error saving file from URL:', error);
+        res.status(500).json({ message: 'Lỗi khi lưu file' });
+    }
+};
+
+// Get Shared With Me items
+export const getSharedWithMe = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const sharedFolders = await prisma.userFolderShare.findMany({
+            where: { userId },
+            include: {
+                folder: {
+                    include: { user: { select: { name: true } } }
+                }
+            }
+        });
+
+        const sharedFiles = await prisma.userFileShare.findMany({
+            where: { userId },
+            include: {
+                file: {
+                    include: { user: { select: { name: true } } }
+                }
+            }
+        });
+
+        res.json({
+            folders: sharedFolders.map(s => ({ ...s.folder, permission: s.permission, ownerName: s.folder.user.name })),
+            files: sharedFiles.map(s => ({ ...s.file, permission: s.permission, ownerName: s.file.user.name }))
+        });
+    } catch (error) {
+        console.error('Error getting shared items:', error);
+        res.status(500).json({ message: 'Lỗi khi lấy danh sách được chia sẻ' });
+    }
+};
+
+// Search users to share with
+export const searchUsersForShare = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const query = req.query.q as string;
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+        if (!query) return res.json([]);
+
+        const users = await prisma.user.findMany({
+            where: {
+                id: { not: userId },
+                OR: [
+                    { name: { contains: query, mode: 'insensitive' } },
+                    { username: { contains: query, mode: 'insensitive' } },
+                    { email: { contains: query, mode: 'insensitive' } }
+                ]
+            },
+            take: 10,
+            select: { id: true, name: true, username: true, avatar: true }
+        });
+
+        res.json(users);
+    } catch (error) {
+        console.error('Error searching users:', error);
+        res.status(500).json({ message: 'Lỗi tìm kiếm người dùng' });
+    }
+};
+
+// Share Folder
+export const shareFolder = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const folderId = parseInt(req.params.id);
+        const { userIds, permission } = req.body; // userIds: number[], permission: 'VIEW' | 'EDIT'
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const folder = await prisma.userFolder.findUnique({ where: { id: folderId } });
+        if (!folder) return res.status(404).json({ message: 'Thư mục không tồn tại' });
+        if (folder.userId !== userId) return res.status(403).json({ message: 'Chỉ chủ sở hữu mới được chia sẻ' });
+
+        // Upsert shares
+        for (const targetId of userIds) {
+            await prisma.userFolderShare.upsert({
+                where: {
+                    folderId_userId: { folderId, userId: targetId }
+                },
+                update: { permission },
+                create: { folderId, userId: targetId, permission }
+            });
+        }
+
+        res.json({ message: 'Đã chia sẻ thư mục' });
+    } catch (error) {
+        console.error('Error sharing folder:', error);
+        res.status(500).json({ message: 'Lỗi khi chia sẻ thư mục' });
+    }
+};
+
+// Share File
+export const shareFile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const fileId = parseInt(req.params.id);
+        const { userIds, permission } = req.body;
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const file = await prisma.userFile.findUnique({ where: { id: fileId } });
+        if (!file) return res.status(404).json({ message: 'File không tồn tại' });
+        if (file.userId !== userId) return res.status(403).json({ message: 'Chỉ chủ sở hữu mới được chia sẻ' });
+
+        for (const targetId of userIds) {
+            await prisma.userFileShare.upsert({
+                where: {
+                    fileId_userId: { fileId, userId: targetId }
+                },
+                update: { permission },
+                create: { fileId, userId: targetId, permission }
+            });
+        }
+
+        res.json({ message: 'Đã chia sẻ file' });
+    } catch (error) {
+        console.error('Error sharing file:', error);
+        res.status(500).json({ message: 'Lỗi khi chia sẻ file' });
     }
 };

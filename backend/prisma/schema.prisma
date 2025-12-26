@@ -44,6 +44,7 @@ enum MessageType {
   FILE
   IMAGE
   TEXT_WITH_FILE
+  LINK
 }
 
 enum ConversationType {
@@ -101,6 +102,10 @@ model User {
   
   // Notifications
   notifications Notification[] @relation("UserNotifications")
+
+  // Sharing
+  sharedFolders UserFolderShare[] @relation("FolderShares")
+  sharedFiles   UserFileShare[]   @relation("FileShares")
 }
 
 model Task {
@@ -338,6 +343,9 @@ model UserFolder {
   // Files trong thư mục này
   files UserFile[]
 
+  // Shares
+  shares UserFolderShare[]
+
   @@unique([userId, parentId, name]) // Tên thư mục unique trong cùng parent
   @@index([userId])
   @@index([parentId])
@@ -359,6 +367,9 @@ model UserFile {
   // Thư mục chứa file (null = root folder)
   folderId Int?
   folder   UserFolder? @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  // Shares
+  shares UserFileShare[]
 
   @@index([userId])
   @@index([folderId])
@@ -428,4 +439,38 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+}
+
+// ==================== SHARING SYSTEM ====================
+
+model UserFolderShare {
+  id        Int      @id @default(autoincrement())
+  folderId  Int
+  folder    UserFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  
+  userId    Int
+  user      User     @relation("FolderShares", fields: [userId], references: [id], onDelete: Cascade)
+  
+  permission String  // 'VIEW', 'EDIT'
+  createdAt  DateTime @default(now())
+
+  @@unique([folderId, userId])
+  @@index([userId])
+  @@index([folderId])
+}
+
+model UserFileShare {
+  id        Int      @id @default(autoincrement())
+  fileId    Int
+  file      UserFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  
+  userId    Int
+  user      User     @relation("FileShares", fields: [userId], references: [id], onDelete: Cascade)
+  
+  permission String  // 'VIEW', 'EDIT'
+  createdAt  DateTime @default(now())
+
+  @@unique([fileId, userId])
+  @@index([userId])
+  @@index([fileId])
 }

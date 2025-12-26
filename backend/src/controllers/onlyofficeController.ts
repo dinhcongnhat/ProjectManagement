@@ -157,6 +157,10 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                     goback: false,
                     help: true,
                     hideRightMenu: false,
+                    // Enable Save As
+                    features: {
+                        saveAs: true,
+                    },
                     logo: {
                         image: '/Logo.png',
                         imageEmbedded: '/Logo.png',

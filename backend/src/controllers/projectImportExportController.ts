@@ -2,6 +2,7 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import * as XLSX from 'xlsx';
+import { ProjectStatus, WorkflowStatus } from '@prisma/client';
 
 // Excel column headers mapping
 const EXPORT_HEADERS = [
@@ -15,30 +16,28 @@ const EXPORT_HEADERS = [
     'Giá trị',
     'Phương pháp tiến độ',
     'Mô tả',
-    'Tiến độ (%)',
     'Trạng thái',
     'Người quản lý',
     'Người thực hiện',
     'Người phối hợp',
-    'Người theo dõi',
     'Ngày tạo'
 ];
 
 const IMPORT_HEADERS = [
-    'Mã dự án (*)',
-    'Tên dự án (*)',
+    'Mã dự án',
+    'Tên dự án',
     'Chủ đầu tư',
-    'Ngày bắt đầu (DD/MM/YYYY)',
-    'Ngày kết thúc (DD/MM/YYYY)',
+    'Ngày bắt đầu',
+    'Ngày kết thúc',
     'Thời hạn',
     'Nhóm',
     'Giá trị',
-    'Phương pháp tiến độ (*)',
+    'Phương pháp tiến độ',
     'Mô tả',
-    'Username người quản lý (*)',
-    'Username người thực hiện (phân cách bởi dấu phẩy)',
-    'Username người phối hợp (phân cách bởi dấu phẩy)',
-    'Username người theo dõi (phân cách bởi dấu phẩy)'
+    'Trạng thái',
+    'Người quản lý',
+    'Người thực hiện',
+    'Người phối hợp'
 ];
 
 // Helper to format date for Excel
@@ -66,9 +65,9 @@ const parseDateFromExcel = (value: any): Date | null => {
     if (typeof value === 'string') {
         const parts = value.split('/');
         if (parts.length === 3) {
-            const day = parseInt(parts[0], 10);
-            const month = parseInt(parts[1], 10) - 1;
-            const year = parseInt(parts[2], 10);
+            const day = parseInt(parts[0] as string, 10);
+            const month = parseInt(parts[1] as string, 10) - 1;
+            const year = parseInt(parts[2] as string, 10);
             return new Date(year, month, day);
         }
     }
@@ -77,23 +76,26 @@ const parseDateFromExcel = (value: any): Date | null => {
 };
 
 // Helper to get status text
-const getStatusText = (status: string): string => {
+const getStatusText = (status: string | ProjectStatus): string => {
     const statusMap: Record<string, string> = {
-        'IN_PROGRESS': 'Đang thực hiện',
-        'PENDING_APPROVAL': 'Chờ duyệt',
-        'COMPLETED': 'Hoàn thành'
+        [ProjectStatus.IN_PROGRESS]: 'Đang thực hiện',
+        [ProjectStatus.PENDING_APPROVAL]: 'Chờ duyệt',
+        [ProjectStatus.COMPLETED]: 'Hoàn thành'
     };
-    return statusMap[status] || status;
+    return statusMap[status as string] || (status as string);
 };
 
 // Helper to parse status from text
-const parseStatus = (text: string): string => {
-    const statusMap: Record<string, string> = {
-        'đang thực hiện': 'IN_PROGRESS',
-        'chờ duyệt': 'PENDING_APPROVAL',
-        'hoàn thành': 'COMPLETED'
+const parseStatus = (text: string): ProjectStatus => {
+    const statusMap: Record<string, ProjectStatus> = {
+        'đang thực hiện': ProjectStatus.IN_PROGRESS,
+        'chờ duyệt': ProjectStatus.PENDING_APPROVAL,
+        'hoàn thành': ProjectStatus.COMPLETED,
+        'in_progress': ProjectStatus.IN_PROGRESS,
+        'pending_approval': ProjectStatus.PENDING_APPROVAL,
+        'completed': ProjectStatus.COMPLETED
     };
-    return statusMap[text.toLowerCase().trim()] || 'IN_PROGRESS';
+    return statusMap[text.toLowerCase().trim()] || ProjectStatus.IN_PROGRESS;
 };
 
 // ==================== EXPORT PROJECTS ====================
@@ -146,12 +148,10 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             'Giá trị': project.value || '',
             'Phương pháp tiến độ': project.progressMethod,
             'Mô tả': project.description || '',
-            'Tiến độ (%)': project.progress,
             'Trạng thái': getStatusText(project.status),
             'Người quản lý': `${project.manager.name} (${project.manager.username})`,
             'Người thực hiện': project.implementers.map(u => `${u.name} (${u.username})`).join(', '),
             'Người phối hợp': project.cooperators.map(u => `${u.name} (${u.username})`).join(', '),
-            'Người theo dõi': project.followers.map(u => `${u.name} (${u.username})`).join(', '),
             'Ngày tạo': formatDateForExcel(project.createdAt)
         }));
 
@@ -171,12 +171,10 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             { wch: 15 }, // Giá trị
             { wch: 20 }, // Phương pháp tiến độ
             { wch: 40 }, // Mô tả
-            { wch: 12 }, // Tiến độ
             { wch: 15 }, // Trạng thái
             { wch: 25 }, // Người quản lý
             { wch: 40 }, // Người thực hiện
             { wch: 40 }, // Người phối hợp
-            { wch: 40 }, // Người theo dõi
             { wch: 15 }  // Ngày tạo
         ];
 
@@ -221,23 +219,26 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
         // Create workbook with template
         const wb = XLSX.utils.book_new();
 
+        // Prepare user list for validation
+        const userOptions = users.map(u => `${u.name} (${u.username})`);
+
         // Main template sheet
         const templateData = [
             {
-                'Mã dự án (*)': 'DA-001',
-                'Tên dự án (*)': 'Dự án mẫu',
+                'Mã dự án': 'DA-001',
+                'Tên dự án': 'Dự án mẫu',
                 'Chủ đầu tư': 'Công ty XYZ',
-                'Ngày bắt đầu (DD/MM/YYYY)': '01/01/2025',
-                'Ngày kết thúc (DD/MM/YYYY)': '31/03/2025',
+                'Ngày bắt đầu': '01/01/2025',
+                'Ngày kết thúc': '31/03/2025',
                 'Thời hạn': '3 tháng',
                 'Nhóm': 'Nhóm A',
                 'Giá trị': '100,000,000 VNĐ',
-                'Phương pháp tiến độ (*)': 'Theo giai đoạn',
+                'Phương pháp tiến độ': 'Theo giai đoạn',
                 'Mô tả': 'Mô tả chi tiết về dự án...',
-                'Username người quản lý (*)': 'manager1',
-                'Username người thực hiện (phân cách bởi dấu phẩy)': 'user1, user2',
-                'Username người phối hợp (phân cách bởi dấu phẩy)': 'user3, user4',
-                'Username người theo dõi (phân cách bởi dấu phẩy)': 'user5, user6'
+                'Trạng thái': 'Đang thực hiện',
+                'Người quản lý': userOptions[0] || 'admin',
+                'Người thực hiện': userOptions[1] || 'user1',
+                'Người phối hợp': userOptions[2] || 'user3'
             }
         ];
 
@@ -248,29 +249,52 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             { wch: 18 }, // Mã dự án
             { wch: 35 }, // Tên dự án
             { wch: 25 }, // Chủ đầu tư
-            { wch: 22 }, // Ngày bắt đầu
-            { wch: 22 }, // Ngày kết thúc
+            { wch: 15 }, // Ngày bắt đầu
+            { wch: 15 }, // Ngày kết thúc
             { wch: 12 }, // Thời hạn
             { wch: 15 }, // Nhóm
             { wch: 20 }, // Giá trị
-            { wch: 25 }, // Phương pháp tiến độ
+            { wch: 20 }, // Phương pháp tiến độ
             { wch: 40 }, // Mô tả
-            { wch: 28 }, // Username người quản lý
-            { wch: 45 }, // Username người thực hiện
-            { wch: 45 }, // Username người phối hợp
-            { wch: 45 }  // Username người theo dõi
+            { wch: 15 }, // Trạng thái
+            { wch: 35 }, // Người quản lý (Wider for Name + Username)
+            { wch: 45 }, // Người thực hiện
+            { wch: 45 } // Người phối hợp
+        ];
+
+        // Add Data Validation for "Người quản lý" (Column L - index 11)
+        // We reference the "Danh sách Users" sheet range.
+        // Excel formula for validation: ='Danh sách Users'!$A$2:$A$N
+        const userListRange = `'Danh sách Users'!$A$2:$A$${users.length + 1}`;
+
+        // Note: SheetJS validation support might be limited depending on the version used,
+        // but we add the structure which works in many contexts.
+        ws['!dataValidation'] = [
+            {
+                sqref: 'L2:L1000', // Apply to rows 2-1000 of column L (Người quản lý)
+                type: 'list',
+                operator: 'equal',
+                formula1: userListRange,
+                showErrorMessage: true,
+                error: 'Vui lòng chọn nhân viên từ danh sách',
+                errorTitle: 'Lỗi chọn nhân viên'
+            }
+            // Cannot easily do multi-select dropdown for implementers/cooperators in standard Excel
         ];
 
         XLSX.utils.book_append_sheet(wb, ws, 'Mẫu Import');
 
         // Add users reference sheet
+        // We put the "Name (Username)" string in the first column for the dropdown reference
         const usersData = users.map(u => ({
+            'Chọn Nhân Sự': `${u.name} (${u.username})`, // First column for dropdown
             'Username': u.username,
             'Họ tên': u.name,
             'Vai trò': u.role === 'ADMIN' ? 'Admin' : 'Nhân viên'
         }));
         const wsUsers = XLSX.utils.json_to_sheet(usersData);
         wsUsers['!cols'] = [
+            { wch: 35 }, // Combo column
             { wch: 20 },
             { wch: 30 },
             { wch: 15 }
@@ -282,24 +306,19 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             { 'Hướng dẫn': '=== HƯỚNG DẪN IMPORT DỰ ÁN ===' },
             { 'Hướng dẫn': '' },
             { 'Hướng dẫn': '1. Các cột có dấu (*) là bắt buộc phải nhập.' },
-            { 'Hướng dẫn': '2. Mã dự án phải là duy nhất, không được trùng với dự án đã có.' },
-            { 'Hướng dẫn': '3. Định dạng ngày: DD/MM/YYYY (ví dụ: 25/12/2025)' },
-            { 'Hướng dẫn': '4. Username người quản lý phải tồn tại trong hệ thống.' },
-            { 'Hướng dẫn': '5. Nhiều người thực hiện/phối hợp/theo dõi: nhập username phân cách bởi dấu phẩy.' },
-            { 'Hướng dẫn': '' },
-            { 'Hướng dẫn': '=== PHƯƠNG PHÁP TIẾN ĐỘ ===' },
-            { 'Hướng dẫn': '- Theo giai đoạn' },
-            { 'Hướng dẫn': '- Theo công việc' },
-            { 'Hướng dẫn': '- Theo thời gian' },
-            { 'Hướng dẫn': '- Thủ công' },
+            { 'Hướng dẫn': '2. Mã dự án phải là duy nhất.' },
+            { 'Hướng dẫn': '3. Định dạng ngày: DD/MM/YYYY.' },
+            { 'Hướng dẫn': '4. Người quản lý: Chọn từ danh sách dropdown (Định dạng: Tên (Username)).' },
+            { 'Hướng dẫn': '5. Người thực hiện/phối hợp: Nhập danh sách định dạng "Tên (Username)", phân cách bởi dấu phẩy.' },
+            { 'Hướng dẫn': '   Ví dụ: "Nguyen Van A (user1), Le Van B (user2)"' },
+            { 'Hướng dẫn': '6. Trạng thái: Đang thực hiện, Chờ duyệt, Hoàn thành.' },
             { 'Hướng dẫn': '' },
             { 'Hướng dẫn': '=== LƯU Ý ===' },
-            { 'Hướng dẫn': '- Xem sheet "Danh sách Users" để biết username hợp lệ.' },
-            { 'Hướng dẫn': '- Xóa dòng mẫu trước khi nhập dữ liệu thực.' },
-            { 'Hướng dẫn': '- File chỉ hỗ trợ định dạng .xlsx' }
+            { 'Hướng dẫn': '- KHÔNG đổi tên sheet "Danh sách Users" vì dropdown box đang tham chiếu đến nó.' },
+            { 'Hướng dẫn': '- Nếu dropdown không hoạt động, vui lòng copy từ cột A sheet "Danh sách Users".' }
         ];
         const wsInstructions = XLSX.utils.json_to_sheet(instructions);
-        wsInstructions['!cols'] = [{ wch: 70 }];
+        wsInstructions['!cols'] = [{ wch: 80 }];
         XLSX.utils.book_append_sheet(wb, wsInstructions, 'Hướng dẫn');
 
         // Generate buffer
@@ -339,7 +358,13 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
         // Parse Excel file
         const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
         const sheetName = workbook.SheetNames[0];
+        if (!sheetName) {
+            return res.status(400).json({ message: 'File Excel không hợp lệ (không tìm thấy sheet nào)' });
+        }
         const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+            return res.status(400).json({ message: 'Lỗi đọc sheet dữ liệu' });
+        }
         const rawData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' });
 
         if (rawData.length === 0) {
@@ -359,11 +384,19 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
             const trimmed = input.trim().toLowerCase();
             if (!trimmed) return { id: null, found: false };
 
-            // Try username first
+            // 1. Try to extract username from format "Name (username)"
+            const match = trimmed.match(/\(([^)]+)\)$/);
+            if (match) {
+                const extractedUsername = (match[1] as string).trim(); // username inside ()
+                const byExtracted = userByUsername.get(extractedUsername);
+                if (byExtracted) return { id: byExtracted, found: true };
+            }
+
+            // 2. Try exact username match
             const byUsername = userByUsername.get(trimmed);
             if (byUsername) return { id: byUsername, found: true };
 
-            // Try by name
+            // 3. Try exact name match
             const byName = userByName.get(trimmed);
             if (byName) return { id: byName, found: true };
 
@@ -389,20 +422,21 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
 
             try {
                 // Get values with flexible key matching
-                const code = row['Mã dự án (*)'] || row['Mã dự án'] || '';
-                const name = row['Tên dự án (*)'] || row['Tên dự án'] || '';
+                const code = row['Mã dự án'] || row['Mã dự án (*)'] || '';
+                const name = row['Tên dự án'] || row['Tên dự án (*)'] || '';
                 const investor = row['Chủ đầu tư'] || '';
-                const startDateStr = row['Ngày bắt đầu (DD/MM/YYYY)'] || row['Ngày bắt đầu'] || '';
-                const endDateStr = row['Ngày kết thúc (DD/MM/YYYY)'] || row['Ngày kết thúc'] || '';
+                const startDateStr = row['Ngày bắt đầu'] || row['Ngày bắt đầu (DD/MM/YYYY)'] || '';
+                const endDateStr = row['Ngày kết thúc'] || row['Ngày kết thúc (DD/MM/YYYY)'] || '';
                 const duration = row['Thời hạn'] || '';
                 const group = row['Nhóm'] || '';
                 const value = row['Giá trị'] || '';
-                const progressMethod = row['Phương pháp tiến độ (*)'] || row['Phương pháp tiến độ'] || '';
+                const progressMethod = row['Phương pháp tiến độ'] || row['Phương pháp tiến độ (*)'] || '';
                 const description = row['Mô tả'] || '';
-                const managerUsername = row['Username người quản lý (*)'] || row['Username người quản lý'] || '';
-                const implementersStr = row['Username người thực hiện (phân cách bởi dấu phẩy)'] || row['Username người thực hiện'] || '';
-                const cooperatorsStr = row['Username người phối hợp (phân cách bởi dấu phẩy)'] || row['Username người phối hợp'] || '';
-                const followersStr = row['Username người theo dõi (phân cách bởi dấu phẩy)'] || row['Username người theo dõi'] || '';
+                const statusStr = row['Trạng thái'] || 'Đang thực hiện';
+
+                const managerUsername = row['Người quản lý'] || row['Người quản lý (*)'] || row['Username người quản lý (*)'] || '';
+                const implementersStr = row['Người thực hiện'] || row['Người thực hiện (phân cách bởi dấu phẩy)'] || row['Username người thực hiện (phân cách bởi dấu phẩy)'] || '';
+                const cooperatorsStr = row['Người phối hợp'] || row['Người phối hợp (phân cách bởi dấu phẩy)'] || row['Username người phối hợp (phân cách bởi dấu phẩy)'] || '';
 
                 // Validate required fields
                 if (!code.trim()) {
@@ -466,11 +500,19 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
 
                 const implementerIds = parseUsersList(implementersStr, 'người thực hiện');
                 const cooperatorIds = parseUsersList(cooperatorsStr, 'người phối hợp');
-                const followerIds = parseUsersList(followersStr, 'người theo dõi');
 
                 // Parse dates
                 const startDate = parseDateFromExcel(startDateStr);
                 const endDate = parseDateFromExcel(endDateStr);
+
+                // Parse status
+                const status = parseStatus(statusStr);
+
+                // Progress is naturally 0 for new non-migrated projects usually, or manual.
+                // Since field is removed, we default to 0.
+                const progress = 0;
+
+                const now = new Date();
 
                 // Create project
                 await prisma.project.create({
@@ -485,8 +527,8 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                         value: value.trim() || null,
                         progressMethod: progressMethod.trim(),
                         description: description.trim() || null,
-                        progress: 0,
-                        status: 'IN_PROGRESS',
+                        progress: progress,
+                        status: status, // Now behaves correctly as ProjectStatus
                         managerId,
                         createdById: userId,
                         implementers: {
@@ -495,8 +537,12 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                         cooperators: {
                             connect: cooperatorIds.map(id => ({ id }))
                         },
-                        followers: {
-                            connect: followerIds.map(id => ({ id }))
+                        // Initialize workflow
+                        workflow: {
+                            create: {
+                                currentStatus: WorkflowStatus.RECEIVED,
+                                receivedStartAt: now,
+                            }
                         }
                     }
                 });

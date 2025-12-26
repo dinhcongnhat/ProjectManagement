@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import {
-    ArrowLeft, Calendar, Users, Eye, Clock, CheckCircle2,
+    ArrowLeft, Calendar, Users, Clock, CheckCircle2,
     AlertCircle, FileText, X, MessageSquare, History, FolderTree,
     Plus, ChevronRight, Briefcase, Target, TrendingUp,
     Loader2

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CheckCircle2, Clock, Circle, Send, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle2, Clock, Circle, Send, Loader2, AlertCircle, Check, Square } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { useDialog } from './ui/Dialog';
 
@@ -28,18 +28,6 @@ interface ProjectWorkflowProps {
     onRefresh: () => void;
 }
 
-const formatDateTime = (dateStr: string | null): string => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    return date.toLocaleString('vi-VN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-};
-
 export const ProjectWorkflow = ({
     projectId,
     workflow,
@@ -49,19 +37,17 @@ export const ProjectWorkflow = ({
     token,
     onRefresh
 }: ProjectWorkflowProps) => {
-    const [loading, setLoading] = useState<string | null>(null);
     const { showConfirm, showSuccess, showError } = useDialog();
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    const currentStep = workflow ?
-        workflow.currentStatus === 'RECEIVED' ? 1 :
-            workflow.currentStatus === 'IN_PROGRESS' ? 2 :
-                workflow.currentStatus === 'COMPLETED' ? 3 : 4 : 1;
+    // Determines if a user has managerial rights (Admin, Manager, or potentially Creator if passed, assuming isManager covers it for now)
+    const canApprove = isAdmin || isManager;
 
-    const handleAction = async (action: string, endpoint: string, confirmMessage: string) => {
-        const confirmed = await showConfirm(confirmMessage);
+    const handleAction = async (action: string, endpoint: string, confirmMsg: string) => {
+        const confirmed = await showConfirm(confirmMsg);
         if (!confirmed) return;
 
-        setLoading(action);
+        setActionLoading(action);
         try {
             const response = await fetch(`${API_URL}/projects/${projectId}/workflow/${endpoint}`, {
                 method: 'POST',
@@ -82,65 +68,53 @@ export const ProjectWorkflow = ({
             console.error('Error updating workflow:', error);
             showError('Có lỗi xảy ra khi cập nhật trạng thái');
         } finally {
-            setLoading(null);
+            setActionLoading(null);
         }
     };
 
-    // Xác định quyền cho từng action
-    const canConfirmReceived = (isImplementer || isManager || isAdmin) && currentStep === 1;
-    const canConfirmInProgress = (isImplementer || isManager || isAdmin) && currentStep === 2;
-    const canApproveCompleted = (isManager || isAdmin) && currentStep === 3 && !workflow?.completedApprovedAt;
-    const canSendToCustomer = (isImplementer || isManager || isAdmin) && currentStep === 3 && workflow?.completedApprovedAt;
-
-    // Define workflow steps
     const steps = [
         {
-            id: 1,
-            name: 'Đã nhận thông tin',
-            description: 'Xác nhận đã nhận thông tin dự án',
-            isCompleted: currentStep > 1,
-            isCurrent: currentStep === 1,
-            completedAt: workflow?.receivedConfirmedAt,
-            canToggle: canConfirmReceived,
-            onToggle: () => handleAction('confirm-received', 'confirm-received', 'Xác nhận đã nhận thông tin dự án?'),
+            id: 'received',
+            title: 'Đã nhận thông tin',
+            isCompleted: !!workflow?.receivedConfirmedAt,
+            canToggle: !workflow?.receivedConfirmedAt, // Can only toggle if not done
+            action: () => handleAction('received', 'confirm-received', 'Xác nhận chuyển sang Đang thực hiện?'),
+            description: workflow?.receivedConfirmedAt ? `Hoàn tất: ${new Date(workflow.receivedConfirmedAt).toLocaleDateString()}` : 'Xác nhận để bắt đầu thực hiện',
             icon: Circle
         },
         {
-            id: 2,
-            name: 'Đang thực hiện',
-            description: 'Đang thực hiện công việc',
-            isCompleted: currentStep > 2,
-            isCurrent: currentStep === 2,
-            completedAt: workflow?.inProgressConfirmedAt,
-            canToggle: canConfirmInProgress,
-            onToggle: () => handleAction('confirm-in-progress', 'confirm-in-progress', 'Xác nhận đã hoàn thành công việc?'),
+            id: 'in_progress',
+            title: 'Đang thực hiện',
+            isCompleted: !!workflow?.inProgressConfirmedAt,
+            // Can toggle if previous step is done AND this step is not done
+            canToggle: !!workflow?.receivedConfirmedAt && !workflow?.inProgressConfirmedAt,
+            action: () => handleAction('in_progress', 'confirm-in-progress', 'Xác nhận công việc đã hoàn thành?'),
+            description: workflow?.inProgressConfirmedAt ? `Hoàn tất: ${new Date(workflow.inProgressConfirmedAt).toLocaleDateString()}` : 'Xác nhận khi hoàn thành công việc',
             icon: Clock
         },
         {
-            id: 3,
-            name: 'Đã hoàn thành',
+            id: 'completed_approval',
+            title: 'Duyệt hoàn thành',
+            isCompleted: !!workflow?.completedApprovedAt,
+            // Special case: "Toggle" here means Approval.
+            // Visible/Active if In Progress is done (worker confirmed) AND not yet approved.
+            // AND user has permission.
+            isApprovalStep: true, // Marker for custom rendering
+            canToggle: !!workflow?.inProgressConfirmedAt && !workflow?.completedApprovedAt && canApprove,
+            action: () => handleAction('approve', 'approve-completed', 'Xác nhận duyệt hoàn thành dự án?'),
             description: workflow?.completedApprovedAt
-                ? `PM duyệt: ${workflow.completedApprovedBy?.name || 'N/A'}`
-                : 'Chờ PM duyệt',
-            isCompleted: currentStep > 3,
-            isCurrent: currentStep === 3,
-            completedAt: workflow?.completedConfirmedAt,
-            approvedAt: workflow?.completedApprovedAt,
-            canToggle: canApproveCompleted,
-            onToggle: () => handleAction('approve-completed', 'approve-completed', 'Duyệt xác nhận hoàn thành dự án?'),
-            canSendToCustomer,
-            sendToCustomerAction: () => handleAction('send-to-customer', 'confirm-sent-to-customer', 'Xác nhận đã gửi kết quả cho khách hàng?'),
+                ? `Đã duyệt bởi ${workflow.completedApprovedBy?.name} lúc ${new Date(workflow.completedApprovedAt).toLocaleString()}`
+                : (workflow?.inProgressConfirmedAt ? 'Chờ quản lý duyệt' : 'Chưa hoàn thành công việc'),
             icon: CheckCircle2
         },
         {
-            id: 4,
-            name: 'Đã gửi khách hàng',
-            description: 'Kết quả đã được gửi cho khách hàng',
-            isCompleted: currentStep >= 4,
-            isCurrent: false,
-            completedAt: workflow?.sentToCustomerAt,
-            canToggle: false,
-            onToggle: () => { },
+            id: 'sent_customer',
+            title: 'Đã gửi khách hàng',
+            isCompleted: !!workflow?.sentToCustomerAt,
+            // Can toggle if Approved AND not yet sent
+            canToggle: !!workflow?.completedApprovedAt && !workflow?.sentToCustomerAt,
+            action: () => handleAction('sent', 'confirm-sent-to-customer', 'Xác nhận đã gửi kết quả cho khách hàng?'),
+            description: workflow?.sentToCustomerAt ? `Đã gửi: ${new Date(workflow.sentToCustomerAt).toLocaleDateString()}` : 'Xác nhận sau khi gửi kết quả',
             icon: Send
         }
     ];
@@ -149,118 +123,74 @@ export const ProjectWorkflow = ({
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
                 <AlertCircle size={20} className="text-blue-600" />
-                Tiến trình công việc
+                Tiến độ dự án
             </h3>
 
-            <div className="space-y-3">
+            <div className="flex flex-col gap-0 relative">
+                {/* Vertical Line Connector */}
+                <div className="absolute left-[19px] top-4 bottom-8 w-0.5 bg-gray-100 z-0" />
+
                 {steps.map((step, index) => {
-                    const StepIcon = step.icon;
-                    const isLoading = loading !== null;
+                    const isLast = index === steps.length - 1;
+                    const isLoading = actionLoading === step.id || (step.id === 'completed_approval' && actionLoading === 'approve');
+                    const isActive = step.canToggle;
+                    const isDone = step.isCompleted;
 
                     return (
-                        <div
-                            key={step.id}
-                            className={`
-                                relative flex items-center gap-4 p-4 rounded-xl transition-all
-                                ${step.isCompleted
-                                    ? 'bg-green-50 border border-green-200'
-                                    : step.isCurrent
-                                        ? 'bg-blue-50 border border-blue-200'
-                                        : 'bg-white border border-gray-200'
-                                }
-                            `}
-                        >
-                            {/* Checkbox / Status indicator */}
-                            <div className="flex-shrink-0">
-                                {step.canToggle ? (
-                                    <button
-                                        onClick={step.onToggle}
-                                        disabled={isLoading}
-                                        className={`
-                                            w-8 h-8 rounded-lg border-2 flex items-center justify-center
-                                            transition-all cursor-pointer
-                                            ${step.isCompleted
-                                                ? 'bg-green-500 border-green-500 text-white'
-                                                : 'bg-white border-gray-300 hover:border-blue-500 hover:bg-blue-50'
-                                            }
-                                            ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
-                                        `}
-                                        title={step.isCompleted ? 'Đã hoàn thành' : 'Nhấn để xác nhận'}
-                                    >
-                                        {isLoading && loading?.includes(step.name.toLowerCase()) ? (
-                                            <Loader2 size={16} className="animate-spin" />
-                                        ) : step.isCompleted ? (
-                                            <CheckCircle2 size={18} />
-                                        ) : null}
-                                    </button>
-                                ) : (
-                                    <div
-                                        className={`
-                                            w-8 h-8 rounded-lg flex items-center justify-center
-                                            ${step.isCompleted
-                                                ? 'bg-green-500 text-white'
-                                                : step.isCurrent
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-gray-300 text-gray-500'
-                                            }
-                                        `}
-                                    >
-                                        {step.isCompleted ? (
-                                            <CheckCircle2 size={18} />
-                                        ) : (
-                                            <StepIcon size={18} />
-                                        )}
-                                    </div>
-                                )}
+                        <div key={step.id} className={`relative z-10 flex gap-4 ${!isLast ? 'pb-8' : ''}`}>
+                            {/* Checkbox / Icon Area */}
+                            <div className="flex-shrink-0 pt-1">
+                                <button
+                                    onClick={isActive ? step.action : undefined}
+                                    disabled={!isActive || isLoading}
+                                    className={`
+                                        w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all duration-200
+                                        ${isDone
+                                            ? 'bg-green-500 border-green-500 text-white'
+                                            : isActive
+                                                ? 'bg-white border-blue-500 text-blue-500 hover:bg-blue-50 cursor-pointer shadow-sm'
+                                                : 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
+                                        }
+                                    `}
+                                >
+                                    {isLoading ? (
+                                        <Loader2 size={20} className="animate-spin" />
+                                    ) : isDone ? (
+                                        <Check size={20} strokeWidth={3} />
+                                    ) : (
+                                        <step.icon size={20} />
+                                    )}
+                                </button>
                             </div>
 
-                            {/* Content */}
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <h4 className={`font-semibold ${step.isCompleted ? 'text-green-700' :
-                                        step.isCurrent ? 'text-blue-700' : 'text-gray-500'
-                                        }`}>
-                                        {step.name}
+                            {/* Content Area */}
+                            <div className="flex-grow pt-2">
+                                <div className="flex items-center justify-between mb-1">
+                                    <h4 className={`text-base font-semibold ${isDone ? 'text-gray-900' : isActive ? 'text-blue-900' : 'text-gray-500'}`}>
+                                        {step.title}
                                     </h4>
-                                    {step.isCurrent && (
-                                        <span className="px-2 py-0.5 text-xs font-medium bg-blue-500 text-white rounded-full">
-                                            Hiện tại
+                                    {step.isApprovalStep && !isDone && !!workflow?.inProgressConfirmedAt && !canApprove && (
+                                        <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
+                                            Chờ duyệt
                                         </span>
                                     )}
                                 </div>
+                                <p className="text-sm text-gray-500">
+                                    {step.description}
+                                </p>
 
-                                <p className="text-sm text-gray-500 mt-0.5">{step.description}</p>
-
-                                {step.completedAt && (
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        Hoàn thành: {formatDateTime(step.completedAt)}
-                                    </p>
+                                {/* Explicit Action Button for Approval if needed, though the circle click handles it */}
+                                {step.isApprovalStep && isActive && (
+                                    <button
+                                        onClick={step.action}
+                                        disabled={isLoading}
+                                        className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors flex items-center gap-2"
+                                    >
+                                        {isLoading ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                                        Duyệt dự án ngay
+                                    </button>
                                 )}
                             </div>
-
-                            {/* Send to customer button */}
-                            {step.canSendToCustomer && (
-                                <button
-                                    onClick={step.sendToCustomerAction}
-                                    disabled={isLoading}
-                                    className="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0"
-                                >
-                                    {loading === 'send-to-customer' ? (
-                                        <Loader2 size={16} className="animate-spin" />
-                                    ) : (
-                                        <Send size={16} />
-                                    )}
-                                    Gửi khách hàng
-                                </button>
-                            )}
-
-                            {/* Connector line */}
-                            {index < steps.length - 1 && (
-                                <div className={`
-                                    absolute left-8 top-full w-0.5 h-3 -translate-x-1/2 z-10
-                                    ${step.isCompleted ? 'bg-green-400' : 'bg-gray-200'}
-                                `} />
-                            )}
                         </div>
                     );
                 })}

@@ -91,43 +91,72 @@ export const uploadProjectAttachment = async (req: AuthRequest, res: Response) =
 
         // Handle file uploads (multiple files)
         const files = req.files as Express.Multer.File[];
-        if (!files || files.length === 0) {
-            return res.status(400).json({ message: 'Vui lòng chọn ít nhất một tệp' });
+        const links = req.body.links ? JSON.parse(req.body.links) : [];
+
+        if ((!files || files.length === 0) && (!links || links.length === 0)) {
+            return res.status(400).json({ message: 'Vui lòng chọn ít nhất một tệp hoặc liên kết' });
         }
 
         const uploadedAttachments = [];
 
-        for (const file of files) {
-            // Normalize Vietnamese filename
-            const normalizedFilename = normalizeVietnameseFilename(file.originalname);
-            const minioPath = getAttachmentPath(project.name, category, normalizedFilename);
+        // Process Links
+        if (links && Array.isArray(links)) {
+            for (const link of links) {
+                // Determine category (same logic as files)
+                // Reuse existing category variable
 
-            // Upload to MinIO
-            await uploadFile(minioPath, file.buffer, {
-                'Content-Type': file.mimetype,
-            });
+                const attachment = await prisma.projectAttachment.create({
+                    data: {
+                        name: link.name,
+                        minioPath: `LINK:${link.url}`,
+                        fileType: link.type || 'application/internet-shortcut',
+                        fileSize: 0,
+                        category,
+                        projectId: Number(projectId),
+                        uploadedById: userId
+                    },
+                    include: {
+                        uploadedBy: { select: { id: true, name: true, role: true } }
+                    }
+                });
+                uploadedAttachments.push(attachment);
+            }
+        }
 
-            // Create database record
-            const attachment = await prisma.projectAttachment.create({
-                data: {
-                    name: normalizedFilename,
-                    minioPath,
-                    fileType: file.mimetype,
-                    fileSize: file.size,
-                    category,
-                    projectId: Number(projectId),
-                    uploadedById: userId
-                },
-                include: {
-                    uploadedBy: { select: { id: true, name: true, role: true } }
-                }
-            });
+        // Process Files
+        if (files) {
+            for (const file of files) {
+                // Normalize Vietnamese filename
+                const normalizedFilename = normalizeVietnameseFilename(file.originalname);
+                const minioPath = getAttachmentPath(project.name, category, normalizedFilename);
 
-            uploadedAttachments.push(attachment);
+                // Upload to MinIO
+                await uploadFile(minioPath, file.buffer, {
+                    'Content-Type': file.mimetype,
+                });
+
+                // Create database record
+                const attachment = await prisma.projectAttachment.create({
+                    data: {
+                        name: normalizedFilename,
+                        minioPath,
+                        fileType: file.mimetype,
+                        fileSize: file.size,
+                        category,
+                        projectId: Number(projectId),
+                        uploadedById: userId
+                    },
+                    include: {
+                        uploadedBy: { select: { id: true, name: true, role: true } }
+                    }
+                });
+
+                uploadedAttachments.push(attachment);
+            }
         }
 
         res.status(201).json({
-            message: `Đã tải lên ${uploadedAttachments.length} tệp thành công`,
+            message: `Đã thêm ${uploadedAttachments.length} tệp/liên kết thành công`,
             attachments: uploadedAttachments
         });
     } catch (error) {
@@ -349,6 +378,12 @@ export const getAttachmentPresignedUrl = async (req: AuthRequest, res: Response)
 
         if (!attachment) {
             return res.status(404).json({ message: 'Tệp đính kèm không tồn tại' });
+        }
+
+        // Check if it's an external link
+        if (attachment.minioPath.startsWith('LINK:')) {
+            const url = attachment.minioPath.substring(5);
+            return res.json({ url }); // Frontend should handle redirect
         }
 
         const url = await getPresignedUrl(attachment.minioPath, 3600);

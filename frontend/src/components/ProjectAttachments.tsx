@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { FileText, Trash2, CloudUpload, FolderOpen, X, Loader2, Eye, Paperclip, ChevronDown, HardDrive } from 'lucide-react';
+import { useCloudStoragePicker } from '../hooks/useCloudStoragePicker';
+import { FileText, Trash2, CloudUpload, FolderOpen, X, Loader2, Eye, Paperclip, ChevronDown, HardDrive, ExternalLink } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from './ui/Dialog';
@@ -29,7 +30,7 @@ interface ProjectAttachmentsProps {
     projectId: number;
     projectName: string;
     projectStatus: string;
-    canUpload: boolean;  // Manager, implementer (after completion), or admin
+    canUpload: boolean;
     isImplementer: boolean;
     isAdmin: boolean;
     isManager: boolean;
@@ -46,12 +47,15 @@ const isOfficeFile = (fileName: string): boolean => {
 };
 
 const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return 'Link';
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 };
 
 const getFileIcon = (mimeType: string) => {
+    if (mimeType.includes('google-drive')) return 'googledrive';
+
     if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return '📊';
     if (mimeType.includes('document') || mimeType.includes('word')) return '📄';
     if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '📽️';
@@ -62,10 +66,30 @@ const getFileIcon = (mimeType: string) => {
     return '📎';
 };
 
+// SVG Icons for Drive/OneDrive
+const GoogleDriveIcon = () => (
+    <svg viewBox="0 0 87.3 78" className="w-5 h-5">
+        <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.9 2.5 3.2 3.3l12.3-21.3-6.5-11.3H4.35C1.8 44.2.35 45.65.35 47.7c0 2.05.9 3.95 2.55 5.5l3.7 13.65z" fill="#0066da" />
+        <path d="M43.65 25h13L43.85 3.45c-.8-1.4-1.9-2.5-3.2-3.3l-12.3 21.3 6.5 11.3h15.1c2.55 0 4-1.45 4-3.5 0-2.05-.9-3.95-2.55-5.5l-7.75-18.3z" fill="#00ac47" />
+        <path d="M73.55 76.8c1.45-.8 2.5-1.9 3.3-3.2l12.75-22.1c.8-1.45.8-3.05.8-4.5 0-1.45-1-3.05-1.8-4.5l-6.35-11H52.1l11.75 20.35 9.7 25.45z" fill="#ea4335" />
+        <path d="M43.65 25H11.55l7.75 13.45L31.6 59.9h30.15l-12.75-22.1-5.35-12.8z" fill="#00832d" />
+        <path d="M73.55 76.8 53.4 41.9l-9.75-16.9H13.65L39.8 76.8h33.75z" fill="#2684fc" />
+        <path d="M6.6 66.85 20.25 43.2l11.75 20.35-6.15 10.65c-2.05 1.2-4.5 1.2-6.55 0L6.6 66.85z" fill="#ffba00" />
+    </svg>
+);
+
+
+
+interface SelectedLink {
+    name: string;
+    url: string;
+    type: 'google-drive';
+}
+
 export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     projectId,
-    projectName: _projectName, // eslint-disable-line @typescript-eslint/no-unused-vars
-    projectStatus: _projectStatus, // eslint-disable-line @typescript-eslint/no-unused-vars
+    projectName: _projectName,
+    projectStatus: _projectStatus,
     canUpload,
     isImplementer,
     isAdmin,
@@ -82,9 +106,12 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [selectedLinks, setSelectedLinks] = useState<SelectedLink[]>([]);
     const [showFilePicker, setShowFilePicker] = useState(false);
     const [showUploadDropdown, setShowUploadDropdown] = useState(false);
     const [viewingAttachment, setViewingAttachment] = useState<Attachment | null>(null);
+
+
 
     // Upload progress state
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -141,20 +168,47 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
         }
     };
 
+    // Use Picker Hook
+    const { openGoogleDrivePicker } = useCloudStoragePicker({
+        onSelect: (file) => {
+            setSelectedLinks(prev => [...prev, {
+                name: file.name,
+                url: file.url,
+                type: file.type
+            }]);
+            setShowUploadDropdown(false);
+        },
+        onError: (error) => {
+            showError(error);
+        }
+    });
+
     const removeSelectedFile = (index: number) => {
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
+    const removeSelectedLink = (index: number) => {
+        setSelectedLinks(prev => prev.filter((_, i) => i !== index));
+    };
+
     const uploadFiles = async () => {
-        if (selectedFiles.length === 0) return;
+        if (selectedFiles.length === 0 && selectedLinks.length === 0) return;
 
         // Initialize upload progress dialog
-        const filesToUpload: UploadFile[] = selectedFiles.map(f => ({
-            name: f.name,
-            size: f.size,
-            progress: 0,
-            status: 'pending' as const
-        }));
+        const filesToUpload: UploadFile[] = [
+            ...selectedFiles.map(f => ({
+                name: f.name,
+                size: f.size,
+                progress: 0,
+                status: 'pending' as const
+            })),
+            ...selectedLinks.map(l => ({
+                name: l.name,
+                size: 0,
+                progress: 0,
+                status: 'pending' as const
+            }))
+        ];
 
         setUploadFilesList(filesToUpload);
         setUploadProgress(0);
@@ -167,6 +221,14 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
             selectedFiles.forEach(file => {
                 formData.append('files', file);
             });
+
+            if (selectedLinks.length > 0) {
+                formData.append('links', JSON.stringify(selectedLinks.map(l => ({
+                    name: l.name,
+                    url: l.url,
+                    type: 'application/x-google-drive-link'
+                }))));
+            }
 
             // Use XMLHttpRequest for progress tracking
             const xhr = new XMLHttpRequest();
@@ -213,8 +275,9 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
             if (result.ok) {
                 setUploadStatus('completed');
                 setUploadFilesList(prev => prev.map(f => ({ ...f, status: 'completed', progress: 100 })));
-                showSuccess(result.data?.message || `Đã tải lên ${selectedFiles.length} tệp`);
+                showSuccess(result.data?.message || `Đã thêm ${filesToUpload.length} tệp`);
                 setSelectedFiles([]);
+                setSelectedLinks([]);
 
                 // Wait a moment then close and refresh
                 setTimeout(() => {
@@ -306,6 +369,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
 
     return (
         <>
+
+
             {/* Upload Progress Dialog */}
             <UploadProgressDialog
                 isOpen={showUploadDialog}
@@ -360,7 +425,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                 </button>
 
                                 {showUploadDropdown && (
-                                    <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 py-1 min-w-[180px]">
+                                    <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 py-1 min-w-[200px]">
                                         <button
                                             onClick={() => {
                                                 setShowUploadDropdown(false);
@@ -381,6 +446,15 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                             <FolderOpen size={16} className="text-amber-500" />
                                             <span className="text-gray-700">Từ thư mục</span>
                                         </button>
+                                        <div className="border-t border-gray-100 my-1"></div>
+                                        <button
+                                            onClick={openGoogleDrivePicker}
+                                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                        >
+                                            <GoogleDriveIcon />
+                                            <span className="text-gray-700">Google Drive</span>
+                                        </button>
+
                                     </div>
                                 )}
 
@@ -395,16 +469,31 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                         </div>
                     )}
 
-                    {/* Selected files */}
-                    {selectedFiles.length > 0 && (
+                    {/* Selected files & Links */}
+                    {(selectedFiles.length > 0 || selectedLinks.length > 0) && (
                         <div className="w-full mt-2 space-y-2">
                             {selectedFiles.map((file, index) => (
-                                <div key={index} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
+                                <div key={`file-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
                                     <span className="text-lg">{getFileIcon(file.type)}</span>
                                     <span className="flex-1 truncate">{file.name}</span>
                                     <span className="text-gray-400 text-xs">{formatFileSize(file.size)}</span>
                                     <button
                                         onClick={() => removeSelectedFile(index)}
+                                        className="p-1 text-gray-400 hover:text-red-500 rounded"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            {selectedLinks.map((link, index) => (
+                                <div key={`link-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
+                                    <span className="text-lg">
+                                        <GoogleDriveIcon />
+                                    </span>
+                                    <span className="flex-1 truncate text-blue-600">{link.name}</span>
+                                    <span className="text-gray-400 text-xs">Link</span>
+                                    <button
+                                        onClick={() => removeSelectedLink(index)}
                                         className="p-1 text-gray-400 hover:text-red-500 rounded"
                                     >
                                         <X size={14} />
@@ -418,10 +507,10 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                     className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                 >
                                     {uploading ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
-                                    {uploading ? 'Đang tải...' : `Tải lên ${selectedFiles.length} tệp`}
+                                    {uploading ? 'Đang tải...' : `Tải lên ${selectedFiles.length + selectedLinks.length} mục`}
                                 </button>
                                 <button
-                                    onClick={() => setSelectedFiles([])}
+                                    onClick={() => { setSelectedFiles([]); setSelectedLinks([]); }}
                                     className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition-colors"
                                 >
                                     Hủy
@@ -524,16 +613,38 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
     onDelete,
     canDelete
 }) => {
-    const canView = isOfficeFile(attachment.name);
+    // Detect if external link
+    const isLink = attachment.minioPath.startsWith('LINK:');
+    const getIcon = () => {
+        if (attachment.fileType.includes('google-drive')) return <GoogleDriveIcon />;
+
+        const emoji = getFileIcon(attachment.fileType);
+        return <span className="text-2xl">{emoji}</span>;
+    };
+
+    const handleView = () => {
+        if (isLink) {
+            // Extract URL and open
+            const url = attachment.minioPath.substring(5);
+            window.open(url, '_blank');
+        } else {
+            onView();
+        }
+    };
+
+    // For local files, check compatibility
+    const canView = isLink || isOfficeFile(attachment.name);
 
     return (
         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group">
             <div
                 className={`flex items-center gap-3 flex-1 min-w-0 ${canView ? 'cursor-pointer' : ''}`}
-                onClick={canView ? onView : undefined}
+                onClick={canView ? handleView : undefined}
                 title={canView ? 'Nhấn để xem tài liệu' : undefined}
             >
-                <span className="text-2xl">{getFileIcon(attachment.fileType)}</span>
+                <div className="shrink-0 flex items-center justify-center w-8">
+                    {getIcon()}
+                </div>
                 <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium truncate ${canView ? 'text-blue-600 hover:text-blue-800 hover:underline' : 'text-gray-800'}`}>
                         {attachment.name}
@@ -549,19 +660,21 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 {canView && (
                     <button
-                        onClick={onView}
+                        onClick={handleView}
                         className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                        title="Xem"
+                        title={isLink ? "Mở liên kết" : "Xem"}
                     >
-                        <Eye size={16} />
+                        {isLink ? <ExternalLink size={16} /> : <Eye size={16} />}
                     </button>
                 )}
-                <FileDownloadButton
-                    fileName={attachment.name}
-                    downloadUrl={downloadUrl}
-                    token={token}
-                    size="sm"
-                />
+                {!isLink && (
+                    <FileDownloadButton
+                        fileName={attachment.name}
+                        downloadUrl={downloadUrl}
+                        token={token}
+                        size="sm"
+                    />
+                )}
                 {canDelete && (
                     <button
                         onClick={onDelete}

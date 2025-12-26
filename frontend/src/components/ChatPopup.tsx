@@ -81,7 +81,7 @@ interface Reaction {
 interface Message {
     id: number;
     content: string | null;
-    messageType: 'TEXT' | 'VOICE' | 'FILE' | 'IMAGE' | 'TEXT_WITH_FILE';
+    messageType: 'TEXT' | 'VOICE' | 'FILE' | 'IMAGE' | 'TEXT_WITH_FILE' | 'LINK';
     attachment: string | null;
     attachmentUrl: string | null;
     attachmentName?: string | null;
@@ -1881,6 +1881,73 @@ const ChatPopup: React.FC = () => {
         }
     };
 
+    const handleLinkUpload = async (conversationId: number, link: { name: string; url: string; type: 'google-drive' | 'onedrive' }) => {
+        try {
+            console.log('[ChatPopup] Sending link:', link);
+
+            // Optimistic update
+            const tempId = -Math.floor(Math.random() * 1000000) - 1;
+            const optimisticMessage: Message = {
+                id: tempId,
+                content: link.name,
+                messageType: 'LINK',
+                attachment: link.url,
+                attachmentUrl: link.url,
+                conversationId,
+                senderId: user?.id || 0,
+                sender: {
+                    id: user?.id || 0,
+                    name: user?.name || 'You',
+                    avatar: undefined
+                },
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === conversationId
+                    ? { ...w, messages: [...w.messages, optimisticMessage] }
+                    : w
+            ));
+
+            if (mobileActiveChat?.conversationId === conversationId) {
+                setMobileActiveChat(prev => prev ? { ...prev, messages: [...prev.messages, optimisticMessage] } : null);
+            }
+
+            setTimeout(scrollToBottom, 100);
+
+            // Send as a message with type LINK
+            const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
+                content: link.name, // Display name
+                messageType: 'LINK',
+                attachment: link.url  // The actual URL
+            });
+
+            const newMessage = response.data;
+            newMessage.messageType = 'LINK'; // Ensure type is set correctly if backend doesn't return it perfectly yet
+
+            // Replace optimistic message
+            setChatWindows(prev => prev.map(w =>
+                w.conversationId === conversationId
+                    ? { ...w, messages: w.messages.map(m => m.id === optimisticMessage.id ? newMessage : m) }
+                    : w
+            ));
+
+            if (mobileActiveChat?.conversationId === conversationId) {
+                setMobileActiveChat(prev => prev ? {
+                    ...prev,
+                    messages: prev.messages.map(m => m.id === optimisticMessage.id ? newMessage : m)
+                } : null);
+            }
+
+            fetchConversations();
+
+        } catch (error) {
+            console.error('Error sending link:', error);
+            showError('Không thể gửi liên kết');
+        }
+    };
+
     // ==================== VOICE RECORDING ====================
     const startRecording = async (conversationId: number) => {
         try {
@@ -2119,6 +2186,39 @@ const ChatPopup: React.FC = () => {
                     </div>
                 );
 
+            case 'LINK':
+                return (
+                    <div className="max-w-[220px]">
+                        <div
+                            className={`flex items-center gap-2 p-2.5 rounded-xl cursor-pointer transition-all ${isOwn
+                                ? 'bg-white/10 hover:bg-white/20'
+                                : 'bg-white border border-gray-200 hover:border-gray-300 shadow-sm'
+                                }`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                window.open(msg.attachment || '', '_blank');
+                            }}
+                        >
+                            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0 bg-blue-500">
+                                <div className="text-white">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                </div>
+                            </div>
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                                <p
+                                    className={`text-sm font-medium truncate ${isOwn ? 'text-white' : 'text-gray-800'}`}
+                                    title={msg.content || 'Liên kết'}
+                                >
+                                    {msg.content || 'Liên kết'}
+                                </p>
+                                <p className={`text-xs ${isOwn ? 'text-white/60' : 'text-gray-400'}`}>
+                                    Nhấn để mở
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+
             default:
                 return <p className="whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>;
         }
@@ -2143,8 +2243,25 @@ const ChatPopup: React.FC = () => {
 
         const baseRight = 100 + index * 340;
         const windowStyle: React.CSSProperties = window.isMaximized
-            ? { position: 'fixed', bottom: 20, right: baseRight, width: 500, height: 600, zIndex: 60 }
-            : { position: 'fixed', bottom: 20, right: baseRight, width: 360, height: window.isMinimized ? 48 : 500, zIndex: 60 };
+            ? {
+                position: 'fixed',
+                bottom: 20,
+                right: baseRight,
+                width: 600,
+                maxWidth: '90vw',
+                height: 700,
+                maxHeight: '85vh',
+                zIndex: 60
+            }
+            : {
+                position: 'fixed',
+                bottom: 20,
+                right: baseRight,
+                width: 340,
+                height: window.isMinimized ? 48 : 500,
+                maxHeight: window.isMinimized ? undefined : '80vh',
+                zIndex: 60
+            };
 
         return (
             <div
@@ -2293,7 +2410,7 @@ const ChatPopup: React.FC = () => {
                                                             </div>
                                                         )}
                                                         <div className="relative">
-                                                            <div className={`px-3 py-2 rounded-2xl shadow-sm ${isOwn
+                                                            <div className={`px-3 py-2 rounded-2xl shadow-sm text-sm ${isOwn
                                                                 ? 'bg-blue-600 text-white'
                                                                 : 'bg-white text-gray-800 border border-gray-100'
                                                                 } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
@@ -2547,6 +2664,7 @@ const ChatPopup: React.FC = () => {
                                                 handleFileUpload(conversationId, files[0]);
                                             }
                                         }}
+                                        onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
                                         multiple={false}
                                         buttonClassName="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
                                         iconSize={18}
@@ -3004,6 +3122,7 @@ const ChatPopup: React.FC = () => {
                                         handleFileUpload(conversationId, files[0]);
                                     }
                                 }}
+                                onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
                                 accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
                                 multiple={false}
                                 buttonClassName="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
@@ -3350,7 +3469,8 @@ const ChatPopup: React.FC = () => {
                                     right: '16px',
                                     bottom: '80px',
                                     width: '384px',
-                                    height: '500px',
+                                    height: '550px',
+                                    maxHeight: '80vh',
                                     borderRadius: '12px'
                                 })
                             }}

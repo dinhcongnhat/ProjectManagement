@@ -256,19 +256,7 @@ const ProjectDetails = () => {
                         </div>
                     </div>
 
-                    {/* Progress indicator */}
-                    <div className="mt-6">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm text-blue-200">Tiến độ dự án</span>
-                            <span className="text-lg font-bold">{project.progress}%</span>
-                        </div>
-                        <div className="h-2.5 bg-white/10 rounded-full overflow-hidden backdrop-blur-sm">
-                            <div
-                                className="h-full bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 rounded-full transition-all duration-700 ease-out"
-                                style={{ width: `${project.progress}%` }}
-                            />
-                        </div>
-                    </div>
+
                 </div>
             </div>
 
@@ -429,25 +417,7 @@ const ProjectDetails = () => {
                                         </div>
                                     </div>
 
-                                    {/* Followers */}
-                                    <div className="mb-5">
-                                        <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide">
-                                            Người theo dõi ({project.followers?.length || 0})
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {project.followers?.map(u => (
-                                                <span
-                                                    key={u.id}
-                                                    className="px-3 py-1.5 bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-sm font-medium rounded-full"
-                                                >
-                                                    {u.name}
-                                                </span>
-                                            ))}
-                                            {(!project.followers || project.followers.length === 0) && (
-                                                <span className="text-gray-400 text-sm italic">Chưa có</span>
-                                            )}
-                                        </div>
-                                    </div>
+
 
                                     {/* Cooperators */}
                                     {project.cooperators && project.cooperators.length > 0 && (
