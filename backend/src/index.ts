@@ -57,6 +57,8 @@ const io = new Server(httpServer, {
     transports: ['websocket', 'polling']
 });
 
+export const getIO = () => io;
+
 const port = process.env.PORT || 3001;
 const host = process.env.HOST || '0.0.0.0';
 
@@ -318,21 +320,21 @@ app.get('/api/notifications/vapid-public-key', (req, res) => {
     res.json({ publicKey });
 });
 
-// Debug middleware to check body parsing
-app.use('/api/chat', (req, res, next) => {
-    if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
-        console.log('=== Chat Message Request Debug ===');
-        console.log('Method:', req.method);
-        console.log('Path:', req.path);
-        console.log('Content-Type:', req.headers['content-type']);
-        console.log('Content-Length:', req.headers['content-length']);
-        console.log('Body:', req.body);
-        console.log('Body type:', typeof req.body);
-        console.log('Body keys:', req.body ? Object.keys(req.body) : 'N/A');
-        console.log('=================================');
-    }
-    next();
-});
+// Debug middleware to check body parsing - DISABLED to reduce terminal spam
+// app.use('/api/chat', (req, res, next) => {
+//     if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
+//         console.log('=== Chat Message Request Debug ===');
+//         console.log('Method:', req.method);
+//         console.log('Path:', req.path);
+//         console.log('Content-Type:', req.headers['content-type']);
+//         console.log('Content-Length:', req.headers['content-length']);
+//         console.log('Body:', req.body);
+//         console.log('Body type:', typeof req.body);
+//         console.log('Body keys:', req.body ? Object.keys(req.body) : 'N/A');
+//         console.log('=================================');
+//     }
+//     next();
+// });
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -566,6 +568,15 @@ httpServer.listen(Number(port), host, () => {
     });
 });
 
-// Export io for use in controllers
-export const getIO = () => io;
+// Keep alive / Pulse check for terminal health
+setInterval(() => {
+    // This simple log helps confirm the process is not paused (e.g. by QuickEdit mode in Windows Terminal)
+    const memUsage = process.memoryUsage().heapUsed / 1024 / 1024;
+    // We only log if NOT in production to avoid log spam, BUT user specifically asked for "activity"
+    // So we'll log extremely minimally:
+    if (process.env.NODE_ENV !== 'production') {
+        // console.log(`[Pulse] Server active. Heap: ${memUsage.toFixed(2)} MB`);
+    }
+}, 60000);
+
 

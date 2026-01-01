@@ -344,7 +344,7 @@ const Users = () => {
 
             {/* Create/Edit User Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden">
                         <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gradient-to-r from-purple-50 to-pink-50 shrink-0">
                             <div className="flex items-center gap-3">

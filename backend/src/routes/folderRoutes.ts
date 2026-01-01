@@ -69,7 +69,7 @@ router.get('/files/:id/onlyoffice-config', authenticateToken, getOnlyOfficeConfi
 router.post('/files/save-from-url', authenticateToken, saveFileFromUrl);
 
 // OnlyOffice callback (no auth needed for OnlyOffice server)
-router.post('/files/onlyoffice-callback', onlyofficeCallback);
+router.post('/files/:id/onlyoffice-callback', onlyofficeCallback);
 
 // Download file for OnlyOffice (no auth - OnlyOffice needs direct access)
 router.get('/files/:id/onlyoffice-download', downloadFileForOnlyOffice);

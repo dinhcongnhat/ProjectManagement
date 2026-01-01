@@ -3,10 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import {
-    ArrowLeft, Calendar, Users, Clock, CheckCircle2,
-    AlertCircle, FileText, X, MessageSquare, History, FolderTree,
-    Plus, ChevronRight, Briefcase, Target, TrendingUp,
-    Loader2
+    CheckCircle2, AlertCircle, FileText, X, MessageSquare, History, FolderTree,
+    Plus, ChevronRight, Briefcase, Target, TrendingUp, Flag, Loader2,
+    ArrowLeft, Calendar, Users, Clock
 } from 'lucide-react';
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
@@ -70,12 +69,12 @@ interface Project {
     duration: string;
     group: string;
     value: string;
-    progressMethod: string;
     description: string;
     attachment?: string;
     attachments?: ProjectAttachmentType[];
     progress: number;
     status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
+    priority?: 'NORMAL' | 'HIGH';
     parentId?: number;
     parent?: { id: number, name: string, code: string };
     children?: SubProject[];
@@ -298,7 +297,7 @@ const ProjectDetailsAdmin = () => {
                         {/* Main Content */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* Quick Stats */}
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                                 <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
                                     <div className="p-3 bg-blue-50 rounded-xl w-fit mb-3">
                                         <Calendar size={20} className="text-blue-600" />
@@ -315,6 +314,15 @@ const ProjectDetailsAdmin = () => {
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày kết thúc dự kiến</p>
                                     <p className="font-bold text-gray-900">
                                         {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                    </p>
+                                </div>
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+                                    <div className={`p-3 rounded-xl w-fit mb-3 ${project.priority === 'HIGH' ? 'bg-red-50' : 'bg-gray-50'}`}>
+                                        <Flag size={20} className={project.priority === 'HIGH' ? 'text-red-500' : 'text-gray-500'} />
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium mb-0.5">Mức độ ưu tiên</p>
+                                    <p className={`font-bold ${project.priority === 'HIGH' ? 'text-red-600' : 'text-gray-900'}`}>
+                                        {project.priority === 'HIGH' ? 'Ưu tiên cao' : 'Bình thường'}
                                     </p>
                                 </div>
                             </div>

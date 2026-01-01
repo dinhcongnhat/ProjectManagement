@@ -1,6 +1,6 @@
 {
-  "name": "JTSC Project Management",
-  "short_name": "JTSC Manager",
+  "name": "JTSC Project",
+  "short_name": "JTSC Project",
   "description": "Hệ thống quản lý dự án JTSC",
   "theme_color": "#2563eb",
   "background_color": "#f8fafc",
@@ -58,7 +58,10 @@
       "purpose": "maskable any"
     }
   ],
-  "categories": ["productivity", "business"],
+  "categories": [
+    "productivity",
+    "business"
+  ],
   "screenshots": [],
   "shortcuts": [
     {
@@ -66,14 +69,24 @@
       "short_name": "My Tasks",
       "description": "Xem công việc cá nhân",
       "url": "/my-tasks",
-      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
+      "icons": [
+        {
+          "src": "/icons/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
     },
     {
       "name": "Dự án",
       "short_name": "Projects",
       "description": "Xem danh sách dự án",
       "url": "/projects",
-      "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }]
+      "icons": [
+        {
+          "src": "/icons/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
     }
   ]
 }

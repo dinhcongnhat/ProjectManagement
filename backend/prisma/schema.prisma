@@ -128,6 +128,11 @@ model Task {
   assignee   User? @relation("AssignedTasks", fields: [assigneeId], references: [id])
 }
 
+enum ProjectPriority {
+  NORMAL
+  HIGH
+}
+
 model Project {
   id             Int       @id @default(autoincrement())
   code           String    @unique
@@ -143,6 +148,7 @@ model Project {
   attachment     String?
   progress       Float     @default(0)
   status         ProjectStatus @default(IN_PROGRESS)
+  priority       ProjectPriority @default(NORMAL)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

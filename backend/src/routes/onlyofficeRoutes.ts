@@ -1,8 +1,8 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/authMiddleware.js';
-import { 
-    getOnlyOfficeConfig, 
-    onlyofficeCallback, 
+import {
+    getOnlyOfficeConfig,
+    onlyofficeCallback,
     checkOnlyOfficeSupport,
     downloadFileForOnlyOffice,
     getDiscussionOnlyOfficeConfig,
@@ -26,6 +26,10 @@ router.get('/download/:id', downloadFileForOnlyOffice);
 
 // OnlyOffice callback endpoint (no auth required as it's called by OnlyOffice server)
 router.post('/callback/:id', onlyofficeCallback);
+
+// Folder callback endpoint (alias to fix potential routing issues)
+import { onlyofficeCallback as folderCallback } from '../controllers/folderController.js';
+router.post('/folder-callback/:id', folderCallback);
 
 // Discussion attachment endpoints (view only)
 // Get OnlyOffice config for discussion message attachment

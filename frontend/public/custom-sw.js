@@ -1,7 +1,7 @@
 // Custom Service Worker for PWA Real-time Support
-// Version: 1.0.3
+// Version: 1.0.21
 
-const CACHE_NAME = 'pwa-cache-v4';
+const CACHE_NAME = 'pwa-cache-1767174484565';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

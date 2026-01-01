@@ -3,6 +3,7 @@ import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { minioClient, bucketName } from '../config/minio.js';
 import { Readable } from 'stream';
+import type { UserFolder, UserFolderShare } from '@prisma/client';
 import { isOfficeFile, getPresignedUrl } from '../services/minioService.js';
 
 const userFolderPrefix = 'users/';
@@ -23,7 +24,7 @@ export const getEffectiveFolderPermission = async (folderId: number, userId: num
     // Safety break for cycles (though unlikely with tree structure)
     let depth = 0;
     while (currentId !== null && depth < 20) {
-        const folder = await prisma.userFolder.findUnique({
+        const folder: (UserFolder & { shares: UserFolderShare[] }) | null = await prisma.userFolder.findUnique({
             where: { id: currentId },
             include: { shares: true }
         });
@@ -575,6 +576,10 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
+        const currentUser = await prisma.user.findUnique({
+            where: { id: userId }
+        });
+
         const permission = await getEffectiveFilePermission(fileId, userId);
         if (!permission) {
             return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
@@ -629,10 +634,10 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
             editorConfig: {
                 mode: canEdit ? 'edit' : 'view',
                 lang: 'vi',
-                callbackUrl: `${BACKEND_URL}/folders/files/onlyoffice-callback?fileId=${fileId}`, // Append fileId to query for callback identification
+                callbackUrl: `${BACKEND_URL}/onlyoffice/folder-callback/${fileId}`, // Use simplified route alias
                 user: {
                     id: String(userId),
-                    name: req.user?.name || file.user.name
+                    name: currentUser?.name || file.user.name
                 },
                 customization: {
                     autosave: true,
@@ -666,17 +671,18 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
 };
 
 // OnlyOffice callback (for save)
+// OnlyOffice callback (for save)
 export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
     try {
-        const { status, url, users } = req.body;
-        const fileId = parseInt(req.query.fileId as string);
+        const { status, url } = req.body;
+        const fileId = parseInt(req.params.id as string);
+
+        console.log(`[OnlyOffice Callback] Request for fileId: ${fileId}, status: ${status}`);
 
         // Status codes:
         // 2 - document is ready for saving
         // 6 - document is being edited, but the current document state is saved
         if (status === 2 || status === 6) {
-            console.log(`[OnlyOffice Callback] Saving file ${fileId}, status: ${status}`);
-
             if (!url) {
                 console.error('No URL provided in callback');
                 return res.json({ error: 1 });
@@ -691,6 +697,8 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
                 return res.json({ error: 0 }); // File deleted? Return 0 to stop retries
             }
 
+            console.log(`[OnlyOffice Callback] Downloading from: ${url}`);
+
             // Download the edited file from OnlyOffice
             const response = await fetch(url);
             if (!response.ok) {
@@ -700,24 +708,15 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
 
             const buffer = Buffer.from(await response.arrayBuffer());
 
+            // Use dynamic import to avoid potential circular dependencies and ensure fresh client
+            const { minioClient, bucketName } = await import('../config/minio.js');
+
+            console.log(`[OnlyOffice Callback] Uploading to MinIO: ${file.minioPath}, size: ${buffer.length}`);
+
             // Upload the updated file back to MinIO with the same path
-            // We need to re-import minioClient here if it was not available in context?
-            // Actually minioClient is imported at top level, so it should be fine.
-            // But we need to handle Readable stream for putObject?
-            // putObject accepts Buffer as well.
+            await minioClient.putObject(bucketName, file.minioPath, buffer);
 
-            await minioClient.putObject(
-                bucketName,
-                file.minioPath,
-                buffer,
-                buffer.length,
-                {
-                    'Content-Type': file.fileType,
-                    // Preserve original filename metadata if needed
-                }
-            );
-
-            // Update file size and timestamp in DB
+            // Update file size and timestamp in DB to ensure new key is generated next time
             await prisma.userFile.update({
                 where: { id: fileId },
                 data: {
@@ -866,7 +865,7 @@ export const renameFile = async (req: AuthRequest, res: Response) => {
 export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const { url, name, folderId } = req.body;
+        const { url, name, folderId, sourceFileType } = req.body;
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
@@ -898,8 +897,72 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
 
         const minioPath = `${basePath}/${name.trim()}`;
 
-        // Download file from URL
-        const response = await fetch(url);
+        // Determine File Types
+        // Extract extension from new filename
+        const targetExt = name.split('.').pop()?.toLowerCase() || '';
+
+        // Extract source extension from sourceFileType param or URL
+        let sourceExt = sourceFileType || '';
+        if (!sourceExt) {
+            // Try to extract from URL if possible (often presigned URLs have the path)
+            // But decoding might be tricky, let's assume if it's not passed we skip conversion or try our best
+            const urlPath = url.split('?')[0];
+            sourceExt = urlPath.split('.').pop()?.toLowerCase() || '';
+        }
+
+        let downloadUrl = url;
+
+        // Perform Conversion if needed
+        // Only convert if extensions differ and both are present
+        if (targetExt && sourceExt && targetExt !== sourceExt) {
+            console.log(`[SaveFile] Converting from ${sourceExt} to ${targetExt}`);
+            try {
+                const key = Date.now().toString(); // Generate a temporary key for conversion
+                const conversionUrl = `${ONLYOFFICE_URL}/ConvertService.ashx`;
+
+                const payload = {
+                    async: false,
+                    filetype: sourceExt,
+                    key: key,
+                    outputtype: targetExt,
+                    title: name,
+                    url: url
+                };
+
+                const convertRes = await fetch(conversionUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!convertRes.ok) {
+                    throw new Error(`Conversion service returned ${convertRes.status}`);
+                }
+
+                const convertData = await convertRes.json();
+
+                if (convertData.error) {
+                    console.error('[SaveFile] Conversion error code:', convertData.error);
+                    // If conversion fails, fallback to original file (maybe? No, that would be wrong extension)
+                    // Throw error
+                    throw new Error(`Conversion failed with error code ${convertData.error}`);
+                }
+
+                if (convertData.fileUrl) {
+                    downloadUrl = convertData.fileUrl;
+                    console.log(`[SaveFile] Conversion successful. New URL: ${downloadUrl}`);
+                }
+            } catch (convErr) {
+                console.error('[SaveFile] Warning: Conversion failed:', convErr);
+                return res.status(400).json({ message: 'Không thể chuyển đổi định dạng file' });
+            }
+        }
+
+        // Download file (either original or converted)
+        const response = await fetch(downloadUrl);
         if (!response.ok) {
             throw new Error('Failed to download file from URL');
         }
@@ -907,14 +970,12 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
         const buffer = Buffer.from(await response.arrayBuffer());
         const fileSize = buffer.length;
 
-        // Determine File Type
-        const ext = name.split('.').pop()?.toLowerCase() || '';
         let mimeType = 'application/octet-stream';
         // Simple mime mapping
-        if (ext === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-        else if (ext === 'xlsx') mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        else if (ext === 'pptx') mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-        else if (ext === 'pdf') mimeType = 'application/pdf';
+        if (targetExt === 'docx') mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else if (targetExt === 'xlsx') mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        else if (targetExt === 'pptx') mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        else if (targetExt === 'pdf') mimeType = 'application/pdf';
 
 
         // Upload to MinIO
@@ -1034,7 +1095,7 @@ export const searchUsersForShare = async (req: AuthRequest, res: Response) => {
 export const shareFolder = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const folderId = parseInt(req.params.id);
+        const folderId = parseInt(req.params.id || '0');
         const { userIds, permission } = req.body; // userIds: number[], permission: 'VIEW' | 'EDIT'
 
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });
@@ -1065,7 +1126,7 @@ export const shareFolder = async (req: AuthRequest, res: Response) => {
 export const shareFile = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const fileId = parseInt(req.params.id);
+        const fileId = parseInt(req.params.id || '0');
         const { userIds, permission } = req.body;
 
         if (!userId) return res.status(401).json({ message: 'Unauthorized' });

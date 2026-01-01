@@ -1,5 +1,6 @@
+
 import { useState, useEffect } from 'react';
-import { Users, FolderKanban, CheckCircle2, AlertCircle, TrendingUp, Sparkles, ArrowRight } from 'lucide-react';
+import { Users, FolderKanban, CheckCircle2, AlertCircle, TrendingUp, Sparkles, ArrowRight, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
@@ -9,6 +10,9 @@ interface Project {
     name: string;
     progress: number;
     status: string;
+    parent?: any;
+    children?: Project[];
+    code?: string;
 }
 
 const StatCard = ({ icon: Icon, label, value, gradient, shadowColor }: any) => (
@@ -22,6 +26,68 @@ const StatCard = ({ icon: Icon, label, value, gradient, shadowColor }: any) => (
         <h3 className="text-xs sm:text-sm font-medium text-gray-500">{label}</h3>
     </div>
 );
+
+const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?: boolean }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const hasChildren = project.children && project.children.length > 0;
+
+    return (
+        <div className={`transition-all duration-300 ${isChild ? 'ml-0' : ''}`}>
+            <div className={`relative p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl hover:bg-gray-100 transition-colors active:bg-gray-200 group border border-transparent ${isChild ? 'bg-white border-gray-100' : ''}`}>
+                <div className="flex justify-between items-center mb-2 sm:mb-3">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 mr-3">
+                        {isChild && <CornerDownRight size={16} className="text-gray-400 shrink-0" />}
+
+                        {hasChildren && !isChild && (
+                            <button
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    setIsExpanded(!isExpanded);
+                                }}
+                                className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                            >
+                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            </button>
+                        )}
+                        {!hasChildren && !isChild && <div className="w-6.5"></div>}
+
+                        <Link to={`/admin/projects/${project.id}`} className="flex-1 min-w-0 group-hover:text-indigo-700 transition-colors">
+                            <span className="font-medium text-gray-800 text-sm sm:text-base truncate block">{project.name}</span>
+                            {project.code && <span className="text-xs text-gray-400 block truncate">{project.code}</span>}
+                        </Link>
+                    </div>
+
+                    <span className={`text-xs sm:text-sm font-bold shrink-0 ${project.status === 'COMPLETED' ? 'text-green-600' :
+                        project.status === 'PENDING_APPROVAL' ? 'text-orange-600' :
+                            'text-blue-600'
+                        }`}>
+                        {project.progress}%
+                    </span>
+                </div>
+
+                {/* Progress Bar */}
+                <Link to={`/admin/projects/${project.id}`} className="block h-2 sm:h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                        className={`h-full rounded-full transition-all duration-500 ${project.status === 'COMPLETED' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
+                            project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
+                                'bg-gradient-to-r from-blue-500 to-indigo-500'
+                            }`}
+                        style={{ width: `${project.progress}%` }}
+                    />
+                </Link>
+            </div>
+
+            {/* Sub Projects */}
+            {hasChildren && isExpanded && (
+                <div className="mt-2 space-y-2 pl-4 border-l-2 border-gray-100 ml-3">
+                    {project.children?.map(child => (
+                        <ProjectItem key={child.id} project={child} isChild={true} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const Dashboard = () => {
     const [stats, setStats] = useState({
@@ -48,6 +114,9 @@ const Dashboard = () => {
                     const completed = projectsData.filter((p: Project) => p.status === 'COMPLETED').length;
                     const pending = projectsData.filter((p: Project) => p.status === 'PENDING_APPROVAL').length;
 
+                    // Filter: Only show top-level projects (no parent) in the progress list
+                    const rootProjects = projectsData.filter((p: Project) => !p.parent);
+
                     setStats({
                         totalProjects: projectsData.length,
                         totalUsers: usersData.length,
@@ -55,7 +124,7 @@ const Dashboard = () => {
                         pendingProjects: pending
                     });
 
-                    setProjects(projectsData.slice(0, 5));
+                    setProjects(rootProjects.slice(0, 5));
                 }
             } catch (error) {
                 console.error('Error fetching stats:', error);
@@ -136,26 +205,7 @@ const Dashboard = () => {
                 ) : (
                     <div className="space-y-2 sm:space-y-3">
                         {projects.map((project) => (
-                            <div key={project.id} className="p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl hover:bg-gray-100 transition-colors active:bg-gray-200">
-                                <div className="flex justify-between items-center mb-2 sm:mb-3">
-                                    <span className="font-medium text-gray-800 text-sm sm:text-base truncate mr-3">{project.name}</span>
-                                    <span className={`text-xs sm:text-sm font-bold shrink-0 ${project.status === 'COMPLETED' ? 'text-green-600' :
-                                        project.status === 'PENDING_APPROVAL' ? 'text-orange-600' :
-                                            'text-blue-600'
-                                        }`}>
-                                        {project.progress}%
-                                    </span>
-                                </div>
-                                <div className="h-2 sm:h-2.5 bg-gray-200 rounded-full overflow-hidden">
-                                    <div
-                                        className={`h-full rounded-full transition-all duration-500 ${project.status === 'COMPLETED' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
-                                            project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
-                                                'bg-gradient-to-r from-blue-500 to-indigo-500'
-                                            }`}
-                                        style={{ width: `${project.progress}%` }}
-                                    />
-                                </div>
-                            </div>
+                            <ProjectItem key={project.id} project={project} />
                         ))}
                     </div>
                 )}

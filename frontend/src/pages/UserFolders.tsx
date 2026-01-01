@@ -311,15 +311,53 @@ interface SaveAsDialogProps {
     onClose: () => void;
     onSave: (folderId: number | null, name: string) => Promise<void>;
     token: string;
+    originalFileName?: string;
 }
 
-const SaveAsDialog = ({ onClose, onSave, token }: SaveAsDialogProps) => {
+const SaveAsDialog = ({ onClose, onSave, token, originalFileName }: SaveAsDialogProps) => {
     const [folders, setFolders] = useState<UserFolder[]>([]);
     const [currentParentId, setCurrentParentId] = useState<number | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
     const [loading, setLoading] = useState(true);
     const [fileName, setFileName] = useState('');
     const [saving, setSaving] = useState(false);
+    const [format, setFormat] = useState<string>('');
+
+    // Determine available formats based on original extension
+    const originalExt = originalFileName?.split('.').pop()?.toLowerCase() || '';
+
+    const getAvailableFormats = (ext: string) => {
+        const formats = [ext]; // Original is always available
+
+        const documentFormats = ['docx', 'pdf', 'txt', 'rtf', 'odt'];
+        const spreadsheetFormats = ['xlsx', 'pdf', 'csv', 'ods'];
+        const presentationFormats = ['pptx', 'pdf', 'odp'];
+
+        if (['doc', 'docx', 'odt', 'rtf', 'txt'].includes(ext)) {
+            return documentFormats;
+        }
+        if (['xls', 'xlsx', 'ods', 'csv'].includes(ext)) {
+            return spreadsheetFormats;
+        }
+        if (['ppt', 'pptx', 'odp'].includes(ext)) {
+            return presentationFormats;
+        }
+
+        // Always offer PDF if not already added
+        if (!formats.includes('pdf')) formats.push('pdf');
+
+        return [...new Set(formats)];
+    };
+
+    const availableFormats = getAvailableFormats(originalExt);
+
+    useEffect(() => {
+        if (originalFileName) {
+            // Remove extension for initial name display
+            setFileName(originalFileName.replace(/\.[^/.]+$/, ""));
+            setFormat(originalExt);
+        }
+    }, [originalFileName, originalExt]);
 
     const fetchFolders = useCallback(async (parentId: number | null) => {
         try {
@@ -352,7 +390,9 @@ const SaveAsDialog = ({ onClose, onSave, token }: SaveAsDialogProps) => {
         if (!fileName.trim()) return;
         setSaving(true);
         try {
-            await onSave(currentParentId, fileName.trim());
+            // Append selected format
+            const finalName = `${fileName.trim()}.${format}`;
+            await onSave(currentParentId, finalName);
             onClose();
         } catch (error) {
             console.error('Error saving file:', error);
@@ -423,15 +463,29 @@ const SaveAsDialog = ({ onClose, onSave, token }: SaveAsDialogProps) => {
 
                     {/* Footer */}
                     <div className="p-4 border-t flex flex-col gap-4">
-                        <div className="flex flex-col gap-1">
-                            <label className="text-sm font-medium text-gray-700">Tên file mới</label>
-                            <input
-                                type="text"
-                                value={fileName}
-                                onChange={(e) => setFileName(e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="Nhập tên file..."
-                            />
+                        <div className="flex gap-4">
+                            <div className="flex-1 flex flex-col gap-1">
+                                <label className="text-sm font-medium text-gray-700">Tên file mới</label>
+                                <input
+                                    type="text"
+                                    value={fileName}
+                                    onChange={(e) => setFileName(e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Nhập tên file..."
+                                />
+                            </div>
+                            <div className="w-32 flex flex-col gap-1">
+                                <label className="text-sm font-medium text-gray-700">Định dạng</label>
+                                <select
+                                    value={format}
+                                    onChange={(e) => setFormat(e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {availableFormats.map(fmt => (
+                                        <option key={fmt} value={fmt}>.{fmt}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                         <div className="flex justify-end gap-2">
                             <button
@@ -585,6 +639,7 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                 <SaveAsDialog
                     onClose={() => setShowSaveAs(false)}
                     token={token}
+                    originalFileName={fileName}
                     onSave={async (folderId, name) => {
                         // For MVP: We assume the user has saved or autosave is working (we enabled forceSave).
                         // We will copy the file on the backend.
@@ -599,6 +654,9 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                             });
                             const { url } = await urlRes.json();
 
+                            // Determine source type from filename
+                            const sourceFileType = fileName.split('.').pop()?.toLowerCase();
+
                             const saveRes = await fetch(`${API_URL}/folders/files/save-from-url`, {
                                 method: 'POST',
                                 headers: {
@@ -608,15 +666,19 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                                 body: JSON.stringify({
                                     url,
                                     name,
-                                    folderId
+                                    folderId,
+                                    sourceFileType
                                 })
                             });
 
-                            if (!saveRes.ok) throw new Error('Failed to save copy');
+                            if (!saveRes.ok) {
+                                const errData = await saveRes.json();
+                                throw new Error(errData.message || 'Failed to save copy');
+                            }
 
                             dialog.showSuccess('Đã lưu bản sao thành công');
-                        } catch (e) {
-                            dialog.showError('Lỗi khi lưu bản sao');
+                        } catch (e: any) {
+                            dialog.showError(e.message || 'Lỗi khi lưu bản sao');
                             throw e;
                         }
                     }}
@@ -1473,7 +1535,7 @@ const UserFolders = () => {
 
             {/* Create Folder Dialog */}
             {showCreateFolder && (
-                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-3 bg-blue-100 rounded-full">

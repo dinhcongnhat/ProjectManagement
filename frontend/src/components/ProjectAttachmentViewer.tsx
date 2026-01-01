@@ -53,6 +53,7 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
     const editorRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [imageUrl, setImageUrl] = useState<string | null>(null);
     const editorInstanceRef = useRef<object | null>(null);
     const initializingRef = useRef(false);
 
@@ -72,6 +73,16 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
                 }
 
                 const data = await response.json();
+
+                // Check if image
+                const ext = fileName.split('.').pop()?.toLowerCase() || '';
+                const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+                if (imageExtensions.includes(ext)) {
+                    setImageUrl(data.url);
+                    setLoading(false);
+                    return;
+                }
+
                 const onlyofficeUrl = data.onlyofficeUrl || 'https://jtsconlyoffice.duckdns.org';
 
                 // Load OnlyOffice script
@@ -82,7 +93,6 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
                 }
 
                 // Determine document type
-                const ext = fileName.split('.').pop()?.toLowerCase() || '';
                 let documentType = 'word';
                 if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) {
                     documentType = 'cell';
@@ -166,8 +176,8 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
                 <X size={20} />
             </button>
 
-            {/* OnlyOffice Editor - Full screen */}
-            <div className="flex-1 relative">
+            {/* Content Area */}
+            <div className="flex-1 relative flex items-center justify-center bg-black/90">
                 {loading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                         <div className="text-center">
@@ -193,11 +203,21 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
                     </div>
                 )}
 
-                <div
-                    ref={editorRef}
-                    className="w-full h-full"
-                    style={{ minHeight: '100vh' }}
-                />
+                {imageUrl ? (
+                    <div className="w-full h-full flex items-center justify-center p-4 overflow-auto">
+                        <img
+                            src={imageUrl}
+                            alt={fileName}
+                            className="max-w-full max-h-full object-contain rounded shadow-lg"
+                        />
+                    </div>
+                ) : (
+                    <div
+                        ref={editorRef}
+                        className="w-full h-full bg-white"
+                        style={{ minHeight: '100vh', display: loading || error ? 'none' : 'block' }}
+                    />
+                )}
             </div>
         </div>
     );

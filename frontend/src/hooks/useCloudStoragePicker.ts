@@ -9,14 +9,8 @@ const GOOGLE_API_KEY = 'AIzaSyAa2PVlLuffcCJVIpWbLj0MfD1JugFVE9A';
 
 // =======================================================
 
-interface CloudFile {
-    name: string;
-    url: string;
-    type: 'google-drive';
-}
-
 interface UseCloudStoragePickerProps {
-    onSelect: (file: CloudFile) => void;
+    onSelect: (file: File) => void;
     onError?: (error: string) => void;
 }
 
@@ -57,6 +51,44 @@ export const useCloudStoragePicker = ({ onSelect, onError }: UseCloudStoragePick
         }
     }, []);
 
+    const downloadGoogleFile = async (fileId: string, accessToken: string, mimeType: string, name: string) => {
+        try {
+            let url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+            let filename = name;
+
+            // Handle Google Docs types
+            if (mimeType === 'application/vnd.google-apps.document') {
+                url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document`;
+                filename = `${name}.docx`;
+            } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+                url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`;
+                filename = `${name}.xlsx`;
+            } else if (mimeType === 'application/vnd.google-apps.presentation') {
+                url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation`;
+                filename = `${name}.pptx`;
+            }
+
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Download failed: ${response.statusText}`);
+            }
+
+            const blob = await response.blob();
+            // Detect actual mime type from blob or response (optional)
+            // Create File object
+            const file = new File([blob], filename, { type: blob.type || mimeType });
+            onSelect(file);
+
+        } catch (error) {
+            console.error('Error downloading Google Drive file:', error);
+            onError?.('Lỗi khi tải file từ Google Drive');
+        }
+    };
 
 
     // Open Google Drive Picker
@@ -80,11 +112,12 @@ export const useCloudStoragePicker = ({ onSelect, onError }: UseCloudStoragePick
                 .setCallback((data: any) => {
                     if (data[google.picker.Response.ACTION] === google.picker.Action.PICKED) {
                         const doc = data[google.picker.Response.DOCUMENTS][0];
-                        onSelect({
-                            name: doc[google.picker.Document.NAME],
-                            url: doc[google.picker.Document.URL],
-                            type: 'google-drive'
-                        });
+                        const fileId = doc[google.picker.Document.ID];
+                        const mimeType = doc[google.picker.Document.MIME_TYPE];
+                        const name = doc[google.picker.Document.NAME];
+
+                        // Download the file immediately
+                        downloadGoogleFile(fileId, access_token, mimeType, name);
                     }
                 })
                 .build();
@@ -94,7 +127,8 @@ export const useCloudStoragePicker = ({ onSelect, onError }: UseCloudStoragePick
         // Authenticate
         const tokenClient = google.accounts.oauth2.initTokenClient({
             client_id: GOOGLE_CLIENT_ID,
-            scope: 'https://www.googleapis.com/auth/drive.file',
+            // Request drive.readonly scope to allow downloading files
+            scope: 'https://www.googleapis.com/auth/drive.readonly',
             callback: (response: any) => {
                 if (response.error !== undefined) {
                     onError?.('Lỗi đăng nhập Google: ' + response.error);

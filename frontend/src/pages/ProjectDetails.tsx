@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import {
     ArrowLeft, Users, X, FileText,
     MessageSquare, History, CheckCircle2, FolderTree, ChevronRight,
-    Briefcase, Target, Loader2, AlertCircle
+    Briefcase, Target, Loader2, AlertCircle, Calendar, Clock, Flag
 } from 'lucide-react';
 import { DiscussionPanel } from '../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
@@ -69,12 +69,12 @@ interface Project {
     duration: string;
     group: string;
     value: string;
-    progressMethod: string;
     description: string;
     attachment?: string;
     attachments?: ProjectAttachmentType[];
     progress: number;
     status: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
+    priority?: 'NORMAL' | 'HIGH';
     parentId?: number;
     parent?: { id: number, name: string, code: string };
     children?: SubProject[];
@@ -295,37 +295,34 @@ const ProjectDetails = () => {
                         {/* Main Content */}
                         <div className="lg:col-span-2 space-y-6">
                             {/* Quick Stats - Grid */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {[
-                                    {
-                                        label: 'Ngày bắt đầu',
-                                        value: project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A',
-                                        color: 'from-blue-500 to-indigo-500'
-                                    },
-                                    {
-                                        label: 'Ngày kết thúc',
-                                        value: project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A',
-                                        color: 'from-orange-500 to-amber-500'
-                                    },
-                                    {
-                                        label: 'Thời lượng',
-                                        value: `${project.duration || 'N/A'} ngày`,
-                                        color: 'from-purple-500 to-violet-500'
-                                    },
-                                    {
-                                        label: 'Giá trị HĐ',
-                                        value: project.value || 'N/A',
-                                        color: 'from-emerald-500 to-green-500'
-                                    }
-                                ].map((stat, idx) => (
-                                    <div key={idx} className="bg-white rounded-2xl p-4 shadow-lg shadow-gray-200/50 border border-gray-100 hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
-                                        <div className={`w-10 h-10 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center mb-3`}>
-                                            <span className="text-white text-lg font-bold">{idx + 1}</span>
-                                        </div>
-                                        <p className="text-xs text-gray-500 font-medium mb-1">{stat.label}</p>
-                                        <p className="font-bold text-gray-900">{stat.value}</p>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                    <div className="p-3 bg-blue-50 rounded-xl w-fit mb-3">
+                                        <Calendar size={20} className="text-blue-600" />
                                     </div>
-                                ))}
+                                    <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày bắt đầu</p>
+                                    <p className="font-bold text-gray-900">
+                                        {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                    </p>
+                                </div>
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                    <div className="p-3 bg-orange-50 rounded-xl w-fit mb-3">
+                                        <Clock size={20} className="text-orange-600" />
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày kết thúc dự kiến</p>
+                                    <p className="font-bold text-gray-900">
+                                        {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
+                                    </p>
+                                </div>
+                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+                                    <div className={`p-3 rounded-xl w-fit mb-3 ${project.priority === 'HIGH' ? 'bg-red-50' : 'bg-gray-50'}`}>
+                                        <Flag size={20} className={project.priority === 'HIGH' ? 'text-red-500' : 'text-gray-500'} />
+                                    </div>
+                                    <p className="text-xs text-gray-500 font-medium mb-0.5">Mức độ ưu tiên</p>
+                                    <p className={`font-bold ${project.priority === 'HIGH' ? 'text-red-600' : 'text-gray-900'}`}>
+                                        {project.priority === 'HIGH' ? 'Ưu tiên cao' : 'Bình thường'}
+                                    </p>
+                                </div>
                             </div>
 
                             {/* Description Card */}

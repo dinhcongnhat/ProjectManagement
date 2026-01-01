@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useDialog } from '../../components/ui/Dialog';
 import { UploadProgressDialog } from '../../components/ui/UploadProgressDialog';
 import type { UploadFile } from '../../components/ui/UploadProgressDialog';
+import { useCloudStoragePicker } from '../../hooks/useCloudStoragePicker';
 
 interface UserData {
     id: number;
@@ -19,6 +20,18 @@ interface ParentProject {
     name: string;
     children?: Array<{ id: number }>;
 }
+
+// SVG Icons for Drive/OneDrive
+const GoogleDriveIcon = () => (
+    <svg viewBox="0 0 87.3 78" className="w-5 h-5">
+        <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.9 2.5 3.2 3.3l12.3-21.3-6.5-11.3H4.35C1.8 44.2.35 45.65.35 47.7c0 2.05.9 3.95 2.55 5.5l3.7 13.65z" fill="#0066da" />
+        <path d="M43.65 25h13L43.85 3.45c-.8-1.4-1.9-2.5-3.2-3.3l-12.3 21.3 6.5 11.3h15.1c2.55 0 4-1.45 4-3.5 0-2.05-.9-3.95-2.55-5.5l-7.75-18.3z" fill="#00ac47" />
+        <path d="M73.55 76.8c1.45-.8 2.5-1.9 3.3-3.2l12.75-22.1c.8-1.45.8-3.05.8-4.5 0-1.45-1-3.05-1.8-4.5l-6.35-11H52.1l11.75 20.35 9.7 25.45z" fill="#ea4335" />
+        <path d="M43.65 25H11.55l7.75 13.45L31.6 59.9h30.15l-12.75-22.1-5.35-12.8z" fill="#00832d" />
+        <path d="M73.55 76.8 53.4 41.9l-9.75-16.9H13.65L39.8 76.8h33.75z" fill="#2684fc" />
+        <path d="M6.6 66.85 20.25 43.2l11.75 20.35-6.15 10.65c-2.05 1.2-4.5 1.2-6.55 0L6.6 66.85z" fill="#ffba00" />
+    </svg>
+);
 
 const CreateProject = () => {
     const { token } = useAuth();
@@ -44,11 +57,27 @@ const CreateProject = () => {
         implementerIds: [] as string[],
         cooperatorIds: [] as string[],  // Phối hợp thực hiện
         description: '',
-        parentId: parentIdParam || ''
+        parentId: parentIdParam || '',
+        priority: 'NORMAL'
     });
 
     const CODE_PREFIX = 'DA2026';  // Tiền tố cố định
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [selectedLinks, setSelectedLinks] = useState<{ name: string; url: string; type: string }[]>([]);
+
+    // Cloud Storage Picker
+    const { openGoogleDrivePicker } = useCloudStoragePicker({
+        onSelect: (file: any) => {
+            setSelectedLinks(prev => [...prev, {
+                name: file.name,
+                url: file.url,
+                type: file.type || 'google-drive'
+            }]);
+        },
+        onError: (error) => {
+            showError(error);
+        }
+    });
 
     // Upload Progress State
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -166,8 +195,17 @@ const CreateProject = () => {
             status: 'pending' as const
         }));
 
-        if (selectedFiles.length > 0) {
-            setUploadFiles(filesToUpload);
+
+
+        const linksToUpload: UploadFile[] = selectedLinks.map(l => ({
+            name: l.name,
+            size: 0,
+            progress: 0,
+            status: 'pending' as const
+        }));
+
+        if (selectedFiles.length > 0 || selectedLinks.length > 0) {
+            setUploadFiles([...filesToUpload, ...linksToUpload]);
             setUploadProgress(0);
             setUploadStatus('uploading');
             setShowUploadDialog(true);
@@ -200,6 +238,7 @@ const CreateProject = () => {
                 parentId: formData.parentId,
                 implementerIds: JSON.stringify(formData.implementerIds),
                 cooperatorIds: JSON.stringify(formData.cooperatorIds),
+                priority: formData.priority // Add priority
             };
 
             // Create project first
@@ -219,12 +258,16 @@ const CreateProject = () => {
 
             const createdProject = await createResponse.json();
 
-            // Step 2: Upload files if any
-            if (selectedFiles.length > 0) {
+            // Step 2: Upload files/links if any
+            if (selectedFiles.length > 0 || selectedLinks.length > 0) {
                 const filesFormData = new FormData();
                 selectedFiles.forEach(file => {
                     filesFormData.append('files', file);
                 });
+
+                if (selectedLinks.length > 0) {
+                    filesFormData.append('links', JSON.stringify(selectedLinks));
+                }
 
                 const xhr = new XMLHttpRequest();
 
@@ -390,6 +433,10 @@ const CreateProject = () => {
             setSelectedFiles(prev => prev.filter((_, i) => i !== index));
         };
 
+        const removeLink = (index: number) => {
+            setSelectedLinks(prev => prev.filter((_, i) => i !== index));
+        };
+
         const formatFileSize = (bytes: number) => {
             if (bytes < 1024) return bytes + ' B';
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -493,7 +540,7 @@ const CreateProject = () => {
                     </button>
 
                     {showDropdown && (
-                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                        <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden bottom-full mb-1">
                             <button
                                 type="button"
                                 onClick={() => {
@@ -506,7 +553,7 @@ const CreateProject = () => {
                                     <CloudUpload size={20} />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Tải lên từ máy tính</p>
+                                    <p className="font-medium text-gray-800">Tải lên từ thiết bị của bạn</p>
                                     <p className="text-sm text-gray-500">Chọn tệp từ thiết bị của bạn</p>
                                 </div>
                             </button>
@@ -521,6 +568,19 @@ const CreateProject = () => {
                                 <div>
                                     <p className="font-medium text-gray-800">Chọn từ thư mục</p>
                                     <p className="text-sm text-gray-500">Chọn tệp từ thư mục cá nhân của bạn</p>
+                                </div>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={openGoogleDrivePicker}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
+                            >
+                                <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center">
+                                    <GoogleDriveIcon />
+                                </div>
+                                <div>
+                                    <p className="font-medium text-gray-800">Google Drive</p>
+                                    <p className="text-sm text-gray-500">Chọn tệp từ Google Drive</p>
                                 </div>
                             </button>
                         </div>
@@ -561,6 +621,26 @@ const CreateProject = () => {
                         >
                             Xóa tất cả
                         </button>
+                    </div>
+                )}
+
+                {selectedLinks.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                        <div className="text-xs text-gray-500">{selectedLinks.length} liên kết đã chọn</div>
+                        {selectedLinks.map((link, index) => (
+                            <div key={`link-${index}`} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
+                                <span className="flex-1 truncate text-blue-600">{link.name}</span>
+                                <span className="text-gray-400 text-xs shrink-0">Link</span>
+                                <button
+                                    type="button"
+                                    onClick={() => removeLink(index)}
+                                    className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                                    aria-label="Xóa liên kết"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        ))}
                     </div>
                 )}
 
@@ -614,6 +694,7 @@ const CreateProject = () => {
                                             </button>
                                         </span>
                                     ))}
+
                                 </div>
                             )}
 
@@ -828,6 +909,26 @@ const CreateProject = () => {
                                     onChange={handleChange}
                                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                 />
+                            </div>
+                        )}
+
+                        {/* Mức độ ưu tiên - Chỉ hiển thị khi tạo dự án con */}
+                        {parentProject && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Mức độ ưu tiên</label>
+                                <div className="relative">
+                                    <select
+                                        name="priority"
+                                        value={formData.priority}
+                                        onChange={handleChange}
+                                        className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base appearance-none ${formData.priority === 'HIGH' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-700 bg-white'
+                                            }`}
+                                    >
+                                        <option value="NORMAL" className="text-gray-700 bg-white">Công việc thường</option>
+                                        <option value="HIGH" className="text-red-600 bg-red-50">Công việc ưu tiên</option>
+                                    </select>
+                                    <ChevronDown className={`absolute right-3 top-3.5 pointer-events-none ${formData.priority === 'HIGH' ? 'text-red-400' : 'text-gray-400'}`} size={16} />
+                                </div>
                             </div>
                         )}
                     </div>

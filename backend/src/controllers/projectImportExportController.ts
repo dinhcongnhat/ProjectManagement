@@ -2,7 +2,7 @@ import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import * as XLSX from 'xlsx';
-import { ProjectStatus, WorkflowStatus } from '@prisma/client';
+import { ProjectStatus, WorkflowStatus, ProjectPriority } from '@prisma/client';
 
 // Excel column headers mapping
 const EXPORT_HEADERS = [
@@ -14,8 +14,8 @@ const EXPORT_HEADERS = [
     'Thời hạn',
     'Nhóm',
     'Giá trị',
-    'Phương pháp tiến độ',
     'Mô tả',
+    'Mức độ ưu tiên',
     'Trạng thái',
     'Người quản lý',
     'Người thực hiện',
@@ -32,8 +32,8 @@ const IMPORT_HEADERS = [
     'Thời hạn',
     'Nhóm',
     'Giá trị',
-    'Phương pháp tiến độ',
     'Mô tả',
+    'Mức độ ưu tiên',
     'Trạng thái',
     'Người quản lý',
     'Người thực hiện',
@@ -85,6 +85,15 @@ const getStatusText = (status: string | ProjectStatus): string => {
     return statusMap[status as string] || (status as string);
 };
 
+// Helper to get priority text
+const getPriorityText = (priority: string | ProjectPriority): string => {
+    const priorityMap: Record<string, string> = {
+        [ProjectPriority.HIGH]: 'Cao',
+        [ProjectPriority.NORMAL]: 'Thường'
+    };
+    return priorityMap[priority as string] || 'Thường';
+};
+
 // Helper to parse status from text
 const parseStatus = (text: string): ProjectStatus => {
     const statusMap: Record<string, ProjectStatus> = {
@@ -96,6 +105,15 @@ const parseStatus = (text: string): ProjectStatus => {
         'completed': ProjectStatus.COMPLETED
     };
     return statusMap[text.toLowerCase().trim()] || ProjectStatus.IN_PROGRESS;
+};
+
+// Helper to parse priority from text
+const parsePriority = (text: string): ProjectPriority => {
+    const lowerText = text.toLowerCase().trim();
+    if (['cao', 'gấp', 'high', 'priority', 'ưu tiên'].includes(lowerText)) {
+        return ProjectPriority.HIGH;
+    }
+    return ProjectPriority.NORMAL;
 };
 
 // ==================== EXPORT PROJECTS ====================
@@ -129,12 +147,21 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
                 cooperators: { select: { username: true, name: true } },
                 followers: { select: { username: true, name: true } }
             },
-            orderBy: { createdAt: 'desc' }
+            // Sort in memory to handle numeric string sorting
         });
 
         if (projects.length === 0) {
             return res.status(404).json({ message: 'Không tìm thấy dự án nào để export' });
         }
+
+        // Custom sort projects by the numeric part of their code
+        projects.sort((a, b) => {
+            const getNumericPart = (code: string) => {
+                const match = code.match(/(\d+)$/); // Extracts trailing numbers
+                return match ? parseInt(match[1], 10) : 0; // Default to 0 if no number found
+            };
+            return getNumericPart(b.code) - getNumericPart(a.code);
+        });
 
         // Transform data for Excel
         const excelData = projects.map(project => ({
@@ -146,8 +173,8 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             'Thời hạn': project.duration || '',
             'Nhóm': project.group || '',
             'Giá trị': project.value || '',
-            'Phương pháp tiến độ': project.progressMethod,
             'Mô tả': project.description || '',
+            'Mức độ ưu tiên': getPriorityText(project.priority),
             'Trạng thái': getStatusText(project.status),
             'Người quản lý': `${project.manager.name} (${project.manager.username})`,
             'Người thực hiện': project.implementers.map(u => `${u.name} (${u.username})`).join(', '),
@@ -169,8 +196,8 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
             { wch: 12 }, // Thời hạn
             { wch: 15 }, // Nhóm
             { wch: 15 }, // Giá trị
-            { wch: 20 }, // Phương pháp tiến độ
             { wch: 40 }, // Mô tả
+            { wch: 15 }, // Mức độ ưu tiên
             { wch: 15 }, // Trạng thái
             { wch: 25 }, // Người quản lý
             { wch: 40 }, // Người thực hiện
@@ -233,8 +260,8 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
                 'Thời hạn': '3 tháng',
                 'Nhóm': 'Nhóm A',
                 'Giá trị': '100,000,000 VNĐ',
-                'Phương pháp tiến độ': 'Theo giai đoạn',
                 'Mô tả': 'Mô tả chi tiết về dự án...',
+                'Mức độ ưu tiên': 'Thường',
                 'Trạng thái': 'Đang thực hiện',
                 'Người quản lý': userOptions[0] || 'admin',
                 'Người thực hiện': userOptions[1] || 'user1',
@@ -254,8 +281,8 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             { wch: 12 }, // Thời hạn
             { wch: 15 }, // Nhóm
             { wch: 20 }, // Giá trị
-            { wch: 20 }, // Phương pháp tiến độ
             { wch: 40 }, // Mô tả
+            { wch: 15 }, // Mức độ ưu tiên
             { wch: 15 }, // Trạng thái
             { wch: 35 }, // Người quản lý (Wider for Name + Username)
             { wch: 45 }, // Người thực hiện
@@ -263,12 +290,11 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
         ];
 
         // Add Data Validation for "Người quản lý" (Column L - index 11)
-        // We reference the "Danh sách Users" sheet range.
-        // Excel formula for validation: ='Danh sách Users'!$A$2:$A$N
+        // With "Mức độ ưu tiên" added, the column index for "Người quản lý" shifts if not careful.
+        // Array order: 0:Code, 1:Name, 2:Inv., 3:Start, 4:End, 5:Dur, 6:Grp, 7:Val, 8:Desc, 9:Priority, 10:Status, 11:Manager
+        // Column L is index 11 (A=0, B=1, ... L=11). Correct.
         const userListRange = `'Danh sách Users'!$A$2:$A$${users.length + 1}`;
 
-        // Note: SheetJS validation support might be limited depending on the version used,
-        // but we add the structure which works in many contexts.
         ws['!dataValidation'] = [
             {
                 sqref: 'L2:L1000', // Apply to rows 2-1000 of column L (Người quản lý)
@@ -279,13 +305,11 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
                 error: 'Vui lòng chọn nhân viên từ danh sách',
                 errorTitle: 'Lỗi chọn nhân viên'
             }
-            // Cannot easily do multi-select dropdown for implementers/cooperators in standard Excel
         ];
 
         XLSX.utils.book_append_sheet(wb, ws, 'Mẫu Import');
 
         // Add users reference sheet
-        // We put the "Name (Username)" string in the first column for the dropdown reference
         const usersData = users.map(u => ({
             'Chọn Nhân Sự': `${u.name} (${u.username})`, // First column for dropdown
             'Username': u.username,
@@ -312,6 +336,7 @@ export const downloadImportTemplate = async (req: AuthRequest, res: Response) =>
             { 'Hướng dẫn': '5. Người thực hiện/phối hợp: Nhập danh sách định dạng "Tên (Username)", phân cách bởi dấu phẩy.' },
             { 'Hướng dẫn': '   Ví dụ: "Nguyen Van A (user1), Le Van B (user2)"' },
             { 'Hướng dẫn': '6. Trạng thái: Đang thực hiện, Chờ duyệt, Hoàn thành.' },
+            { 'Hướng dẫn': '7. Mức độ ưu tiên: Thường, Cao (hoặc Gấp, Ưu tiên).' },
             { 'Hướng dẫn': '' },
             { 'Hướng dẫn': '=== LƯU Ý ===' },
             { 'Hướng dẫn': '- KHÔNG đổi tên sheet "Danh sách Users" vì dropdown box đang tham chiếu đến nó.' },
@@ -430,8 +455,8 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                 const duration = row['Thời hạn'] || '';
                 const group = row['Nhóm'] || '';
                 const value = row['Giá trị'] || '';
-                const progressMethod = row['Phương pháp tiến độ'] || row['Phương pháp tiến độ (*)'] || '';
                 const description = row['Mô tả'] || '';
+                const priorityStr = row['Mức độ ưu tiên'] || 'Thường';
                 const statusStr = row['Trạng thái'] || 'Đang thực hiện';
 
                 const managerUsername = row['Người quản lý'] || row['Người quản lý (*)'] || row['Username người quản lý (*)'] || '';
@@ -447,12 +472,6 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
 
                 if (!name.trim()) {
                     results.errors.push(`Dòng ${rowNum}: Tên dự án không được để trống`);
-                    results.failed++;
-                    continue;
-                }
-
-                if (!progressMethod.trim()) {
-                    results.errors.push(`Dòng ${rowNum}: Phương pháp tiến độ không được để trống`);
                     results.failed++;
                     continue;
                 }
@@ -507,6 +526,7 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
 
                 // Parse status
                 const status = parseStatus(statusStr);
+                const priority = parsePriority(priorityStr);
 
                 // Progress is naturally 0 for new non-migrated projects usually, or manual.
                 // Since field is removed, we default to 0.
@@ -525,10 +545,11 @@ export const importProjects = async (req: AuthRequest, res: Response) => {
                         duration: duration.trim() || null,
                         group: group.trim() || null,
                         value: value.trim() || null,
-                        progressMethod: progressMethod.trim(),
+                        progressMethod: '', // Removed from import
                         description: description.trim() || null,
                         progress: progress,
-                        status: status, // Now behaves correctly as ProjectStatus
+                        status: status,
+                        priority: priority,
                         managerId,
                         createdById: userId,
                         implementers: {

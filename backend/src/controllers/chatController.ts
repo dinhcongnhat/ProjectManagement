@@ -448,6 +448,96 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
     }
 };
 
+// Lấy tin nhắn xung quanh một tin nhắn cụ thể (context)
+export const getMessageContext = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { id, messageId } = req.params;
+        const limit = 50; // Total context size
+
+        // Kiểm tra quyền truy cập
+        const isMember = await prisma.conversationMember.findUnique({
+            where: {
+                conversationId_userId: {
+                    conversationId: Number(id),
+                    userId
+                }
+            }
+        });
+
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const targetMessageId = Number(messageId);
+
+        // Fetch surrounding messages
+        // 1. Fetch messages NEWER than target (including target to ensure availability if needed, but easier to fetch separately)
+        // 2. Fetch messages OLDER than target
+        // We want roughly half/half, but need to ensure we fill the limit.
+
+        const halfLimit = Math.floor(limit / 2);
+
+        const newerMessages = await (prisma.chatMessage as any).findMany({
+            where: {
+                conversationId: Number(id),
+                id: { gte: targetMessageId }
+            },
+            include: {
+                sender: { select: { id: true, name: true, avatar: true } },
+                reactions: { include: { user: { select: { id: true, name: true } } } }
+            },
+            orderBy: { id: 'asc' },
+            take: halfLimit + 1 // +1 because 'gte' includes the target message
+        });
+
+        const olderMessages = await (prisma.chatMessage as any).findMany({
+            where: {
+                conversationId: Number(id),
+                id: { lt: targetMessageId }
+            },
+            include: {
+                sender: { select: { id: true, name: true, avatar: true } },
+                reactions: { include: { user: { select: { id: true, name: true } } } }
+            },
+            orderBy: { id: 'desc' },
+            take: limit - newerMessages.length + 1 // Take remaining slots
+        });
+
+        // Combine and sort
+        const combinedMessages = [...olderMessages.reverse(), ...newerMessages];
+
+        // Process URLs
+        const messagesWithUrls = combinedMessages.map((msg: any) => {
+            let attachmentUrl = null;
+            if (msg.attachment) {
+                attachmentUrl = `/api/chat/conversations/${id}/messages/${msg.id}/file`;
+            }
+
+            let senderAvatarUrl = null;
+            if (msg.sender?.avatar) {
+                senderAvatarUrl = `/api/users/${msg.sender.id}/avatar`;
+            }
+
+            return {
+                ...msg,
+                attachmentUrl,
+                sender: {
+                    ...msg.sender,
+                    avatar: senderAvatarUrl
+                }
+            };
+        });
+
+        res.json({
+            messages: messagesWithUrls
+        });
+    } catch (error) {
+        console.error('Error fetching message context:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Gửi tin nhắn text
 export const sendMessage = async (req: AuthRequest, res: Response) => {
     try {
@@ -1457,5 +1547,144 @@ export const serveConversationAvatar = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[serveConversationAvatar] Error:', error?.message || error);
         res.status(500).json({ message: 'Failed to serve avatar' });
+    }
+};
+
+// Tìm kiếm tin nhắn trong cuộc trò chuyện
+export const searchMessagesInConversation = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { id } = req.params;
+        const { q } = req.query;
+
+        if (!q) {
+            return res.json([]);
+        }
+
+        const query = String(q).toLowerCase();
+
+        // Kiểm tra quyền
+        const isMember = await prisma.conversationMember.findUnique({
+            where: {
+                conversationId_userId: {
+                    conversationId: Number(id),
+                    userId
+                }
+            }
+        });
+
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // Fetch messages - we have to fetch all/many and filter in memory due to encryption
+        // Limit to last 1000 messages for verification to avoid OOM
+        const messages = await prisma.chatMessage.findMany({
+            where: {
+                conversationId: Number(id),
+                messageType: 'TEXT' // Only search text messages
+            },
+            include: {
+                sender: {
+                    select: { id: true, name: true, avatar: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 1000
+        });
+
+        // Filter in memory
+        const matches = messages
+            .map(msg => ({ ...msg, decryptedContent: msg.content ? decryptMessage(msg.content) : '' }))
+            .filter(msg => msg.decryptedContent?.toLowerCase().includes(query))
+            .slice(0, 20); // Limit results
+
+        // Format avatar URLs and cleanup
+        const messagesWithMap = matches.map(msg => {
+            // Add avatar URL for sender - use relative URL
+            let senderAvatarUrl = null;
+            if (msg.sender?.avatar) {
+                senderAvatarUrl = `/api/users/${msg.sender.id}/avatar`;
+            }
+            return {
+                id: msg.id,
+                content: msg.content, // Return original encrypted content for frontend to handle consistent rendering
+                messageType: msg.messageType,
+                attachment: msg.attachment,
+                createdAt: msg.createdAt,
+                senderId: msg.senderId,
+                sender: {
+                    ...msg.sender,
+                    avatar: senderAvatarUrl
+                }
+            };
+        });
+
+        res.json(messagesWithMap);
+    } catch (error) {
+        console.error('Error searching messages:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Lấy danh sách file/ảnh trong cuộc trò chuyện cho Chat Info
+export const getConversationMedia = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { id } = req.params;
+        const { type } = req.query; // 'media' (images) or 'files' (docs)
+
+        // Kiểm tra quyền
+        const isMember = await prisma.conversationMember.findUnique({
+            where: {
+                conversationId_userId: {
+                    conversationId: Number(id),
+                    userId
+                }
+            }
+        });
+
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        let whereCondition: any = {
+            conversationId: Number(id),
+            messageType: { in: ['IMAGE', 'FILE', 'TEXT_WITH_FILE'] }
+        };
+
+        if (type === 'media') {
+            whereCondition.messageType = 'IMAGE';
+        } else if (type === 'files') {
+            whereCondition.messageType = { in: ['FILE', 'TEXT_WITH_FILE'] };
+        }
+
+        const messages = await prisma.chatMessage.findMany({
+            where: whereCondition,
+            include: {
+                sender: {
+                    select: { id: true, name: true }
+                }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 50 // Limit to last 50 files
+        });
+
+        // Add attachment URLs
+        const messagesWithUrls = messages.map((msg: any) => {
+            let attachmentUrl = null;
+            if (msg.attachment) {
+                attachmentUrl = `/api/chat/conversations/${id}/messages/${msg.id}/file`;
+            }
+            return {
+                ...msg,
+                attachmentUrl
+            };
+        });
+
+        res.json(messagesWithUrls);
+    } catch (error) {
+        console.error('Error fetching conversation media:', error);
+        res.status(500).json({ message: 'Server error' });
     }
 };

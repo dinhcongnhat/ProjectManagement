@@ -18,10 +18,10 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             duration,
             group,
             value,
-            progressMethod,
             managerId,
             description,
             parentId,  // Add parentId for sub-project
+            priority,
         } = req.body;
 
         // Parse array fields if they come as strings (FormData behavior)
@@ -86,11 +86,11 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 duration,
                 group,
                 value,
-                progressMethod,
                 description,
                 attachment: attachmentPath,
                 progress: 0,
                 status: 'IN_PROGRESS',
+                priority: priority || 'NORMAL',
                 managerId: Number(managerId),
                 createdById: req.user?.id ?? null, // Save the creator ID
                 parentId: parentId ? Number(parentId) : null,  // Add parentId
@@ -267,6 +267,9 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                         status: true,
                         startDate: true,
                         endDate: true,
+                        manager: { select: { id: true, name: true } },
+                        implementers: { select: { id: true, name: true } },
+                        cooperators: { select: { id: true, name: true } },
                     }
                 },
                 workflow: true,
@@ -340,11 +343,11 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             duration,
             group,
             value,
-            progressMethod,
             managerId,
             implementerIds,
             followerIds,
             description,
+            priority,
         } = req.body;
 
         const project = await prisma.project.update({
@@ -357,8 +360,8 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                 duration,
                 group,
                 value,
-                progressMethod,
                 description,
+                priority,
                 managerId: Number(managerId),
                 implementers: {
                     set: [], // Clear existing relations
@@ -503,6 +506,42 @@ export const updateProjectProgress = async (req: AuthRequest, res: Response) => 
                     `${oldProgress}%`,
                     `${progress}%`
                 );
+
+            }
+
+            // Send notification if status changed to PENDING_APPROVAL (Submitted for review)
+            if (status === 'PENDING_APPROVAL' && currentProject.status !== 'PENDING_APPROVAL') {
+                try {
+                    const adminUsers = await prisma.user.findMany({
+                        where: { role: 'ADMIN', id: { not: req.user.id } },
+                        select: { id: true }
+                    });
+
+                    const currentUser = await prisma.user.findUnique({
+                        where: { id: req.user.id },
+                        select: { name: true }
+                    });
+
+                    const recipientIds = new Set<number>(adminUsers.map(u => u.id));
+                    // Also notify manager if not the one submitting (though usually implementer submits to manager)
+                    if (project.managerId && project.managerId !== req.user.id) {
+                        recipientIds.add(project.managerId);
+                    }
+
+                    if (recipientIds.size > 0) {
+                        const { createNotificationsForUsers } = await import('./notificationController.js');
+                        const submittedByName = currentUser?.name || 'Một thành viên';
+                        await createNotificationsForUsers(
+                            Array.from(recipientIds),
+                            'PROJECT_SUBMITTED',
+                            'Dự án chờ duyệt',
+                            `${submittedByName} đã báo cáo hoàn thành dự án "${project.name}". Vui lòng kiểm tra và duyệt.`,
+                            project.id
+                        );
+                    }
+                } catch (notifError) {
+                    console.error('Error sending submission notification:', notifError);
+                }
             }
         }
 

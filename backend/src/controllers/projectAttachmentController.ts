@@ -13,7 +13,7 @@ const sanitizeFolderName = (name: string): string => {
 };
 
 // Get MinIO path for project attachments
-const getAttachmentPath = (projectName: string, category: 'TaiLieuDinhKem' | 'NhanVienDinhKem', fileName: string): string => {
+const getAttachmentPath = (projectName: string, category: string, fileName: string): string => {
     const sanitizedName = sanitizeFolderName(projectName);
     const timestamp = Date.now();
     return `DuAn/${sanitizedName}/${category}/${timestamp}-${fileName}`;
@@ -56,6 +56,7 @@ export const uploadProjectAttachment = async (req: AuthRequest, res: Response) =
             include: {
                 manager: { select: { id: true } },
                 implementers: { select: { id: true } },
+                cooperators: { select: { id: true } },
                 createdBy: { select: { id: true } }
             }
         });
@@ -74,19 +75,43 @@ export const uploadProjectAttachment = async (req: AuthRequest, res: Response) =
             return res.status(403).json({ message: 'Bạn không có quyền đính kèm tệp cho dự án này' });
         }
 
-        // Determine category based on user role
-        // Admin/Creator/Manager uploads to TaiLieuDinhKem
-        // Implementer uploads to NhanVienDinhKem (only after project is completed or pending approval)
-        let category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' = 'TaiLieuDinhKem';
+        // Determine category based on request or user role
+        let category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem' = 'TaiLieuDinhKem';
+        const requestedCategory = req.body.category;
 
-        if (!isAdmin && !isManager && !isCreator && isImplementer) {
-            // Implementer can only upload after project reaches 100% or is completed
-            if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
-                return res.status(403).json({
-                    message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
-                });
+        const isCooperator = project.cooperators.some(coop => coop.id === userId);
+
+        if (requestedCategory === 'NhanVienDinhKem') {
+            if (isImplementer && !isAdmin && !isManager && !isCreator) {
+                if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
+                    return res.status(403).json({
+                        message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
+                    });
+                }
             }
             category = 'NhanVienDinhKem';
+        } else if (requestedCategory === 'PhoiHopDinhKem') {
+            if (!isCooperator && !isAdmin && !isManager && !isCreator) {
+                return res.status(403).json({ message: 'Bạn không thuộc nhóm phối hợp thực hiện' });
+            }
+            category = 'PhoiHopDinhKem';
+        } else if (requestedCategory === 'TaiLieuDinhKem') {
+            if (!isAdmin && !isManager && !isCreator) {
+                return res.status(403).json({ message: 'Bạn không có quyền đính kèm tài liệu dự án' });
+            }
+            category = 'TaiLieuDinhKem';
+        } else {
+            // Default logic
+            if (isCooperator) {
+                category = 'PhoiHopDinhKem';
+            } else if (!isAdmin && !isManager && !isCreator && isImplementer) {
+                if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
+                    return res.status(403).json({
+                        message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
+                    });
+                }
+                category = 'NhanVienDinhKem';
+            }
         }
 
         // Handle file uploads (multiple files)
@@ -155,6 +180,38 @@ export const uploadProjectAttachment = async (req: AuthRequest, res: Response) =
             }
         }
 
+        // Send notification to Manager and Admins
+        try {
+            const adminUsers = await prisma.user.findMany({
+                where: { role: 'ADMIN', id: { not: userId } },
+                select: { id: true }
+            });
+
+            const currentUser = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+
+            const recipientIds = new Set<number>(adminUsers.map(u => u.id));
+            if (project.manager && project.manager.id !== userId) {
+                recipientIds.add(project.manager.id);
+            }
+
+            if (recipientIds.size > 0) {
+                const { createNotificationsForUsers } = await import('./notificationController.js');
+                const uploaderName = currentUser?.name || 'Một thành viên';
+                await createNotificationsForUsers(
+                    Array.from(recipientIds),
+                    'FILE_UPLOAD',
+                    'Tệp đính kèm mới',
+                    `${uploaderName} đã tải lên ${uploadedAttachments.length} tệp cho dự án "${project.name}"`,
+                    project.id
+                );
+            }
+        } catch (notifError) {
+            console.error('Error sending notification:', notifError);
+        }
+
         res.status(201).json({
             message: `Đã thêm ${uploadedAttachments.length} tệp/liên kết thành công`,
             attachments: uploadedAttachments
@@ -187,6 +244,7 @@ export const uploadAttachmentFromFolder = async (req: AuthRequest, res: Response
             include: {
                 manager: { select: { id: true } },
                 implementers: { select: { id: true } },
+                cooperators: { select: { id: true } },
                 createdBy: { select: { id: true } }
             }
         });
@@ -205,16 +263,34 @@ export const uploadAttachmentFromFolder = async (req: AuthRequest, res: Response
             return res.status(403).json({ message: 'Bạn không có quyền đính kèm tệp cho dự án này' });
         }
 
-        // Determine category
+        // Determine category based on request or user role
         let category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' = 'TaiLieuDinhKem';
+        const requestedCategory = req.body.category;
 
-        if (!isAdmin && !isManager && !isCreator && isImplementer) {
-            if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
-                return res.status(403).json({
-                    message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
-                });
+        if (requestedCategory === 'NhanVienDinhKem') {
+            if (isImplementer && !isAdmin && !isManager && !isCreator) {
+                if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
+                    return res.status(403).json({
+                        message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
+                    });
+                }
             }
             category = 'NhanVienDinhKem';
+        } else if (requestedCategory === 'TaiLieuDinhKem') {
+            if (!isAdmin && !isManager && !isCreator) {
+                return res.status(403).json({ message: 'Bạn không có quyền đính kèm tài liệu dự án' });
+            }
+            category = 'TaiLieuDinhKem';
+        } else {
+            // Default logic
+            if (!isAdmin && !isManager && !isCreator && isImplementer) {
+                if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
+                    return res.status(403).json({
+                        message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
+                    });
+                }
+                category = 'NhanVienDinhKem';
+            }
         }
 
         // Get user files
@@ -267,6 +343,38 @@ export const uploadAttachmentFromFolder = async (req: AuthRequest, res: Response
             });
 
             uploadedAttachments.push(attachment);
+        }
+
+        // Send notification to Manager and Admins
+        try {
+            const adminUsers = await prisma.user.findMany({
+                where: { role: 'ADMIN', id: { not: userId } },
+                select: { id: true }
+            });
+
+            const currentUser = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+
+            const recipientIds = new Set<number>(adminUsers.map(u => u.id));
+            if (project.manager && project.manager.id !== userId) {
+                recipientIds.add(project.manager.id);
+            }
+
+            if (recipientIds.size > 0) {
+                const { createNotificationsForUsers } = await import('./notificationController.js');
+                const uploaderName = currentUser?.name || 'Một thành viên';
+                await createNotificationsForUsers(
+                    Array.from(recipientIds),
+                    'FILE_UPLOAD',
+                    'Tệp đính kèm mới',
+                    `${uploaderName} đã tải lên ${uploadedAttachments.length} tệp cho dự án "${project.name}"`,
+                    project.id
+                );
+            }
+        } catch (notifError) {
+            console.error('Error sending notification:', notifError);
         }
 
         res.status(201).json({

@@ -100,9 +100,10 @@ const Header = ({ onMenuClick }: HeaderProps) => {
 
     return (
         <header
-            className="h-16 bg-white/80 backdrop-blur-md border-b border-gray-200/50 flex items-center px-4 lg:px-6 sticky top-0 z-30"
+            className="h-16 border-b border-gray-200/50 flex items-center px-4 lg:px-6 sticky top-0 z-[100]"
             style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         >
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-md -z-10" />
             {/* Mobile Menu Button */}
             <button
                 onClick={onMenuClick}
@@ -196,19 +197,26 @@ const Header = ({ onMenuClick }: HeaderProps) => {
                     {showNotifications && (
                         <>
                             <div
-                                className="fixed inset-0 z-40 bg-black/20 md:bg-transparent"
+                                className="fixed inset-0 z-[80] bg-black/20 md:bg-transparent"
                                 onClick={() => setShowNotifications(false)}
                             />
-                            <div className="fixed md:absolute inset-x-0 bottom-0 md:bottom-auto md:right-0 md:left-auto md:top-full md:mt-2 md:w-96 z-50">
-                                <div className="md:hidden w-full h-1 flex justify-center pt-2 pb-1 bg-white rounded-t-2xl">
-                                    <div className="w-10 h-1 bg-gray-300 rounded-full"></div>
+                            <div className={`fixed inset-x-0 bottom-0 top-16 md:absolute md:inset-auto md:top-full md:right-0 md:mt-2 md:w-96 z-[90] md:z-[100] ${showNotifications ? 'flex flex-col' : 'hidden md:block'}`}>
+                                <div className="md:hidden w-full h-full bg-white relative shadow-inner flex flex-col pt-safe">
+                                    <NotificationList onClose={() => {
+                                        setShowNotifications(false);
+                                        api.get('/notifications/unread-count').then(res => {
+                                            setUnreadCount(res.data.unreadCount);
+                                        }).catch(() => { });
+                                    }} />
                                 </div>
-                                <NotificationList onClose={() => {
-                                    setShowNotifications(false);
-                                    api.get('/notifications/unread-count').then(res => {
-                                        setUnreadCount(res.data.unreadCount);
-                                    }).catch(() => { });
-                                }} />
+                                <div className="hidden md:block">
+                                    <NotificationList onClose={() => {
+                                        setShowNotifications(false);
+                                        api.get('/notifications/unread-count').then(res => {
+                                            setUnreadCount(res.data.unreadCount);
+                                        }).catch(() => { });
+                                    }} />
+                                </div>
                             </div>
                         </>
                     )}

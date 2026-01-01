@@ -35,7 +35,16 @@ export const confirmReceived = async (req: AuthRequest, res: Response) => {
         const { id } = req.params;  // projectId
         const now = new Date();
         const userId = req.user?.id;
-        const userName = req.user?.name || 'User';
+        let userName: string | undefined;
+
+        if (userId && !userName) {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+            if (user) userName = user.name;
+        }
+        userName = userName || 'User';
 
         const workflow = await prisma.projectWorkflow.findUnique({
             where: { projectId: Number(id) },
@@ -103,7 +112,16 @@ export const confirmInProgress = async (req: AuthRequest, res: Response) => {
         const { id } = req.params;  // projectId
         const now = new Date();
         const userId = req.user?.id;
-        const userName = req.user?.name || 'User';
+        let userName: string | undefined;
+
+        if (userId && !userName) {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+            if (user) userName = user.name;
+        }
+        userName = userName || 'User';
 
         const workflow = await prisma.projectWorkflow.findUnique({
             where: { projectId: Number(id) },
@@ -173,7 +191,16 @@ export const approveCompleted = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;  // projectId
         const userId = req.user?.id;
-        const userName = req.user?.name || 'Quản lý';
+        let userName: string | undefined;
+
+        if (userId && !userName) {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+            if (user) userName = user.name;
+        }
+        userName = userName || 'Quản lý';
         const now = new Date();
 
         // Kiểm tra project và quyền PM
@@ -275,7 +302,16 @@ export const confirmSentToCustomer = async (req: AuthRequest, res: Response) => 
         const { id } = req.params;  // projectId
         const now = new Date();
         const userId = req.user?.id;
-        const userName = req.user?.name || 'User';
+        let userName: string | undefined;
+
+        if (userId && !userName) {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { name: true }
+            });
+            if (user) userName = user.name;
+        }
+        userName = userName || 'User';
 
         const workflow = await prisma.projectWorkflow.findUnique({
             where: { projectId: Number(id) },

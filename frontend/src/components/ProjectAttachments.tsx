@@ -17,7 +17,7 @@ interface Attachment {
     minioPath: string;
     fileType: string;
     fileSize: number;
-    category: 'TaiLieuDinhKem' | 'NhanVienDinhKem';
+    category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem';
     createdAt: string;
     uploadedBy: {
         id: number;
@@ -83,14 +83,14 @@ const GoogleDriveIcon = () => (
 interface SelectedLink {
     name: string;
     url: string;
-    type: 'google-drive';
+    type: string;
 }
 
 export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     projectId,
     projectName: _projectName,
     projectStatus: _projectStatus,
-    canUpload,
+    canUpload: _canUpload,
     isImplementer,
     isAdmin,
     isManager,
@@ -108,10 +108,12 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [selectedLinks, setSelectedLinks] = useState<SelectedLink[]>([]);
     const [showFilePicker, setShowFilePicker] = useState(false);
-    const [showUploadDropdown, setShowUploadDropdown] = useState(false);
+    const [dropdownCategory, setDropdownCategory] = useState<'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem' | null>(null);
     const [viewingAttachment, setViewingAttachment] = useState<Attachment | null>(null);
 
 
+
+    const [activeCategory, setActiveCategory] = useState<'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem'>('TaiLieuDinhKem');
 
     // Upload progress state
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -123,7 +125,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (uploadDropdownRef.current && !uploadDropdownRef.current.contains(event.target as Node)) {
-                setShowUploadDropdown(false);
+                setDropdownCategory(null);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -170,13 +172,13 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
 
     // Use Picker Hook
     const { openGoogleDrivePicker } = useCloudStoragePicker({
-        onSelect: (file) => {
+        onSelect: (file: any) => {
             setSelectedLinks(prev => [...prev, {
                 name: file.name,
                 url: file.url,
-                type: file.type
+                type: file.type || 'google-drive'
             }]);
-            setShowUploadDropdown(false);
+            setDropdownCategory(null);
         },
         onError: (error) => {
             showError(error);
@@ -218,6 +220,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
 
         try {
             const formData = new FormData();
+            formData.append('category', activeCategory);
+
             selectedFiles.forEach(file => {
                 formData.append('files', file);
             });
@@ -336,10 +340,9 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const adminAttachments = attachments.filter(a => a.category === 'TaiLieuDinhKem');
     const employeeAttachments = attachments.filter(a => a.category === 'NhanVienDinhKem');
 
-    // Determine if implementer can upload - always allowed now (removed status check)
-    const implementerCanUpload = isImplementer && !isAdmin && !isManager;
 
-    const showUploadSection = canUpload || implementerCanUpload;
+    // Determined permissions
+    // const implementerCanUpload = isImplementer && !isAdmin && !isManager; // Removed unused variable
 
     // Handle files selected from folder picker
     const handleFolderFilesSelected = async (files: SelectedFile[]) => {
@@ -367,111 +370,101 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
         }
     };
 
-    return (
-        <>
+    // Check if user is a cooperator?
+    // We don't have isCooperator prop passed directly, but backend validates it.
+    // We can allow upload button if canUpload or Implementer or just let backend handle it.
+    // Assuming 'canUpload' might be too broad or too strict. 
+    // Let's assume if they can see the project, they might be able to upload if they are cooperator.
+    // We'll show the button and let backend reject if not allowed, or use isImplementer/isAdmin logic.
+    // Ideally we should have isCooperator prop. For now, assume isImplementer logic or similar.
 
+    // Actually, ProjectAttachmentsProps lacks isCooperator. 
+    // However, we can just show the button and handle error.
 
-            {/* Upload Progress Dialog */}
-            <UploadProgressDialog
-                isOpen={showUploadDialog}
-                onClose={() => {
-                    if (uploadStatus !== 'uploading') {
-                        setShowUploadDialog(false);
-                    }
-                }}
-                title={uploadStatus === 'completed' ? 'Tải lên hoàn tất!' : 'Đang tải lên...'}
-                files={uploadFilesList}
-                totalProgress={uploadProgress}
-                status={uploadStatus}
-                canClose={uploadStatus !== 'uploading'}
-            />
+    const renderSection = (
+        title: string,
+        category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem',
+        folderColor: string,
+        sectionAttachments: Attachment[],
+        allowUpload: boolean
+    ) => {
+        const isDropdownOpen = dropdownCategory === category;
+        const hasSelectedFiles = activeCategory === category && (selectedFiles.length > 0 || selectedLinks.length > 0);
 
-            {/* File Picker Dialog */}
-            <FilePickerDialog
-                isOpen={showFilePicker}
-                onClose={() => setShowFilePicker(false)}
-                onSelect={handleFolderFilesSelected}
-                token={token || ''}
-                multiple={true}
-                title="Chọn file từ thư mục cá nhân"
-            />
+        const handleUploadClick = () => {
+            if (isDropdownOpen) {
+                setDropdownCategory(null);
+            } else {
+                setDropdownCategory(category);
+                setActiveCategory(category as any);
+            }
+        };
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-gray-100 bg-gray-50">
+        return (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                     <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                        <FileText size={18} className="text-blue-600" />
-                        Tài liệu đính kèm
-                        {attachments.length > 0 && (
+                        <FolderOpen size={18} className={folderColor} />
+                        {title}
+                        {sectionAttachments.length > 0 && (
                             <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full">
-                                {attachments.length}
+                                {sectionAttachments.length}
                             </span>
                         )}
                     </h3>
+
+                    {allowUpload && (
+                        <div className="relative" ref={isDropdownOpen ? uploadDropdownRef : null}>
+                            <button
+                                onClick={handleUploadClick}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium transition-colors"
+                                disabled={uploading}
+                            >
+                                <Paperclip size={14} />
+                                Đính kèm
+                                <ChevronDown size={14} className={`transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {isDropdownOpen && (
+                                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 py-1 min-w-[200px]">
+                                    <button
+                                        onClick={() => {
+                                            setDropdownCategory(null);
+                                            fileInputRef.current?.click();
+                                        }}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                        <HardDrive size={16} className="text-blue-500" />
+                                        <span className="text-gray-700">Từ thiết bị của bạn</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setDropdownCategory(null);
+                                            setShowFilePicker(true);
+                                        }}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                        <FolderOpen size={16} className="text-amber-500" />
+                                        <span className="text-gray-700">Từ thư mục</span>
+                                    </button>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <button
+                                        onClick={openGoogleDrivePicker}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                        <GoogleDriveIcon />
+                                        <span className="text-gray-700">Google Drive</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="p-4 space-y-4">
-                    {/* Upload Section */}
-                    {showUploadSection && (
-                        <div className="flex items-center gap-3">
-                            <div className="relative" ref={uploadDropdownRef}>
-                                <button
-                                    onClick={() => setShowUploadDropdown(!showUploadDropdown)}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium transition-colors"
-                                    disabled={uploading}
-                                >
-                                    <Paperclip size={16} />
-                                    Đính kèm tài liệu
-                                    <ChevronDown size={14} className={`transition-transform ${showUploadDropdown ? 'rotate-180' : ''}`} />
-                                </button>
-
-                                {showUploadDropdown && (
-                                    <div className="absolute left-0 top-full mt-1 bg-white rounded-lg shadow-xl border border-gray-200 z-50 py-1 min-w-[200px]">
-                                        <button
-                                            onClick={() => {
-                                                setShowUploadDropdown(false);
-                                                fileInputRef.current?.click();
-                                            }}
-                                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
-                                        >
-                                            <HardDrive size={16} className="text-blue-500" />
-                                            <span className="text-gray-700">Từ máy tính</span>
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setShowUploadDropdown(false);
-                                                setShowFilePicker(true);
-                                            }}
-                                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
-                                        >
-                                            <FolderOpen size={16} className="text-amber-500" />
-                                            <span className="text-gray-700">Từ thư mục</span>
-                                        </button>
-                                        <div className="border-t border-gray-100 my-1"></div>
-                                        <button
-                                            onClick={openGoogleDrivePicker}
-                                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
-                                        >
-                                            <GoogleDriveIcon />
-                                            <span className="text-gray-700">Google Drive</span>
-                                        </button>
-
-                                    </div>
-                                )}
-
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    className="hidden"
-                                    onChange={handleFileSelect}
-                                    multiple
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Selected files & Links */}
-                    {(selectedFiles.length > 0 || selectedLinks.length > 0) && (
-                        <div className="w-full mt-2 space-y-2">
+                    {/* Selected Files Area */}
+                    {hasSelectedFiles && (
+                        <div className="w-full mb-4 space-y-2 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
                             {selectedFiles.map((file, index) => (
                                 <div key={`file-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
                                     <span className="text-lg">{getFileIcon(file.type)}</span>
@@ -500,18 +493,18 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                     </button>
                                 </div>
                             ))}
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 mt-2">
                                 <button
                                     onClick={uploadFiles}
                                     disabled={uploading}
-                                    className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                    className="flex-1 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                 >
                                     {uploading ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
-                                    {uploading ? 'Đang tải...' : `Tải lên ${selectedFiles.length + selectedLinks.length} mục`}
+                                    {uploading ? 'Đang tải...' : 'Tải lên ngay'}
                                 </button>
                                 <button
                                     onClick={() => { setSelectedFiles([]); setSelectedLinks([]); }}
-                                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition-colors"
+                                    className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition-colors"
                                 >
                                     Hủy
                                 </button>
@@ -519,70 +512,91 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                         </div>
                     )}
 
-                    {/* Loading */}
-                    {loading && (
-                        <div className="flex items-center justify-center py-8">
-                            <Loader2 className="animate-spin text-blue-600" size={24} />
+                    {/* Loading or Empty */}
+                    {loading ? (
+                        <div className="flex items-center justify-center py-4">
+                            <Loader2 className="animate-spin text-blue-600" size={20} />
                         </div>
-                    )}
-
-                    {/* No attachments */}
-                    {!loading && attachments.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">
-                            <FileText size={40} className="mx-auto mb-2 opacity-30" />
+                    ) : sectionAttachments.length === 0 ? (
+                        <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-100 rounded-lg bg-gray-50/50">
+                            <FileText size={32} className="mx-auto mb-2 opacity-20" />
                             <p className="text-sm">Chưa có tài liệu đính kèm</p>
                         </div>
-                    )}
-
-                    {/* Admin Attachments (TaiLieuDinhKem) */}
-                    {adminAttachments.length > 0 && (
-                        <div>
-                            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                                <FolderOpen size={16} className="text-amber-500" />
-                                Tài liệu đính kèm ({adminAttachments.length})
-                            </h4>
-                            <div className="space-y-2">
-                                {adminAttachments.map(attachment => (
-                                    <AttachmentItem
-                                        key={attachment.id}
-                                        attachment={attachment}
-                                        downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
-                                        token={token || ''}
-                                        onView={() => setViewingAttachment(attachment)}
-                                        onDelete={() => deleteAttachment(attachment)}
-                                        canDelete={isAdmin || isManager}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Employee Attachments (NhanVienDinhKem) */}
-                    {employeeAttachments.length > 0 && (
-                        <div className="mt-4">
-                            <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
-                                <FolderOpen size={16} className="text-green-500" />
-                                Nhân viên đính kèm ({employeeAttachments.length})
-                            </h4>
-                            <div className="space-y-2">
-                                {employeeAttachments.map(attachment => (
-                                    <AttachmentItem
-                                        key={attachment.id}
-                                        attachment={attachment}
-                                        downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
-                                        token={token || ''}
-                                        onView={() => setViewingAttachment(attachment)}
-                                        onDelete={() => deleteAttachment(attachment)}
-                                        canDelete={isAdmin || isManager}
-                                    />
-                                ))}
-                            </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {sectionAttachments.map(attachment => (
+                                <AttachmentItem
+                                    key={attachment.id}
+                                    attachment={attachment}
+                                    downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
+                                    token={token || ''}
+                                    onView={() => setViewingAttachment(attachment)}
+                                    onDelete={() => deleteAttachment(attachment)}
+                                    canDelete={isAdmin || isManager || (attachment.uploadedBy.id === (useAuth().user?.id || 0))}
+                                />
+                            ))}
                         </div>
                     )}
                 </div>
             </div>
+        );
+    };
 
-            {/* OnlyOffice Viewer */}
+    return (
+        <>
+            <UploadProgressDialog
+                isOpen={showUploadDialog}
+                onClose={() => {
+                    if (uploadStatus !== 'uploading') {
+                        setShowUploadDialog(false);
+                        setUploadStatus('idle');
+                    }
+                }}
+                title={uploadStatus === 'completed' ? 'Tải lên hoàn tất!' : 'Đang tải lên...'}
+                files={uploadFilesList}
+                totalProgress={uploadProgress}
+                status={uploadStatus}
+                canClose={uploadStatus !== 'uploading'}
+            />
+
+            <FilePickerDialog
+                isOpen={showFilePicker}
+                onClose={() => setShowFilePicker(false)}
+                onSelect={handleFolderFilesSelected}
+                token={token || ''}
+                multiple={true}
+                title="Chọn file từ thư mục cá nhân"
+            />
+
+            <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileSelect}
+                multiple
+            />
+
+            {/* Render Project Documents (Admin Attachments) */}
+            {renderSection(
+                'Tài liệu dự án',
+                'TaiLieuDinhKem',
+                'text-amber-500',
+                adminAttachments,
+                isAdmin || isManager
+            )}
+
+
+
+            {/* Render Implementer Results (Employee Attachments) */}
+            {renderSection(
+                'Báo cáo kết quả',
+                'NhanVienDinhKem',
+                'text-green-500',
+                employeeAttachments,
+                isImplementer || isAdmin || isManager
+            )}
+
+            {/* OnlyOffice Viewer / Image Viewer */}
             {viewingAttachment && (
                 <ProjectAttachmentViewer
                     attachmentId={viewingAttachment.id}
@@ -632,8 +646,11 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
         }
     };
 
+    // Check if image
+    const isImage = attachment.fileType.startsWith('image/');
+
     // For local files, check compatibility
-    const canView = isLink || isOfficeFile(attachment.name);
+    const canView = isLink || isOfficeFile(attachment.name) || isImage;
 
     return (
         <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors group">
@@ -688,5 +705,16 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
         </div>
     );
 };
+// Attachment Item Component
+interface AttachmentItemProps {
+    attachment: Attachment;
+    downloadUrl: string;
+    token: string;
+    onView: () => void;
+    onDelete: () => void;
+    canDelete: boolean;
+}
+
+
 
 export default ProjectAttachments;

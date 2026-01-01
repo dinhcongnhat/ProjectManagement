@@ -116,7 +116,8 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
 
         // Create unique document key based on project id and attachment
         // Use stable key for editing session (without timestamp for same document)
-        const documentKey = `project_${project.id}_v1`;
+        // Create unique document key based on project id and timestamp to ensure fresh session on file update
+        const documentKey = `project_${project.id}_${project.updatedAt.getTime()}`;
 
         // OnlyOffice configuration
         const config = {
@@ -236,9 +237,15 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
                 // Upload the updated file back to MinIO with the same path
                 await minioClient.putObject(bucketName, project.attachment, buffer);
 
+                // Update project timestamp to generate new key for next session
+                await prisma.project.update({
+                    where: { id: project.id },
+                    data: { updatedAt: new Date() }
+                });
+
                 console.log(`File saved successfully: ${project.attachment}`);
             } catch (saveError) {
-                console.error('Error saving file:', saveError);
+                console.error('Error saving file to MinIO or DB:', saveError);
                 return res.json({ error: 1, message: 'Error saving file' });
             }
         }

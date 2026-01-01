@@ -49,14 +49,9 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
 
     const { openGoogleDrivePicker } = useCloudStoragePicker({
         onSelect: (file) => {
-            if (onLinkSelected) {
-                onLinkSelected({
-                    name: file.name,
-                    url: file.url,
-                    type: file.type
-                });
-                setIsOpen(false);
-            }
+            // Treat Google Drive files as regular file uploads now
+            onFilesSelected([file]);
+            setIsOpen(false);
         },
         onError: (error) => {
             alert(error);
@@ -160,7 +155,7 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
                             className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 transition-colors text-sm"
                         >
                             <HardDrive size={16} className="text-blue-500" />
-                            <span className="text-gray-700">Từ máy tính</span>
+                            <span className="text-gray-700">Từ thiết bị của bạn</span>
                         </button>
                         <button
                             onClick={handleSelectFromFolder}

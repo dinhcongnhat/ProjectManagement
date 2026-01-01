@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useDialog } from '../../components/ui/Dialog';
 import ProjectImportExport from '../../components/ProjectImportExport';
+import { CreateProjectModal } from '../../components/CreateProjectModal';
 
 interface UserData {
     id: number;
@@ -115,6 +116,9 @@ const ProjectTasks = () => {
 
     // Import/Export Modal State
     const [showImportExport, setShowImportExport] = useState(false);
+
+    // Create Modal State
+    const [showCreateModal, setShowCreateModal] = useState(false);
 
     // Edit Modal State
     const [showEditModal, setShowEditModal] = useState(false);
@@ -270,10 +274,13 @@ const ProjectTasks = () => {
                         <FileSpreadsheet size={20} />
                         <span className="hidden sm:inline">Import/Export</span>
                     </button>
-                    <Link to="/admin/create-project" className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
                         <Plus size={20} />
                         <span>Thêm dự án mới</span>
-                    </Link>
+                    </button>
                 </div>
             </div>
 
@@ -520,6 +527,18 @@ const ProjectTasks = () => {
                     )}
                 </div>
             </div>
+
+            {/* Create Project Modal */}
+            {showCreateModal && (
+                <CreateProjectModal
+                    isOpen={showCreateModal}
+                    onClose={() => setShowCreateModal(false)}
+                    onSuccess={() => {
+                        fetchProjects();
+                        // setShowCreateModal(false) is called inside onSucces wrapper in the modal or by onSuccess callback here
+                    }}
+                />
+            )}
 
             {/* Edit Modal */}
             {showEditModal && (

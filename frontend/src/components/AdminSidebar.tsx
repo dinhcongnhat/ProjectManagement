@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, GitGraph, PlusCircle, LogOut, Users, X, FolderOpen } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, GitGraph, LogOut, Users, X, FolderOpen } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
 
@@ -18,7 +18,6 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
         { icon: Users, label: 'Quản lý nhân viên', path: '/admin/users' },
         { icon: FolderOpen, label: 'Thư mục', path: '/admin/folders' },
         { icon: GitGraph, label: 'Quy trình', path: '/admin/workflow' },
-        { icon: PlusCircle, label: 'Tạo dự án mới', path: '/admin/create-project' },
     ];
 
     const handleLogout = () => {

@@ -20,7 +20,10 @@ import {
     deleteMessage,
     deleteConversation,
     serveMessageAttachment,
-    serveConversationAvatar
+    serveConversationAvatar,
+    searchMessagesInConversation,
+    getConversationMedia,
+    getMessageContext
 } from '../controllers/chatController.js';
 
 const router = express.Router();
@@ -105,6 +108,9 @@ router.delete('/conversations/:id', deleteConversation);
 
 // Messages
 router.get('/conversations/:id/messages', getMessages);
+router.get('/conversations/:id/messages/:messageId/context', getMessageContext);
+router.get('/conversations/:id/search', searchMessagesInConversation);
+router.get('/conversations/:id/media', getConversationMedia);
 router.post('/conversations/:id/messages', sendMessage);
 router.post('/conversations/:id/messages/file', upload.single('file'), sendFileMessage);
 router.post('/conversations/:id/messages/voice', upload.single('audio'), sendVoiceMessage);
