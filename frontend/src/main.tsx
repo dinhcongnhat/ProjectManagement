@@ -48,8 +48,9 @@ if (isStandalonePWA) {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       console.log('[PWA] App became visible, checking connection...')
-      // Dispatch custom event for WebSocket to reconnect
-      window.dispatchEvent(new CustomEvent('pwa-visible'))
+      // Trigger checkSession from AuthContext if available
+      // Dispatch custom event that AuthContext or App listens to
+      window.dispatchEvent(new CustomEvent('pwa-resume'));
 
       // Force reload all images to get fresh avatars
       setTimeout(() => {
@@ -57,8 +58,9 @@ if (isStandalonePWA) {
         images.forEach((img) => {
           const htmlImg = img as HTMLImageElement;
           const currentSrc = htmlImg.src;
-          // Add timestamp to bypass cache
+          // Add timestamp to bypass cache if not already presenting
           if (currentSrc.includes('/avatar')) {
+            // Logic to refresh avatar...
             const url = new URL(currentSrc);
             url.searchParams.set('_t', Date.now().toString());
             htmlImg.src = url.toString();

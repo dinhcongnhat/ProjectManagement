@@ -106,6 +106,10 @@ model User {
   // Sharing
   sharedFolders UserFolderShare[] @relation("FolderShares")
   sharedFiles   UserFileShare[]   @relation("FileShares")
+
+  // Google Drive
+  googleIntegration GoogleIntegration?
+  driveLinks        ProjectDriveLink[] @relation("DriveLinkAdder")
 }
 
 model Task {
@@ -172,6 +176,7 @@ model Project {
   attachments  ProjectAttachment[]  // Multiple attachments support
   workflow     ProjectWorkflow?     // Workflow tracking
   notifications Notification[]      // Related notifications
+  driveLinks   ProjectDriveLink[]   // Google Drive Links
 }
 
 // Project Attachments - Multiple files per project
@@ -465,6 +470,7 @@ model UserFolderShare {
   @@index([folderId])
 }
 
+
 model UserFileShare {
   id        Int      @id @default(autoincrement())
   fileId    Int
@@ -479,4 +485,42 @@ model UserFileShare {
   @@unique([fileId, userId])
   @@index([userId])
   @@index([fileId])
+}
+
+// ==================== GOOGLE DRIVE INTEGRATION ====================
+
+model GoogleIntegration {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken  String
+  refreshToken String
+  expiryDate   BigInt   // Token expiry timestamp
+  email        String?  // Google email
+  avatar       String?  // Google avatar url
+  scope        String?  // Granted scopes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ProjectDriveLink {
+  id           Int      @id @default(autoincrement())
+  projectId    Int
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  fileId       String   // Google Drive File/Folder ID
+  name         String
+  mimeType     String
+  webViewLink  String?
+  iconLink     String?
+  resourceType String   // 'file' | 'folder'
+  
+  addedByUserId Int
+  addedBy       User     @relation("DriveLinkAdder", fields: [addedByUserId], references: [id])
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([addedByUserId])
 }

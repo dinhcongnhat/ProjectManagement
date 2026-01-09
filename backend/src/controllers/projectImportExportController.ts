@@ -158,7 +158,7 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
         projects.sort((a, b) => {
             const getNumericPart = (code: string) => {
                 const match = code.match(/(\d+)$/); // Extracts trailing numbers
-                return match ? parseInt(match[1], 10) : 0; // Default to 0 if no number found
+                return match ? parseInt(match[1] ?? '0', 10) : 0; // Default to 0 if no number found
             };
             return getNumericPart(b.code) - getNumericPart(a.code);
         });

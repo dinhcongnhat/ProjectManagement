@@ -1,12 +1,45 @@
 import type { Request, Response } from 'express';
+import { Readable } from 'stream';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { isOfficeFile, getFileStream, getFileStats, getPresignedUrl } from '../services/minioService.js';
+import { google } from 'googleapis';
+import jwt from 'jsonwebtoken';
+import { getUserAuth } from './googleDriveController.js';
+
+const JWT_SECRET = process.env.JWT_SECRET || '10122002';
+
+// OnlyOffice JWT secret - MUST match the secret configured in OnlyOffice Document Server
+const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
+
+// Debug: Log that JWT secret is loaded (masked for security)
+console.log('[OnlyOffice] JWT Secret loaded:', ONLYOFFICE_JWT_SECRET ? `${ONLYOFFICE_JWT_SECRET.substring(0, 3)}***${ONLYOFFICE_JWT_SECRET.substring(ONLYOFFICE_JWT_SECRET.length - 2)}` : 'NOT SET');
+console.log('[OnlyOffice] Using env ONLYOFFICE_JWT_SECRET:', !!process.env.ONLYOFFICE_JWT_SECRET);
 
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
 const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
-// JWT disabled for OnlyOffice to avoid authentication issues
+// Function to sign OnlyOffice config with JWT
+// OnlyOffice Document Server requires this if JWT is enabled
+const signOnlyOfficeConfig = (payload: any): string => {
+    // Create a clean copy of payload for signing
+    // OnlyOffice expects the token to contain the same structure as config
+    const payloadToSign = JSON.parse(JSON.stringify(payload));
+
+    // Remove token field if it exists (we're creating the token)
+    delete payloadToSign.token;
+
+    console.log('[OnlyOffice JWT] Signing payload with secret:', ONLYOFFICE_JWT_SECRET.substring(0, 3) + '***');
+    console.log('[OnlyOffice JWT] Payload keys:', Object.keys(payloadToSign));
+
+    const token = jwt.sign(payloadToSign, ONLYOFFICE_JWT_SECRET, {
+        algorithm: 'HS256',
+        noTimestamp: false  // Include iat claim
+    });
+
+    console.log('[OnlyOffice JWT] Token created, length:', token.length);
+    return token;
+};
 
 // Get document type based on file extension
 const getDocumentType = (filename: string): string => {
@@ -119,8 +152,9 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         // Create unique document key based on project id and timestamp to ensure fresh session on file update
         const documentKey = `project_${project.id}_${project.updatedAt.getTime()}`;
 
-        // OnlyOffice configuration
-        const config = {
+        // JWT Payload - only include what OnlyOffice expects to be signed
+        // According to OnlyOffice docs: document, editorConfig, and documentType
+        const jwtPayload = {
             document: {
                 fileType: fileType,
                 key: documentKey,
@@ -138,52 +172,84 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                     fillForms: canEdit,
                 },
             },
-            documentType: documentType,
             editorConfig: {
                 callbackUrl: `${BACKEND_URL}/onlyoffice/callback/${project.id}`,
-                lang: 'en', // English language
+                lang: 'en',
                 mode: canEdit ? 'edit' : 'view',
                 user: {
                     id: req.user?.id?.toString() || 'anonymous',
                     name: 'User',
                 },
                 customization: {
+                    // Auto save settings
                     autosave: true,
                     forcesave: true,
+
+                    // Collaboration features
                     chat: true,
                     comments: true,
+                    review: true,
+
+                    // UI Layout - Full featured like Word
                     compactHeader: false,
                     compactToolbar: false,
+                    toolbarNoTabs: false,
+                    toolbarHideFileName: false,
+                    hideRightMenu: false,
+                    leftMenu: true,
+                    rightMenu: true,
+                    statusBar: true,
+
+                    // Advanced features
+                    plugins: true,
+                    macros: true,
+                    macrosMode: 'warn', // 'disable', 'enable', 'warn'
+                    spellcheck: true,
+
+                    // Display settings
+                    unit: 'cm', // 'cm', 'pt', 'inch'
+                    zoom: 100,
+
+                    // Help and feedback
+                    help: true,
                     feedback: false,
                     goback: false,
-                    help: true,
-                    hideRightMenu: false,
-                    // Enable Save As
+                    mentionShare: true,
+
+                    // Track changes
+                    trackChanges: true,
+
+                    // Features object for additional options
                     features: {
-                        saveAs: true,
+                        spellcheck: {
+                            mode: true,
+                            change: true,
+                        },
+                        tabBackground: true,
+                        tabStyle: 'fill', // 'fill', 'line'
                     },
-                    logo: {
-                        image: '/Logo.png',
-                        imageEmbedded: '/Logo.png',
-                    },
-                    mentionShare: false,
-                    plugins: true,
-                    toolbarHideFileName: false,
-                    toolbarNoTabs: false,
-                    spellcheck: true,
-                    unit: 'cm',
-                    zoom: 100,
                 },
             },
+        };
+
+        // Sign the payload
+        const token = signOnlyOfficeConfig(jwtPayload);
+
+        // Full config for frontend (includes UI-only fields + token)
+        const signedConfig = {
+            ...jwtPayload,
+            documentType: documentType,
             height: '100%',
             width: '100%',
             type: 'desktop',
+            token: token
         };
 
-        // JWT disabled - send config without token
+        console.log('[OnlyOffice] Config generated for project:', id);
+        console.log('[OnlyOffice] JWT token generated:', token.substring(0, 50) + '...');
+
         res.json({
-            config,
-            token: null, // JWT disabled
+            config: signedConfig,
             onlyofficeUrl: ONLYOFFICE_URL,
             canEdit,
         });
@@ -195,9 +261,30 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
 
 // Callback endpoint for OnlyOffice - handles document saving
 export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
+    // Set CORS headers immediately for OnlyOffice server
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
     try {
         const { id } = req.params;
-        const { status, url, key } = req.body;
+        const { status, url, key, users, actions, forcesavetype, history } = req.body;
+
+        // ==================== DEBUG LOGGING ====================
+        console.log('\n========== ONLYOFFICE CALLBACK DEBUG ==========');
+        console.log('[Callback] Project ID:', id);
+        console.log('[Callback] Status:', status);
+        console.log('[Callback] URL:', url);
+        console.log('[Callback] Key:', key);
+        console.log('[Callback] Users:', users);
+        console.log('[Callback] Actions:', actions);
+        console.log('[Callback] Force Save Type:', forcesavetype);
+        console.log('[Callback] Request Headers:', JSON.stringify(req.headers, null, 2));
+        console.log('[Callback] Request Origin:', req.headers.origin || req.headers.referer || 'N/A');
+        console.log('[Callback] Request Body:', JSON.stringify(req.body, null, 2));
+        console.log('[Callback] Timestamp:', new Date().toISOString());
+        console.log('================================================\n');
+        // ==================== END DEBUG ====================
 
         // Status codes:
         // 0 - no document with the key identifier could be found
@@ -205,10 +292,8 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
         // 2 - document is ready for saving
         // 3 - document saving error has occurred
         // 4 - document is closed with no changes
-        // 6 - document is being edited, but the current document state is saved
+        // 6 - document is being edited, but the current document state is saved (forcesave)
         // 7 - error has occurred while force saving the document
-
-        console.log('OnlyOffice callback received:', { id, status, url, key });
 
         // Status 2 or 6 means document needs to be saved
         if (status === 2 || status === 6) {
@@ -326,6 +411,579 @@ export const downloadFileForOnlyOffice = async (req: Request, res: Response) => 
     }
 };
 
+// ============== GOOGLE DRIVE ONLYOFFICE SUPPORT ==============
+
+// Get OnlyOffice config for Google Drive file
+export const getGoogleDriveOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
+    try {
+        const { fileId } = req.params;
+        const userId = req.user?.id;
+
+        if (!fileId) return res.status(400).json({ error: 'File ID is required' });
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+        const auth = await getUserAuth(userId);
+        if (!auth) return res.status(400).json({ error: 'Google Drive not connected' });
+
+        const drive = google.drive({ version: 'v3', auth });
+
+        // Get file metadata
+        const fileMetadata = await drive.files.get({
+            fileId: fileId,
+            fields: 'name, mimeType'
+        });
+
+        let name = fileMetadata.data.name || 'document.docx';
+        const mimeType = fileMetadata.data.mimeType || '';
+        let isGoogleDoc = false;
+        let exportMimeType = '';
+
+        // Adjust name/type for Google Docs
+        if (mimeType === 'application/vnd.google-apps.document') {
+            name += '.docx';
+            exportMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            isGoogleDoc = true;
+        } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+            name += '.xlsx';
+            exportMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            isGoogleDoc = true;
+        } else if (mimeType === 'application/vnd.google-apps.presentation') {
+            name += '.pptx';
+            exportMimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            isGoogleDoc = true;
+        }
+
+        const docType = getDocumentType(name);
+        const fileType = getFileType(name);
+
+        // Build object name for MinIO cache
+        const ext = name.split('.').pop() || '';
+        const safeName = `document.${ext}`;
+        const objectName = `temp/drive/${fileId}/${safeName}`;
+
+        // Check if file is already cached in MinIO (within 10 minutes)
+        const { minioClient, bucketName } = await import('../config/minio.js');
+        let useCached = false;
+
+        try {
+            const stat = await minioClient.statObject(bucketName, objectName);
+            const cacheAge = Date.now() - new Date(stat.lastModified).getTime();
+            const cacheMaxAge = 10 * 60 * 1000; // 10 minutes
+
+            if (cacheAge < cacheMaxAge) {
+                console.log(`[OnlyOffice Drive] Using cached file (age: ${Math.round(cacheAge / 1000)}s)`);
+                useCached = true;
+            } else {
+                console.log(`[OnlyOffice Drive] Cache expired (age: ${Math.round(cacheAge / 1000)}s), re-downloading`);
+            }
+        } catch (e) {
+            console.log(`[OnlyOffice Drive] No cache found, downloading from Google Drive`);
+        }
+
+        // Download from Google Drive only if not cached
+        if (!useCached) {
+            let fileBuffer: Buffer;
+            if (isGoogleDoc) {
+                const response = await drive.files.export({
+                    fileId: fileId,
+                    mimeType: exportMimeType
+                }, { responseType: 'arraybuffer' });
+                fileBuffer = Buffer.from(response.data as unknown as ArrayBuffer);
+            } else {
+                const response = await drive.files.get({
+                    fileId: fileId,
+                    alt: 'media',
+                    acknowledgeAbuse: true
+                }, { responseType: 'arraybuffer' });
+                fileBuffer = Buffer.from(response.data as unknown as ArrayBuffer);
+            }
+
+            if (!fileBuffer || fileBuffer.length === 0) {
+                throw new Error('Downloaded file is empty');
+            }
+
+            console.log(`[OnlyOffice Drive] Downloaded from Drive. Size: ${fileBuffer.length}`);
+
+            // Upload to MinIO cache
+            await minioClient.putObject(bucketName, objectName, fileBuffer, fileBuffer.length, {
+                'Content-Type': isGoogleDoc ? exportMimeType : mimeType,
+                'X-Amz-Meta-Original-Filename': encodeURIComponent(name)
+            });
+            console.log(`[OnlyOffice Drive] Cached to MinIO: ${objectName}`);
+        }
+        console.log(`[OnlyOffice Drive] Uploaded cache to MinIO: ${objectName}`);
+
+        // Use backend download endpoint instead of presigned URL for JWT compatibility
+        const fileUrl = `${BACKEND_URL}/onlyoffice/drive/download/${fileId}`;
+        console.log(`[OnlyOffice Drive] Using backend download URL: ${fileUrl}`);
+
+        const documentKey = `drive_${fileId}_${Date.now()}`; // Unique session key
+
+        // JWT Payload - only include what OnlyOffice expects to be signed
+        const jwtPayload = {
+            document: {
+                fileType,
+                key: documentKey,
+                title: name,
+                url: fileUrl,
+                permissions: {
+                    download: true,
+                    edit: true,
+                    print: true,
+                    review: true,
+                    comment: true,
+                    copy: true,
+                },
+            },
+            editorConfig: {
+                callbackUrl: `${BACKEND_URL}/onlyoffice/save?type=drive&fileId=${fileId}&userId=${userId}`,
+                mode: 'edit',
+                lang: 'en',
+                user: {
+                    id: userId.toString(),
+                    name: 'User',
+                },
+                customization: {
+                    // Auto save settings
+                    autosave: true,
+                    forcesave: true,
+
+                    // Collaboration features
+                    chat: true,
+                    comments: true,
+                    review: true,
+
+                    // UI Layout - Full featured like Word
+                    compactHeader: false,
+                    compactToolbar: false,
+                    toolbarNoTabs: false,
+                    toolbarHideFileName: false,
+                    hideRightMenu: false,
+                    leftMenu: true,
+                    rightMenu: true,
+                    statusBar: true,
+
+                    // Advanced features
+                    plugins: true,
+                    macros: true,
+                    macrosMode: 'warn',
+                    spellcheck: true,
+
+                    // Display settings
+                    unit: 'cm',
+                    zoom: 100,
+
+                    // Help and feedback
+                    help: true,
+                    feedback: false,
+                    goback: false,
+                    mentionShare: true,
+
+                    // Track changes
+                    trackChanges: true,
+
+                    // Features
+                    features: {
+                        spellcheck: {
+                            mode: true,
+                            change: true,
+                        },
+                    },
+                },
+            },
+        };
+
+        // Sign the payload
+        const token = signOnlyOfficeConfig(jwtPayload);
+
+        // Full config for frontend
+        const signedConfig = {
+            ...jwtPayload,
+            documentType: docType,
+            height: '100%',
+            width: '100%',
+            type: 'desktop',
+            token: token
+        };
+
+        console.log('[OnlyOffice Drive] Config generated for file:', fileId);
+        console.log('[OnlyOffice Drive] JWT token generated:', token.substring(0, 50) + '...');
+
+        res.json({
+            config: signedConfig,
+            onlyofficeUrl: ONLYOFFICE_URL,
+        });
+
+    } catch (error: any) {
+        console.error('Error getting Google Drive OnlyOffice config:', error?.message || error);
+        res.status(500).json({ error: 'Failed to generate config', details: error?.message });
+    }
+};
+
+// Download Google Drive file for OnlyOffice (uses temp token)
+export const downloadDriveFileForOnlyOffice = async (req: Request, res: Response) => {
+    try {
+        const { fileId } = req.params;
+        const { token } = req.query;
+
+        console.log(`[OnlyOffice Drive] Download request for file: ${fileId}`);
+
+        if (!fileId || !token) {
+            console.error('[OnlyOffice Drive] Missing fileId or token');
+            return res.status(400).json({ error: 'Missing parameters' });
+        }
+
+        const tokenStr = String(token);
+        console.log(`[OnlyOffice Drive] Verifying token: ${tokenStr.substring(0, 10)}...`);
+
+        // Verify token
+        let decoded: any;
+        try {
+            decoded = jwt.verify(tokenStr, JWT_SECRET);
+            console.log('[OnlyOffice Drive] Token verified for user:', decoded.userId);
+        } catch (e) {
+            console.error('[OnlyOffice Drive] Token verification failed:', e);
+            return res.status(403).json({ error: 'Invalid or expired token' });
+        }
+
+        if (decoded.fileId !== fileId || decoded.type !== 'drive_onlyoffice') {
+            return res.status(403).json({ error: 'Invalid token claim' });
+        }
+
+        const userId = Number(decoded.userId);
+        const auth = await getUserAuth(userId);
+        if (!auth) {
+            console.error(`[OnlyOffice Drive] No Drive auth found for user ${userId}`);
+            return res.status(400).json({ error: 'Google Drive not connected' });
+        }
+
+        const drive = google.drive({ version: 'v3', auth });
+
+        // Get metadata
+        console.log('[OnlyOffice Drive] Fetching metadata...');
+        const fileMetadata = await drive.files.get({
+            fileId: fileId,
+            fields: 'name, mimeType, size'
+        });
+
+        const originalName = fileMetadata.data.name || 'download';
+        const originalMimeType = fileMetadata.data.mimeType || 'application/octet-stream';
+        const originalSize = fileMetadata.data.size;
+
+        console.log(`[OnlyOffice Drive] Found file: ${originalName} (${originalMimeType})`);
+
+        let mimeType = originalMimeType;
+        let name = originalName;
+        let isGoogleDoc = false;
+
+        // Map Google Apps types to export types
+        if (originalMimeType === 'application/vnd.google-apps.document') {
+            mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            name = `${originalName}.docx`;
+            isGoogleDoc = true;
+        } else if (originalMimeType === 'application/vnd.google-apps.spreadsheet') {
+            mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            name = `${originalName}.xlsx`;
+            isGoogleDoc = true;
+        } else if (originalMimeType === 'application/vnd.google-apps.presentation') {
+            mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            name = `${originalName}.pptx`;
+            isGoogleDoc = true;
+        }
+
+        // Encode filename for Content-Disposition header (RFC 5987)
+        const encodedFilename = encodeURIComponent(name).replace(/'/g, "%27");
+        const asciiFilename = name
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\w\s.-]/g, '_')
+            .replace(/\s+/g, '_');
+
+        // Set headers
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+        // Pass Content-Length if available and not converting
+        // COMMENTED OUT: Content-Length can cause issues if it doesn't match exactly with the stream (e.g. gzipped)
+        // OnlyOffice handles chunked transfer fine.
+        /* if (!isGoogleDoc && originalSize) {
+            res.setHeader('Content-Length', originalSize);
+        } */
+
+        let fileBuffer: Buffer;
+
+        if (isGoogleDoc) {
+            // Export file
+            const response = await drive.files.export({
+                fileId: fileId,
+                mimeType: mimeType
+            }, { responseType: 'arraybuffer' });
+            fileBuffer = Buffer.from(response.data as unknown as ArrayBuffer);
+        } else {
+            // Download normal file
+            const response = await drive.files.get({
+                fileId: fileId,
+                alt: 'media',
+                acknowledgeAbuse: true
+            }, { responseType: 'arraybuffer' });
+            fileBuffer = Buffer.from(response.data as unknown as ArrayBuffer);
+        }
+
+        console.log(`[OnlyOffice Drive] Downloaded buffer size: ${fileBuffer.length}`);
+
+        // precise content length
+        res.setHeader('Content-Length', fileBuffer.length);
+        res.send(fileBuffer);
+
+    } catch (error: any) {
+        console.error('OnlyOffice Drive Download Error:', error?.message || error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to download file', details: error?.message });
+        }
+    }
+};
+
+// Callback for Google Drive OnlyOffice - save changes back to Drive
+export const onlyofficeDriveCallback = async (req: Request, res: Response) => {
+    try {
+        const { fileId } = req.params;
+        const { status, url, users } = req.body;
+        const { userId } = req.query;
+
+        if (!fileId) {
+            return res.json({ error: 1, message: 'Missing fileId' });
+        }
+
+        console.log(`[OnlyOffice Drive Callback] File: ${fileId}, Status: ${status}, User: ${userId}`);
+
+        // Status 2 (Ready for saving) or 6 (Force save)
+        if (status === 2 || status === 6) {
+            if (!userId) {
+                console.error('[OnlyOffice Drive Callback] Missing userId in query params');
+                return res.json({ error: 1, message: 'Missing userId' });
+            }
+
+            if (!url) {
+                console.error('[OnlyOffice Drive Callback] Missing download URL');
+                return res.json({ error: 1, message: 'Missing URL' });
+            }
+
+            // 1. Download edited file from OnlyOffice
+            const fileResponse = await fetch(url);
+            if (!fileResponse.ok) {
+                throw new Error('Failed to download file from OnlyOffice');
+            }
+            const arrayBuffer = await fileResponse.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+
+            // 2. Upload to Google Drive
+            const auth = await getUserAuth(Number(userId));
+            if (!auth) {
+                console.error('[OnlyOffice Drive Callback] Google Auth failed for user', userId);
+                return res.json({ error: 1, message: 'Google Auth failed' });
+            }
+
+            const drive = google.drive({ version: 'v3', auth });
+
+            // Update file content
+            await drive.files.update({
+                fileId: fileId,
+                media: {
+                    mimeType: fileResponse.headers.get('content-type') || 'application/octet-stream',
+                    body: Readable.from(buffer)
+                }
+            });
+
+            console.log(`[OnlyOffice Drive Callback] Successfully updated file ${fileId} on Google Drive`);
+        }
+
+        res.json({ error: 0 });
+    } catch (error: any) {
+        console.error('[OnlyOffice Drive Callback] Error:', error);
+        res.json({ error: 1, message: error.message || 'Server error' });
+    }
+};
+
+// Unified Save Callback Handler
+export const handleGeneralSave = async (req: Request, res: Response) => {
+    try {
+        const { type, fileId, userId, id } = req.query;
+
+        console.log('[OnlyOffice General Save] Query:', req.query);
+
+        if (type === 'drive') {
+            // Mock request object to reuse existing handler
+            const mockReq = {
+                ...req,
+                params: { fileId: String(fileId) },
+                query: { userId: String(userId) },
+                body: req.body
+            } as unknown as Request;
+
+            return onlyofficeDriveCallback(mockReq, res);
+        }
+
+        // Handle project files (if we switch them to this route too)
+        if (id) {
+            const mockReq = {
+                ...req,
+                params: { id: String(id) },
+                body: req.body
+            } as unknown as AuthRequest;
+            return onlyofficeCallback(mockReq, res);
+        }
+
+        console.error('[OnlyOffice General Save] Unknown save type or missing parameters');
+        res.json({ error: 1, message: 'Invalid parameters' });
+
+    } catch (error: any) {
+        console.error('[OnlyOffice General Save] Error:', error);
+        res.json({ error: 1, message: 'Server error' });
+    }
+};
+
+// Save a copy of Google Drive file
+export const saveAsGoogleDriveFile = async (req: AuthRequest, res: Response) => {
+    try {
+        const { fileId } = req.params;
+        const { title, parentId } = req.body;
+        const userId = req.user?.id;
+
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+        if (!fileId) return res.status(400).json({ error: 'File ID is required' });
+
+        const auth = await getUserAuth(userId);
+        if (!auth) return res.status(400).json({ error: 'Google Drive not connected' });
+
+        const drive = google.drive({ version: 'v3', auth });
+
+        const requestBody: any = {
+            name: title || undefined
+        };
+        if (parentId) {
+            requestBody.parents = [parentId];
+        }
+
+        // Copy the file
+        const result = await drive.files.copy({
+            fileId: fileId,
+            requestBody: requestBody
+        });
+
+        res.json({
+            error: 0,
+            file: result.data
+        });
+    } catch (error: any) {
+        console.error('Error saving copy to Google Drive:', error);
+        res.status(500).json({ error: 'Failed to save copy', message: error.message });
+    }
+};
+
+// Save a copy of Google Drive file to System
+export const saveDriveFileToSystem = async (req: AuthRequest, res: Response) => {
+    try {
+        const { fileId } = req.params;
+        const { title, parentId } = req.body; // parentId here is System Folder ID
+        const userId = req.user?.id;
+
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+        if (!fileId) return res.status(400).json({ error: 'File ID is required' });
+
+        // 1. Get Google Auth & Check Metadata
+        const auth = await getUserAuth(userId);
+        if (!auth) return res.status(400).json({ error: 'Google Drive not connected' });
+        const drive = google.drive({ version: 'v3', auth });
+
+        // Get Metadata first
+        const meta = await drive.files.get({
+            fileId,
+            fields: 'name, mimeType, size'
+        });
+
+        const originalMimeType = meta.data.mimeType || '';
+        let downloadName = title || meta.data.name || `drive_file_${fileId}`;
+
+        let buffer: Buffer;
+
+        // Check if it's a Google Doc/Sheet/Slide
+        if (originalMimeType.startsWith('application/vnd.google-apps.')) {
+            let exportMimeType = 'application/pdf'; // Fallback
+            if (originalMimeType.includes('document')) {
+                exportMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+                if (!downloadName.endsWith('.docx')) downloadName += '.docx';
+            } else if (originalMimeType.includes('spreadsheet')) {
+                exportMimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                if (!downloadName.endsWith('.xlsx')) downloadName += '.xlsx';
+            } else if (originalMimeType.includes('presentation')) {
+                exportMimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+                if (!downloadName.endsWith('.pptx')) downloadName += '.pptx';
+            }
+
+            const response = await drive.files.export({
+                fileId: fileId,
+                mimeType: exportMimeType
+            }, { responseType: 'arraybuffer' });
+            buffer = Buffer.from(response.data as unknown as ArrayBuffer);
+
+        } else {
+            // Normal file
+            if (!downloadName.includes('.') && meta.data.name?.includes('.')) {
+                downloadName += '.' + meta.data.name.split('.').pop();
+            }
+
+            const response = await drive.files.get({
+                fileId: fileId,
+                alt: 'media'
+            }, { responseType: 'arraybuffer' });
+            buffer = Buffer.from(response.data as unknown as ArrayBuffer);
+        }
+
+        // 2. Prepare System Path
+        // Import needed modules dynamic or static
+        const { minioClient, bucketName } = await import('../config/minio.js');
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+
+        let minioPath = `users/${user.username.charAt(0).toUpperCase() + user.username.slice(1)}`;
+        let folderId: number | null = null; // System folder ID
+
+        if (parentId) {
+            folderId = parseInt(parentId);
+            const folder = await prisma.userFolder.findUnique({ where: { id: folderId } });
+            if (folder && folder.userId === userId) {
+                minioPath = folder.minioPath;
+            }
+        }
+
+        minioPath = `${minioPath}/${downloadName}`;
+
+        // 3. Upload to MinIO
+        await minioClient.putObject(bucketName, minioPath, buffer, buffer.length);
+
+        // 4. Create UserFile Record
+        const newFile = await prisma.userFile.create({
+            data: {
+                name: downloadName,
+                minioPath: minioPath,
+                fileType: 'application/octet-stream', // Could detect better
+                fileSize: buffer.length,
+                userId: userId,
+                folderId: folderId
+            }
+        });
+
+        res.json({ error: 0, file: newFile });
+
+    } catch (error: any) {
+        console.error('Error saving Drive file to System:', error);
+        res.status(500).json({ error: 'Failed to save to system', message: error.message });
+    }
+};
+
 // Get OnlyOffice config for discussion message attachment (view only)
 export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
     try {
@@ -341,7 +999,6 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
         }
 
         const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-        const JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
         const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
         // Find the message with attachment
@@ -424,42 +1081,68 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
         // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
         const fileUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
 
-        const config = {
+        // JWT Payload for signing
+        const jwtPayload = {
             document: {
                 fileType: ext,
                 key: `discussion_${messageId}_${Date.now()}`,
                 title: originalName,
                 url: fileUrl,
             },
-            documentType: documentType,
             editorConfig: {
-                mode: 'view', // Always view only for discussion attachments
+                mode: 'view',
                 lang: 'en',
                 user: {
                     id: user.id.toString(),
                     name: user.name,
                 },
                 customization: {
+                    // View mode settings - no editing features but full viewing
                     chat: false,
-                    comments: false,
+                    comments: true, // Allow viewing comments
+                    review: false,
+
+                    // UI Layout - Full featured for viewing
                     compactHeader: false,
                     compactToolbar: false,
-                    feedback: false,
-                    forcesave: false,
-                    help: false,
-                    hideRightMenu: true,
                     toolbarNoTabs: false,
-                    logo: {
-                        image: '',
-                        visible: false
-                    }
+                    toolbarHideFileName: false,
+                    hideRightMenu: false,
+                    leftMenu: true,
+                    rightMenu: true,
+                    statusBar: true,
+
+                    // Advanced features for viewing
+                    plugins: true,
+                    spellcheck: true,
+
+                    // Display settings
+                    unit: 'cm',
+                    zoom: 100,
+
+                    // Help
+                    help: true,
+                    feedback: false,
+                    goback: false,
                 },
             },
         };
 
-        // JWT disabled for OnlyOffice
+        // Sign the payload
+        const token = signOnlyOfficeConfig(jwtPayload);
+
+        // Full config for frontend
+        const signedConfig = {
+            ...jwtPayload,
+            documentType: documentType,
+            height: '100%',
+            width: '100%',
+            type: 'desktop',
+            token: token
+        };
+
         res.json({
-            config,
+            config: signedConfig,
             onlyofficeUrl: ONLYOFFICE_URL,
         });
     } catch (error) {
@@ -734,14 +1417,14 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
         // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
         const fileUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
 
-        const config = {
+        // JWT Payload for signing
+        const jwtPayload = {
             document: {
                 fileType: ext,
                 key: `chat_${messageId}_${Date.now()}`,
                 title: originalName,
                 url: fileUrl,
             },
-            documentType: documentType,
             editorConfig: {
                 mode: 'view',
                 lang: 'en',
@@ -750,26 +1433,52 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
                     name: 'User',
                 },
                 customization: {
+                    // View mode settings - no editing features but full viewing
                     chat: false,
-                    comments: false,
+                    comments: true, // Allow viewing comments
+                    review: false,
+
+                    // UI Layout - Full featured for viewing
                     compactHeader: false,
                     compactToolbar: false,
-                    feedback: false,
-                    forcesave: false,
-                    help: false,
-                    hideRightMenu: true,
                     toolbarNoTabs: false,
-                    logo: {
-                        image: '',
-                        visible: false
-                    }
+                    toolbarHideFileName: false,
+                    hideRightMenu: false,
+                    leftMenu: true,
+                    rightMenu: true,
+                    statusBar: true,
+
+                    // Advanced features for viewing
+                    plugins: true,
+                    spellcheck: true,
+
+                    // Display settings
+                    unit: 'cm',
+                    zoom: 100,
+
+                    // Help
+                    help: true,
+                    feedback: false,
+                    goback: false,
                 },
             },
         };
 
-        // JWT disabled for OnlyOffice
+        // Sign the payload
+        const token = signOnlyOfficeConfig(jwtPayload);
+
+        // Full config for frontend
+        const signedConfig = {
+            ...jwtPayload,
+            documentType: documentType,
+            height: '100%',
+            width: '100%',
+            type: 'desktop',
+            token: token
+        };
+
         res.json({
-            config,
+            config: signedConfig,
             onlyofficeUrl: ONLYOFFICE_URL,
         });
     } catch (error) {

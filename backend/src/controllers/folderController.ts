@@ -5,10 +5,19 @@ import { minioClient, bucketName } from '../config/minio.js';
 import { Readable } from 'stream';
 import type { UserFolder, UserFolderShare } from '@prisma/client';
 import { isOfficeFile, getPresignedUrl } from '../services/minioService.js';
+import jwt from 'jsonwebtoken';
 
 const userFolderPrefix = 'users/';
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
 const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
+const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
+
+// Function to sign OnlyOffice config with JWT
+const signOnlyOfficeConfig = (payload: any): string => {
+    const payloadToSign = JSON.parse(JSON.stringify(payload));
+    delete payloadToSign.token;
+    return jwt.sign(payloadToSign, ONLYOFFICE_JWT_SECRET, { algorithm: 'HS256' });
+};
 
 // Helper: Get username-based folder path
 const getUserFolderPath = (username: string): string => {
@@ -602,8 +611,9 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         const ext = file.name.split('.').pop()?.toLowerCase() || '';
         const documentType = getDocumentType(file.name);
 
-        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
-        const downloadUrl = await getPresignedUrl(file.minioPath, 3600); // 1 hour expiry
+        // Use backend download endpoint instead of presigned URL
+        // This ensures JWT compatibility - OnlyOffice will download from our server
+        const downloadUrl = `${BACKEND_URL}/folders/files/${fileId}/onlyoffice-download`;
 
         // Should use a consistent key for the file to enable collaborative editing (if shared)
         // or to allow saving back to the same file.
@@ -612,7 +622,8 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
 
         const canEdit = permission === 'EDIT';
 
-        const config = {
+        // JWT Payload - only include what OnlyOffice expects to be signed
+        const jwtPayload = {
             document: {
                 fileType: ext,
                 key: documentKey,
@@ -630,40 +641,81 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                     fillForms: canEdit,
                 },
             },
-            documentType,
             editorConfig: {
                 mode: canEdit ? 'edit' : 'view',
-                lang: 'vi',
-                callbackUrl: `${BACKEND_URL}/onlyoffice/folder-callback/${fileId}`, // Use simplified route alias
+                lang: 'en', // English as default
+                callbackUrl: `${BACKEND_URL}/onlyoffice/folder-callback/${fileId}`,
                 user: {
                     id: String(userId),
                     name: currentUser?.name || file.user.name
                 },
                 customization: {
+                    // Auto save settings
                     autosave: true,
                     forcesave: true,
+
+                    // Collaboration features
                     chat: true,
                     comments: true,
+                    review: true,
+
+                    // UI Layout - Full featured like Word
                     compactHeader: false,
                     compactToolbar: false,
+                    toolbarNoTabs: false,
+                    toolbarHideFileName: false,
+                    hideRightMenu: false,
+                    leftMenu: true,
+                    rightMenu: true,
+                    statusBar: true,
+
+                    // Advanced features
+                    plugins: true,
+                    macros: true,
+                    macrosMode: 'warn',
+                    spellcheck: true,
+
+                    // Display settings
+                    unit: 'cm',
+                    zoom: 100,
+
+                    // Help and feedback
+                    help: true,
                     feedback: false,
                     goback: false,
-                    help: true,
-                    hideRightMenu: false,
-                    hideRulers: false,
-                    leftMenu: true,
-                    rightMenu: false,
-                    statusBar: true,
-                    toolbarHideFileName: false,
-                    toolbarNoTabs: false,
+                    mentionShare: true,
+
+                    // Track changes
+                    trackChanges: true,
+
+                    // Features
                     features: {
-                        saveAs: true, // Enable Save As
+                        spellcheck: {
+                            mode: true,
+                            change: true,
+                        },
                     },
-                }
-            }
+                },
+            },
         };
 
-        res.json({ config, token: null });
+        // Sign the payload
+        const token = signOnlyOfficeConfig(jwtPayload);
+
+        // Full config for frontend
+        const signedConfig = {
+            ...jwtPayload,
+            documentType,
+            height: '100%',
+            width: '100%',
+            type: 'desktop',
+            token: token
+        };
+
+        console.log('[OnlyOffice Folder] Config generated for file:', fileId);
+        console.log('[OnlyOffice Folder] JWT token generated:', token.substring(0, 50) + '...');
+
+        res.json({ config: signedConfig, onlyofficeUrl: ONLYOFFICE_URL });
     } catch (error) {
         console.error('Error getting OnlyOffice config:', error);
         res.status(500).json({ message: 'Lỗi khi lấy cấu hình OnlyOffice' });
@@ -1149,5 +1201,117 @@ export const shareFile = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error sharing file:', error);
         res.status(500).json({ message: 'Lỗi khi chia sẻ file' });
+    }
+};
+
+// Ensure folder structure exists
+export const ensureFolderStructure = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const { paths, parentId } = req.body; // paths: string[] (e.g. ["A", "A/B"])
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        if (!Array.isArray(paths)) {
+            return res.status(400).json({ message: 'Invalid paths format' });
+        }
+
+        // Fetch user to ensure we have username
+        const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+        if (!currentUser) return res.status(404).json({ message: 'User not found' });
+
+        const pathMap: Record<string, number> = {};
+        const folderCache: Record<string, number> = {};
+
+        // Helper to find/create single folder
+        const findOrCreate = async (pId: number | null, name: string): Promise<number> => {
+            const cacheKey = `${pId}-${name}`;
+            if (folderCache[cacheKey]) return folderCache[cacheKey];
+
+            // Check DB
+            const existing = await prisma.userFolder.findFirst({
+                where: {
+                    userId,
+                    parentId: pId,
+                    name: name
+                }
+            });
+
+            if (existing) {
+                folderCache[cacheKey] = existing.id;
+                return existing.id;
+            }
+
+            // Create
+            let minioPath = '';
+
+            if (pId) {
+                const parent = await prisma.userFolder.findUnique({ where: { id: pId } });
+                if (parent && parent.userId === userId) {
+                    minioPath = `${parent.minioPath}/${name.trim()}`;
+                } else {
+                    // Fallback if parent not found or owned (should catch above)
+                    minioPath = `${getUserFolderPath(currentUser.username)}/${name.trim()}`;
+                }
+            } else {
+                minioPath = `${getUserFolderPath(currentUser.username)}/${name.trim()}`;
+            }
+
+            const newFolder = await prisma.userFolder.create({
+                data: {
+                    userId,
+                    parentId: pId,
+                    name: name.trim(),
+                    minioPath: minioPath
+                }
+            });
+
+            // Try create marker
+            try {
+                await minioClient.putObject(
+                    bucketName,
+                    `${minioPath}/.folder`,
+                    Buffer.from(''),
+                    0,
+                    { 'Content-Type': 'application/x-directory' }
+                );
+            } catch (e) { /* ignore */ }
+
+            folderCache[cacheKey] = newFolder.id;
+            return newFolder.id;
+        };
+
+        // Process paths
+        // Convert paths to unique set to avoid duplicates
+        const uniquePaths = Array.from(new Set(paths));
+        const sortedPaths = uniquePaths.sort((a, b) => a.split('/').length - b.split('/').length);
+
+        for (const pathStr of sortedPaths) {
+            const parts = pathStr.split('/');
+            let currentParentId = parentId ? parseInt(parentId) : null;
+
+            let currentPath = '';
+
+            for (const part of parts) {
+                if (!part) continue;
+                currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+                const cachedId = pathMap[currentPath];
+                if (cachedId !== undefined) {
+                    currentParentId = cachedId;
+                    continue;
+                }
+
+                currentParentId = await findOrCreate(currentParentId, part);
+                pathMap[currentPath] = currentParentId;
+            }
+        }
+
+        res.json({ pathMap });
+    } catch (error) {
+        console.error('Error ensuring folder structure:', error);
+        res.status(500).json({ message: 'Lỗi khi tạo cấu trúc thư mục' });
     }
 };

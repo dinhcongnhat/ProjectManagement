@@ -19,7 +19,8 @@ import {
     getSharedWithMe,
     searchUsersForShare,
     shareFolder,
-    shareFile
+    shareFile,
+    ensureFolderStructure
 } from '../controllers/folderController.js';
 
 const router = Router();
@@ -77,6 +78,7 @@ router.get('/files/:id/onlyoffice-download', downloadFileForOnlyOffice);
 // Sharing System
 router.get('/shared', authenticateToken, getSharedWithMe);
 router.get('/users/search', authenticateToken, searchUsersForShare);
+router.post('/ensure-structure', authenticateToken, ensureFolderStructure);
 router.post('/folders/:id/share', authenticateToken, shareFolder);
 router.post('/files/:id/share', authenticateToken, shareFile);
 

@@ -1,13 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { useCloudStoragePicker } from '../../hooks/useCloudStoragePicker';
 import { Paperclip, HardDrive, FolderOpen, ChevronUp } from 'lucide-react';
 import { FilePickerDialog } from './FilePickerDialog';
 import type { SelectedFile } from './FilePickerDialog';
 import { API_URL } from '../../config/api';
 
 // SVG Icons for Drive/OneDrive (Reused)
-const GoogleDriveIcon = () => (
-    <svg viewBox="0 0 87.3 78" className="w-5 h-5">
+export const GoogleDriveIcon = ({ size = 20 }: { size?: number }) => (
+    <svg viewBox="0 0 87.3 78" style={{ width: size, height: size }}>
         <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.9 2.5 3.2 3.3l12.3-21.3-6.5-11.3H4.35C1.8 44.2.35 45.65.35 47.7c0 2.05.9 3.95 2.55 5.5l3.7 13.65z" fill="#0066da" />
         <path d="M43.65 25h13L43.85 3.45c-.8-1.4-1.9-2.5-3.2-3.3l-12.3 21.3 6.5 11.3h15.1c2.55 0 4-1.45 4-3.5 0-2.05-.9-3.95-2.55-5.5l-7.75-18.3z" fill="#00ac47" />
         <path d="M73.55 76.8c1.45-.8 2.5-1.9 3.3-3.2l12.75-22.1c.8-1.45.8-3.05.8-4.5 0-1.45-1-3.05-1.8-4.5l-6.35-11H52.1l11.75 20.35 9.7 25.45z" fill="#ea4335" />
@@ -17,7 +16,7 @@ const GoogleDriveIcon = () => (
     </svg>
 );
 
-
+import { GoogleDriveBrowser } from '../GoogleDrive/GoogleDriveBrowser';
 
 interface AttachmentPickerProps {
     token: string;
@@ -46,17 +45,7 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showFilePicker, setShowFilePicker] = useState(false);
-
-    const { openGoogleDrivePicker } = useCloudStoragePicker({
-        onSelect: (file) => {
-            // Treat Google Drive files as regular file uploads now
-            onFilesSelected([file]);
-            setIsOpen(false);
-        },
-        onError: (error) => {
-            alert(error);
-        }
-    });
+    const [showDrivePicker, setShowDrivePicker] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -82,15 +71,18 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
         setShowFilePicker(true);
     };
 
+    const handleSelectFromDrive = () => {
+        setIsOpen(false);
+        setShowDrivePicker(true);
+    };
+
     const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const files = Array.from(e.target.files);
             onFilesSelected(files);
         }
         // Reset input
-        if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleFolderFilesSelected = async (selectedFiles: SelectedFile[]) => {
@@ -124,8 +116,6 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
 
     return (
         <>
-
-
             <div className={`relative ${className}`} ref={dropdownRef}>
                 <input
                     ref={fileInputRef}
@@ -155,26 +145,25 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
                             className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 transition-colors text-sm"
                         >
                             <HardDrive size={16} className="text-blue-500" />
-                            <span className="text-gray-700">Từ thiết bị của bạn</span>
+                            <span className="text-gray-700">File từ thiết bị</span>
                         </button>
                         <button
                             onClick={handleSelectFromFolder}
                             className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 transition-colors text-sm"
                         >
                             <FolderOpen size={16} className="text-amber-500" />
-                            <span className="text-gray-700">Từ thư mục</span>
+                            <span className="text-gray-700">Từ Kho dữ liệu</span>
                         </button>
                         {onLinkSelected && (
                             <>
                                 <div className="border-t border-gray-100 my-1"></div>
                                 <button
-                                    onClick={openGoogleDrivePicker}
+                                    onClick={handleSelectFromDrive}
                                     className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
                                 >
                                     <GoogleDriveIcon />
                                     <span className="text-gray-700">Google Drive</span>
                                 </button>
-
                             </>
                         )}
                     </div>
@@ -189,6 +178,28 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
                 multiple={multiple}
                 acceptTypes={acceptTypes}
             />
+
+            {/* Google Drive Picker Modal */}
+            {showDrivePicker && (
+                <div
+                    className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-sm"
+                    onClick={() => setShowDrivePicker(false)}
+                >
+                    <div
+                        className="w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <GoogleDriveBrowser
+                            onClose={() => setShowDrivePicker(false)}
+                            mode="select"
+                            onSelectFiles={(files) => {
+                                onFilesSelected(files);
+                                setShowDrivePicker(false);
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
         </>
     );
 };

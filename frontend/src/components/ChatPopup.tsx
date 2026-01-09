@@ -3486,7 +3486,7 @@ const ChatPopup: React.FC = () => {
                                     }
                                 }}
                                 onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
-                                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.7z,.tar,.gz"
                                 multiple={false}
                                 buttonClassName="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
                                 iconSize={20}

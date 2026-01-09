@@ -16,6 +16,7 @@ import UserProfile from './pages/UserProfile';
 import UserFolders from './pages/UserFolders';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import GoogleCallback from './pages/GoogleCallback';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/ui/Dialog';
 import { PushNotificationProvider } from './context/PushNotificationContext';
@@ -29,6 +30,7 @@ function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/google-callback" element={<GoogleCallback />} />
 
               {/* Admin Routes */}
               <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>

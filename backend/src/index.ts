@@ -9,6 +9,7 @@ import prisma from './config/prisma.js';
 dotenv.config();
 
 const app = express();
+// Force restart timestamp: 2026-01-07T15:55:00+07:00
 const httpServer = createServer(app);
 const allowedOrigins = [
     'http://localhost:3000',
@@ -74,6 +75,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import folderRoutes from './routes/folderRoutes.js';
 import projectImportExportRoutes from './routes/projectImportExportRoutes.js';
 import workflowRoutes from './routes/workflowRoutes.js';
+import googleDriveRoutes from './routes/googleDriveRoutes.js';
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -310,6 +312,284 @@ app.get('/api/folders/files/:id/onlyoffice-download', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+
+// OnlyOffice download for Google Drive temp files (NO AUTH - OnlyOffice needs direct access)
+app.get('/api/onlyoffice/drive/download/:fileId', async (req, res) => {
+    try {
+        const fileId = req.params.fileId;
+        console.log('[OnlyOffice Drive Download] File ID:', fileId);
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+
+        // Look for any file in the temp/drive/fileId folder
+        const { minioClient, bucketName } = await import('./config/minio.js');
+        const prefix = `temp/drive/${fileId}/`;
+
+        let objectName = '';
+        const stream = minioClient.listObjects(bucketName, prefix, false);
+
+        await new Promise<void>((resolve, reject) => {
+            stream.on('data', (obj: any) => {
+                if (obj.name) objectName = obj.name;
+            });
+            stream.on('error', reject);
+            stream.on('end', resolve);
+        });
+
+        if (!objectName) {
+            console.log('[OnlyOffice Drive Download] File not found');
+            return res.status(404).json({ message: 'File not found' });
+        }
+
+        console.log('[OnlyOffice Drive Download] Found:', objectName);
+
+        const fileStream = await getFileStream(objectName);
+        const fileStats = await getFileStats(objectName);
+
+        res.setHeader('Content-Type', fileStats.metaData?.['content-type'] || 'application/octet-stream');
+        if (fileStats.size) res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Drive Download] Error:', error?.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// ==================== ONLYOFFICE PUBLIC CALLBACKS ====================
+// These MUST be public (no auth) as OnlyOffice Document Server calls them directly
+
+// Test endpoint to verify OnlyOffice callback URL is reachable
+app.get('/api/onlyoffice/callback-test', (req, res) => {
+    console.log('\n[OnlyOffice] Callback Test - GET request received');
+    console.log('[OnlyOffice] Callback Test - Headers:', JSON.stringify(req.headers, null, 2));
+    res.json({
+        success: true,
+        message: 'OnlyOffice callback endpoint is reachable',
+        timestamp: new Date().toISOString(),
+        method: 'GET'
+    });
+});
+
+app.post('/api/onlyoffice/callback-test', (req, res) => {
+    console.log('\n[OnlyOffice] Callback Test - POST request received');
+    console.log('[OnlyOffice] Callback Test - Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[OnlyOffice] Callback Test - Body:', JSON.stringify(req.body, null, 2));
+    res.json({
+        success: true,
+        message: 'OnlyOffice callback POST endpoint is reachable',
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        receivedBody: req.body
+    });
+});
+
+// Project callback (NO AUTH - OnlyOffice server calls this)
+app.post('/api/onlyoffice/callback/:id', async (req, res) => {
+    // Set CORS headers immediately
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { id } = req.params;
+    const { status, url, key, users, actions, forcesavetype } = req.body;
+
+    console.log('\n========== ONLYOFFICE PROJECT CALLBACK (PUBLIC) ==========');
+    console.log('[Public Callback] Project ID:', id);
+    console.log('[Public Callback] Status:', status, '(1=editing, 2=ready to save, 4=closed no changes, 6=forcesave)');
+    console.log('[Public Callback] URL:', url);
+    console.log('[Public Callback] Key:', key);
+    console.log('[Public Callback] Users:', users);
+    console.log('[Public Callback] Actions:', actions);
+    console.log('[Public Callback] Force Save Type:', forcesavetype);
+    console.log('[Public Callback] Timestamp:', new Date().toISOString());
+    console.log('============================================================\n');
+
+    try {
+        // Status 2 or 6 means document needs to be saved
+        if (status === 2 || status === 6) {
+            console.log('[Public Callback] Processing save request...');
+
+            const project = await prisma.project.findUnique({
+                where: { id: Number(id) },
+            });
+
+            if (!project || !project.attachment) {
+                console.error('[Public Callback] Project or attachment not found');
+                return res.json({ error: 0 });
+            }
+
+            console.log('[Public Callback] Found project attachment:', project.attachment);
+
+            if (!url) {
+                console.error('[Public Callback] No download URL provided');
+                return res.json({ error: 0 }); // Return 0 to acknowledge
+            }
+
+            // Download the edited file from OnlyOffice
+            console.log('[Public Callback] Downloading edited file from:', url);
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error('[Public Callback] Failed to download from OnlyOffice:', response.status, response.statusText);
+                return res.json({ error: 1 });
+            }
+
+            const buffer = Buffer.from(await response.arrayBuffer());
+            console.log('[Public Callback] Downloaded file size:', buffer.length, 'bytes');
+
+            const { minioClient, bucketName } = await import('./config/minio.js');
+
+            // Upload the updated file back to MinIO
+            await minioClient.putObject(bucketName, project.attachment, buffer);
+            console.log('[Public Callback] File saved to MinIO:', project.attachment);
+
+            // Update project timestamp
+            await prisma.project.update({
+                where: { id: project.id },
+                data: { updatedAt: new Date() }
+            });
+
+            console.log('[Public Callback] SUCCESS - File saved!');
+        } else {
+            console.log('[Public Callback] Status', status, '- No save needed');
+        }
+
+        res.json({ error: 0 });
+    } catch (error: any) {
+        console.error('[Public Callback] ERROR:', error?.message, error?.stack);
+        res.json({ error: 0 }); // Return 0 to prevent OnlyOffice retry loops
+    }
+});
+
+// General save endpoint (for Google Drive files)
+app.post('/api/onlyoffice/save', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    console.log('\n========== ONLYOFFICE SAVE CALLBACK ==========');
+    console.log('[Save] Query:', req.query);
+    console.log('[Save] Body:', JSON.stringify(req.body, null, 2));
+    console.log('===============================================\n');
+
+    const { handleGeneralSave } = await import('./controllers/onlyofficeController.js');
+    return handleGeneralSave(req, res);
+});
+
+// Folder file callback (NO AUTH - OnlyOffice server calls this)
+app.post('/api/onlyoffice/folder-callback/:id', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { id } = req.params;
+    const { status, url, key, users, actions } = req.body;
+
+    console.log('\n========== ONLYOFFICE FOLDER CALLBACK (PUBLIC) ==========');
+    console.log('[Folder Callback] File ID:', id);
+    console.log('[Folder Callback] Status:', status);
+    console.log('[Folder Callback] URL:', url);
+    console.log('[Folder Callback] Key:', key);
+    console.log('==========================================================\n');
+
+    try {
+        // Status 2 or 6 means document needs to be saved
+        if (status === 2 || status === 6) {
+            const fileId = parseInt(id);
+
+            const file = await prisma.userFile.findUnique({
+                where: { id: fileId }
+            });
+
+            if (!file) {
+                console.log('[Folder Callback] File not found:', fileId);
+                return res.json({ error: 0 });
+            }
+
+            if (!url) {
+                console.log('[Folder Callback] No download URL provided');
+                return res.json({ error: 0 });
+            }
+
+            // Download the edited file from OnlyOffice
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error('[Folder Callback] Failed to download:', response.status);
+                return res.json({ error: 1 });
+            }
+
+            const buffer = Buffer.from(await response.arrayBuffer());
+            const { minioClient, bucketName } = await import('./config/minio.js');
+
+            await minioClient.putObject(bucketName, file.minioPath, buffer);
+
+            await prisma.userFile.update({
+                where: { id: fileId },
+                data: { fileSize: buffer.length, updatedAt: new Date() }
+            });
+
+            console.log('[Folder Callback] File saved successfully:', file.minioPath);
+        }
+
+        res.json({ error: 0 });
+    } catch (error: any) {
+        console.error('[Folder Callback] Error:', error?.message);
+        res.json({ error: 0 });
+    }
+});
+
+// OPTIONS handler for CORS preflight
+app.options('/api/onlyoffice/callback/:id', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).send();
+});
+
+app.options('/api/onlyoffice/save', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).send();
+});
+
+// JWT Debug Endpoint (NO AUTH) - For debugging OnlyOffice JWT issues
+app.get('/api/onlyoffice/jwt-debug', (req, res) => {
+    const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
+
+    console.log('[JWT Debug] Endpoint called');
+    console.log('[JWT Debug] Secret from env:', process.env.ONLYOFFICE_JWT_SECRET);
+    console.log('[JWT Debug] Using secret:', ONLYOFFICE_JWT_SECRET);
+
+    // Create a test payload similar to OnlyOffice config
+    const testPayload = {
+        document: {
+            fileType: 'docx',
+            key: 'test_key_' + Date.now(),
+            title: 'test.docx',
+            url: 'https://example.com/test.docx',
+        },
+        editorConfig: {
+            mode: 'view',
+            lang: 'en',
+            user: { id: '1', name: 'Test User' },
+        },
+    };
+
+    const token = jwt.sign(testPayload, ONLYOFFICE_JWT_SECRET, { algorithm: 'HS256' });
+
+    res.json({
+        status: 'ok',
+        secretLoaded: !!process.env.ONLYOFFICE_JWT_SECRET,
+        secretPreview: ONLYOFFICE_JWT_SECRET.substring(0, 3) + '***' + ONLYOFFICE_JWT_SECRET.slice(-2),
+        secretLength: ONLYOFFICE_JWT_SECRET.length,
+        testToken: token,
+        tokenPreview: token.substring(0, 50) + '...',
+        decodedPayload: jwt.decode(token),
+        timestamp: new Date().toISOString()
+    });
+});
 // ==================== END PUBLIC ROUTES ====================
 
 // Public route for VAPID key (NO AUTH - must be before authenticated routes)
@@ -348,6 +628,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api', workflowRoutes);
+app.use('/api/drive', googleDriveRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');

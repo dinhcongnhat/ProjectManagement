@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/prisma.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
+
 
 export const register = async (req: Request, res: Response) => {
     try {
@@ -46,7 +46,7 @@ export const login = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
-        const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || 'secret', { expiresIn: '30d' });
 
         res.json({ token, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
     } catch (error) {

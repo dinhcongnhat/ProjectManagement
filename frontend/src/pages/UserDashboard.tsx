@@ -131,7 +131,7 @@ const UserDashboard = () => {
                 </Link>
 
                 <Link
-                    to="/tasks"
+                    to="/my-tasks"
                     className="bg-white p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 hover:shadow-xl hover:border-blue-200 transition-all duration-300 group flex items-center gap-3 sm:gap-4 active:scale-[0.98]"
                 >
                     <div className="p-2.5 sm:p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-blue-500/30 shrink-0">

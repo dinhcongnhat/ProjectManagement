@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../components/ui/Dialog';
 import { API_URL } from '../config/api';
+import { GoogleDriveBrowser } from '../components/GoogleDrive/GoogleDriveBrowser';
+import { GoogleDriveIcon } from '../components/ui/AttachmentPicker';
 import {
     FolderPlus,
     Upload,
@@ -26,7 +28,8 @@ import {
     Clock,
     Search,
     User,
-    Check
+    Check,
+    Plus
 } from 'lucide-react';
 
 interface UserFolder {
@@ -775,8 +778,14 @@ const UserFolders = () => {
         name: string;
     } | null>(null);
     const [newName, setNewName] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showSearchResults, setShowSearchResults] = useState(false);
+    const [showActionDropdown, setShowActionDropdown] = useState(false);
+    const [showDriveBrowser, setShowDriveBrowser] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<HTMLDivElement>(null);
 
     // Reset view when navigating to shared folder root logic handled in fetchData but we might want to clear breadcrumbs in other cases?
     // Actually we don't need the activeTab effect anymore.
@@ -809,12 +818,20 @@ const UserFolders = () => {
                 setBreadcrumbs([{ id: SHARED_FOLDER_ID, name: 'Được chia sẻ' }]);
             } else {
                 let fetchedFolders = data.folders;
-                // Add virtual "Shared" folder at root
+                // Add virtual folders at root: Shared and Google Drive
                 if (!currentParentId) {
                     fetchedFolders = [
                         {
                             id: SHARED_FOLDER_ID,
                             name: 'Được chia sẻ',
+                            minioPath: '',
+                            parentId: null,
+                            createdAt: new Date().toISOString(),
+                            userId: -1 // System/Virtual ID
+                        },
+                        {
+                            id: -998, // Google Drive virtual ID
+                            name: 'Google Drive',
                             minioPath: '',
                             parentId: null,
                             createdAt: new Date().toISOString(),
@@ -840,10 +857,31 @@ const UserFolders = () => {
     }, [fetchData]);
 
     useEffect(() => {
-        const handleClick = () => setContextMenu(null);
+        const handleClick = (e: MouseEvent) => {
+            setContextMenu(null);
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setShowActionDropdown(false);
+                setShowSearchResults(false);
+            }
+        };
         document.addEventListener('click', handleClick);
         return () => document.removeEventListener('click', handleClick);
     }, []);
+
+    // Show search results when typing
+    useEffect(() => {
+        if (searchQuery) {
+            setShowSearchResults(true);
+        }
+    }, [searchQuery]);
+
+    // Filter folders and files based on search query
+    const filteredFolders = folders.filter(folder =>
+        folder.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    const filteredFiles = files.filter(file =>
+        file.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
@@ -879,45 +917,149 @@ const UserFolders = () => {
         const selectedFiles = e.target.files;
         if (!selectedFiles || selectedFiles.length === 0) return;
 
-        setUploading(true);
         const totalFiles = selectedFiles.length;
+        const hasRelativePath = selectedFiles[0]?.webkitRelativePath;
+
+        setUploading(true);
 
         try {
-            for (let i = 0; i < selectedFiles.length; i++) {
-                const file = selectedFiles[i];
+            if (hasRelativePath) {
+                // Folder upload - need to preserve structure
+                // Step 1: Collect all unique folder paths
+                const folderPaths = new Set<string>();
+                const filesByFolder = new Map<string, File[]>();
 
-                // Update progress state
-                setUploadProgress({
-                    currentFile: file.name,
-                    currentIndex: i + 1,
-                    totalFiles,
-                    percentage: Math.round(((i) / totalFiles) * 100)
-                });
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    const relativePath = file.webkitRelativePath;
+                    const pathParts = relativePath.split('/');
 
-                const formData = new FormData();
-                formData.append('file', file);
-                if (currentParentId) {
-                    formData.append('folderId', String(currentParentId));
+                    // Build folder paths (exclude the file name)
+                    let currentPath = '';
+                    for (let j = 0; j < pathParts.length - 1; j++) {
+                        currentPath = currentPath ? `${currentPath}/${pathParts[j]}` : pathParts[j];
+                        folderPaths.add(currentPath);
+                    }
+
+                    // Group files by their parent folder path
+                    const parentPath = pathParts.slice(0, -1).join('/');
+                    if (!filesByFolder.has(parentPath)) {
+                        filesByFolder.set(parentPath, []);
+                    }
+                    filesByFolder.get(parentPath)!.push(file);
                 }
 
-                const response = await fetch(`${API_URL}/folders/upload`, {
-                    method: 'POST',
-                    headers: { Authorization: `Bearer ${token}` },
-                    body: formData
+                // Step 2: Create folder structure
+                const sortedPaths = Array.from(folderPaths).sort((a, b) => a.split('/').length - b.split('/').length);
+                const folderIdMap = new Map<string, number>(); // path -> folderId
+
+                setUploadProgress({
+                    currentFile: 'Đang tạo cấu trúc thư mục...',
+                    currentIndex: 0,
+                    totalFiles,
+                    percentage: 0
                 });
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.message || 'Failed to upload file');
+                for (const folderPath of sortedPaths) {
+                    const pathParts = folderPath.split('/');
+                    const folderName = pathParts[pathParts.length - 1];
+                    const parentPath = pathParts.slice(0, -1).join('/');
+
+                    // Determine parent folder ID
+                    let parentId = currentParentId;
+                    if (parentPath && folderIdMap.has(parentPath)) {
+                        parentId = folderIdMap.get(parentPath)!;
+                    }
+
+                    // Create folder
+                    const response = await fetch(`${API_URL}/folders/create`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            name: folderName,
+                            parentId: parentId
+                        })
+                    });
+
+                    if (response.ok) {
+                        const folder = await response.json();
+                        folderIdMap.set(folderPath, folder.id);
+                    } else {
+                        // Folder might already exist - try to find it
+                        console.warn(`Could not create folder: ${folderPath}, might already exist`);
+                    }
                 }
 
-                // Update progress to 100% for this file
-                setUploadProgress({
-                    currentFile: file.name,
-                    currentIndex: i + 1,
-                    totalFiles,
-                    percentage: Math.round(((i + 1) / totalFiles) * 100)
-                });
+                // Step 3: Upload files to their respective folders
+                let uploadedCount = 0;
+                for (const [folderPath, files] of filesByFolder) {
+                    const targetFolderId = folderPath ? folderIdMap.get(folderPath) : currentParentId;
+
+                    for (const file of files) {
+                        uploadedCount++;
+                        setUploadProgress({
+                            currentFile: file.name,
+                            currentIndex: uploadedCount,
+                            totalFiles,
+                            percentage: Math.round((uploadedCount / totalFiles) * 100)
+                        });
+
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        if (targetFolderId) {
+                            formData.append('folderId', String(targetFolderId));
+                        }
+
+                        const response = await fetch(`${API_URL}/folders/upload`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            console.error(`Failed to upload: ${file.name}`);
+                        }
+                    }
+                }
+            } else {
+                // Regular file upload
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+
+                    setUploadProgress({
+                        currentFile: file.name,
+                        currentIndex: i + 1,
+                        totalFiles,
+                        percentage: Math.round(((i) / totalFiles) * 100)
+                    });
+
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    if (currentParentId) {
+                        formData.append('folderId', String(currentParentId));
+                    }
+
+                    const response = await fetch(`${API_URL}/folders/upload`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}` },
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.message || 'Failed to upload file');
+                    }
+
+                    setUploadProgress({
+                        currentFile: file.name,
+                        currentIndex: i + 1,
+                        totalFiles,
+                        percentage: Math.round(((i + 1) / totalFiles) * 100)
+                    });
+                }
             }
 
             dialog.showSuccess(`Đã upload ${selectedFiles.length} file thành công!`, { title: 'Thành công' });
@@ -1122,18 +1264,35 @@ const UserFolders = () => {
         }
     };
 
+    // Google Drive virtual folder ID
+    const GOOGLE_DRIVE_FOLDER_ID = -998;
+
     // Grid View Item for Folder
     const FolderGridItem = ({ folder }: { folder: UserFolder }) => (
         <div
             className="group relative bg-white border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer active:scale-98 touch-manipulation"
-            onClick={() => navigateToFolder(folder.id)}
-            onContextMenu={(e) => handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId)}
+            onClick={() => {
+                if (folder.id === GOOGLE_DRIVE_FOLDER_ID) {
+                    setShowDriveBrowser(true);
+                } else {
+                    navigateToFolder(folder.id);
+                }
+            }}
+            onContextMenu={(e) => {
+                if (folder.id !== GOOGLE_DRIVE_FOLDER_ID) {
+                    handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                }
+            }}
         >
             <div className="flex flex-col items-center">
                 {folder.id === SHARED_FOLDER_ID ? (
                     <div className="relative">
                         <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-blue-500 mb-1 sm:mb-2" />
                         <User className="absolute -bottom-1 -right-1 w-6 h-6 text-white bg-blue-500 rounded-full p-1 border-2 border-white" />
+                    </div>
+                ) : folder.id === GOOGLE_DRIVE_FOLDER_ID ? (
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center mb-1 sm:mb-2">
+                        <GoogleDriveIcon size={48} />
                     </div>
                 ) : (
                     <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-yellow-500 mb-1 sm:mb-2" />
@@ -1146,21 +1305,25 @@ const UserFolders = () => {
                         <User size={10} /> {folder.ownerName}
                     </span>
                 )}
-                <span className="text-xs text-gray-400 mt-1 flex items-center gap-1 hidden sm:flex">
-                    <Clock size={10} />
-                    {formatDate(folder.createdAt)}
-                </span>
+                {folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+                    <span className="text-xs text-gray-400 mt-1 flex items-center gap-1 hidden sm:flex">
+                        <Clock size={10} />
+                        {formatDate(folder.createdAt)}
+                    </span>
+                )}
             </div>
 
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
-                }}
-                className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
-            >
-                <MoreVertical size={16} className="text-gray-500" />
-            </button>
+            {folder.id !== SHARED_FOLDER_ID && folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                    }}
+                    className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                >
+                    <MoreVertical size={16} className="text-gray-500" />
+                </button>
+            )}
         </div>
     );
 
@@ -1206,13 +1369,27 @@ const UserFolders = () => {
     const FolderListItem = ({ folder }: { folder: UserFolder }) => (
         <div
             className="group flex items-center gap-3 sm:gap-4 p-3 bg-white border border-gray-200 rounded-lg hover:shadow-md hover:border-blue-300 transition-all cursor-pointer active:bg-gray-50 touch-manipulation"
-            onClick={() => navigateToFolder(folder.id)}
-            onContextMenu={(e) => handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId)}
+            onClick={() => {
+                if (folder.id === GOOGLE_DRIVE_FOLDER_ID) {
+                    setShowDriveBrowser(true);
+                } else {
+                    navigateToFolder(folder.id);
+                }
+            }}
+            onContextMenu={(e) => {
+                if (folder.id !== GOOGLE_DRIVE_FOLDER_ID) {
+                    handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                }
+            }}
         >
             {folder.id === SHARED_FOLDER_ID ? (
                 <div className="relative mr-2">
                     <Folder className="w-7 h-7 sm:w-8 sm:h-8 text-blue-500" />
                     <User className="absolute -bottom-1 -right-1 w-4 h-4 text-white bg-blue-500 rounded-full p-0.5 border border-white" />
+                </div>
+            ) : folder.id === GOOGLE_DRIVE_FOLDER_ID ? (
+                <div className="w-8 h-8 flex items-center justify-center">
+                    <GoogleDriveIcon size={28} />
                 </div>
             ) : (
                 <Folder className="w-7 h-7 sm:w-8 sm:h-8 text-yellow-500 flex-shrink-0" />
@@ -1222,7 +1399,9 @@ const UserFolders = () => {
                     {folder.name}
                 </span>
                 <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">Thư mục</span>
+                    <span className="text-xs text-gray-400">
+                        {folder.id === GOOGLE_DRIVE_FOLDER_ID ? 'Cloud Storage' : 'Thư mục'}
+                    </span>
                     {folder.ownerName && (
                         <span className="text-xs text-blue-500 flex items-center gap-1">
                             <User size={10} /> {folder.ownerName}
@@ -1230,19 +1409,23 @@ const UserFolders = () => {
                     )}
                 </div>
             </div>
-            <div className="hidden sm:flex items-center gap-1 text-xs text-gray-400">
-                <Clock size={12} />
-                {formatDate(folder.createdAt)}
-            </div>
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
-                }}
-                className="p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
-            >
-                <MoreVertical size={16} className="text-gray-500" />
-            </button>
+            {folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+                <div className="hidden sm:flex items-center gap-1 text-xs text-gray-400">
+                    <Clock size={12} />
+                    {formatDate(folder.createdAt)}
+                </div>
+            )}
+            {folder.id !== SHARED_FOLDER_ID && folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                    }}
+                    className="p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                >
+                    <MoreVertical size={16} className="text-gray-500" />
+                </button>
+            )}
         </div>
     );
 
@@ -1284,72 +1467,195 @@ const UserFolders = () => {
     );
 
     return (
-        <div className="p-4 lg:p-6 max-w-7xl mx-auto">
-            <div className="mb-6">
-                <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">
-                    Thư mục của tôi
-                </h1>
-                <p className="text-gray-600">
-                    Quản lý và lưu trữ các file của bạn
-                </p>
+        <div className="space-y-4 sm:space-y-6">
+            {/* Page Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                <div>
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Thư mục của tôi</h2>
+                    <p className="text-gray-500 mt-0.5 sm:mt-1 text-sm sm:text-base">Quản lý và lưu trữ các file của bạn</p>
+                </div>
+
+                {/* Small Search Bar */}
+                <div className="relative w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                    <input
+                        type="text"
+                        placeholder="Tìm kiếm..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onFocus={() => searchQuery && setShowSearchResults(true)}
+                        className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all outline-none text-sm"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => {
+                                setSearchQuery('');
+                                setShowSearchResults(false);
+                            }}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+
+                    {/* Search Results Dropdown */}
+                    {showSearchResults && searchQuery && (filteredFolders.length > 0 || filteredFiles.length > 0) && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-100 max-h-64 overflow-y-auto z-50">
+                            {filteredFolders.length > 0 && (
+                                <div className="p-1">
+                                    <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase">Thư mục</p>
+                                    {filteredFolders.slice(0, 4).map((folder) => (
+                                        <div
+                                            key={`search-folder-${folder.id}`}
+                                            onClick={() => {
+                                                if (folder.id === GOOGLE_DRIVE_FOLDER_ID) {
+                                                    setShowDriveBrowser(true);
+                                                } else {
+                                                    navigateToFolder(folder.id);
+                                                }
+                                                setSearchQuery('');
+                                                setShowSearchResults(false);
+                                            }}
+                                            className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 cursor-pointer rounded-md transition-colors"
+                                        >
+                                            {folder.id === GOOGLE_DRIVE_FOLDER_ID ? (
+                                                <GoogleDriveIcon />
+                                            ) : (
+                                                <Folder size={16} className="text-yellow-500" />
+                                            )}
+                                            <span className="text-sm text-gray-700 truncate">{folder.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {filteredFiles.length > 0 && (
+                                <div className="p-1 border-t border-gray-50">
+                                    <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase">File</p>
+                                    {filteredFiles.slice(0, 4).map((file) => (
+                                        <div
+                                            key={`search-file-${file.id}`}
+                                            onClick={() => {
+                                                handleViewFile(file);
+                                                setSearchQuery('');
+                                                setShowSearchResults(false);
+                                            }}
+                                            className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 cursor-pointer rounded-md transition-colors"
+                                        >
+                                            {getFileIcon(file.name, 'xs')}
+                                            <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* No Results */}
+                    {showSearchResults && searchQuery && filteredFolders.length === 0 && filteredFiles.length === 0 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-100 p-4 text-center z-50">
+                            <p className="text-gray-400 text-sm">Không tìm thấy</p>
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <div className="flex flex-wrap gap-3">
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
                     {currentParentId !== SHARED_FOLDER_ID && (
-                        <>
+                        <div className="relative" ref={dropdownRef}>
+                            <input
+                                type="file"
+                                multiple
+                                ref={fileInputRef}
+                                className="hidden"
+                                onChange={handleFileUpload}
+                            />
                             <button
-                                onClick={() => setShowCreateFolder(true)}
-                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowActionDropdown(!showActionDropdown);
+                                }}
+                                disabled={uploading}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm font-medium"
                             >
-                                <FolderPlus size={20} />
-                                <span>Tạo thư mục</span>
+                                <Plus size={16} />
+                                <span>Thêm mới</span>
+                                <ChevronRight size={14} className={`transform transition-transform ${showActionDropdown ? 'rotate-90' : ''}`} />
                             </button>
 
-                            <label className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors cursor-pointer">
-                                <Upload size={20} />
-                                <span>{uploading ? 'Đang upload...' : 'Tải file lên'}</span>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    multiple
-                                    className="hidden"
-                                    onChange={handleFileUpload}
-                                    disabled={uploading}
-                                />
-                            </label>
-                        </>
+                            {showActionDropdown && (
+                                <div className="absolute left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50">
+                                    <button
+                                        onClick={() => {
+                                            setShowCreateFolder(true);
+                                            setShowActionDropdown(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        <FolderPlus size={16} className="text-yellow-500" />
+                                        <span>Tạo thư mục</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            fileInputRef.current?.click();
+                                            setShowActionDropdown(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        <Upload size={16} className="text-blue-500" />
+                                        <span>Tải file lên</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const folderInput = document.createElement('input');
+                                            folderInput.type = 'file';
+                                            folderInput.setAttribute('webkitdirectory', '');
+                                            folderInput.setAttribute('directory', '');
+                                            folderInput.multiple = true;
+                                            folderInput.style.display = 'none';
+                                            folderInput.onchange = (e) => handleFileUpload(e as any);
+                                            folderInput.click();
+                                            setShowActionDropdown(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        <FolderPlus size={16} className="text-indigo-500" />
+                                        <span>Tải thư mục lên</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     )}
                 </div>
 
                 {/* View Mode Toggle */}
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
                     <button
                         onClick={() => setViewMode('grid')}
-                        className={`p-2 rounded-md transition-colors ${viewMode === 'grid'
+                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid'
                             ? 'bg-white text-blue-600 shadow-sm'
                             : 'text-gray-500 hover:text-gray-700'
                             }`}
                         title="Xem dạng lưới"
                     >
-                        <Grid3X3 size={18} />
+                        <Grid3X3 size={16} />
                     </button>
                     <button
                         onClick={() => setViewMode('list')}
-                        className={`p-2 rounded-md transition-colors ${viewMode === 'list'
+                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list'
                             ? 'bg-white text-blue-600 shadow-sm'
                             : 'text-gray-500 hover:text-gray-700'
                             }`}
                         title="Xem dạng danh sách"
                     >
-                        <List size={18} />
+                        <List size={16} />
                     </button>
                 </div>
             </div>
 
             {/* Breadcrumb */}
-            <div className="flex items-center gap-2 mb-6 p-3 bg-gray-50 rounded-lg overflow-x-auto">
+            <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg overflow-x-auto">
                 <button
                     onClick={navigateToRoot}
                     className="flex items-center gap-1 text-gray-600 hover:text-blue-600 whitespace-nowrap"
@@ -1392,285 +1698,319 @@ const UserFolders = () => {
                 </div>
             ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {folders.map((folder) => (
+                    {filteredFolders.map((folder) => (
                         <FolderGridItem key={`folder-${folder.id}`} folder={folder} />
                     ))}
-                    {files.map((file) => (
+                    {filteredFiles.map((file) => (
                         <FileGridItem key={`file-${file.id}`} file={file} />
                     ))}
 
-                    {folders.length === 0 && files.length === 0 && (
+                    {filteredFolders.length === 0 && filteredFiles.length === 0 && (
                         <div className="col-span-full text-center py-20 text-gray-500">
                             <Folder className="w-20 h-20 mx-auto mb-4 text-gray-300" />
-                            <p className="text-lg">Thư mục trống</p>
+                            <p className="text-lg">
+                                {searchQuery ? 'Không tìm thấy kết quả' : 'Thư mục trống'}
+                            </p>
                             <p className="text-sm mt-2">
-                                {currentParentId === SHARED_FOLDER_ID
-                                    ? 'Chưa có file nào được chia sẻ với bạn'
-                                    : 'Tạo thư mục mới hoặc tải file lên để bắt đầu'}
+                                {searchQuery
+                                    ? `Không có thư mục hoặc file nào phù hợp với "${searchQuery}"`
+                                    : currentParentId === SHARED_FOLDER_ID
+                                        ? 'Chưa có file nào được chia sẻ với bạn'
+                                        : 'Tạo thư mục mới hoặc tải file lên để bắt đầu'}
                             </p>
                         </div>
                     )}
                 </div>
             ) : (
                 <div className="space-y-2">
-                    {folders.map((folder) => (
+                    {filteredFolders.map((folder) => (
                         <FolderListItem key={`folder-${folder.id}`} folder={folder} />
                     ))}
-                    {files.map((file) => (
+                    {filteredFiles.map((file) => (
                         <FileListItem key={`file-${file.id}`} file={file} />
                     ))}
 
-                    {folders.length === 0 && files.length === 0 && (
+                    {filteredFolders.length === 0 && filteredFiles.length === 0 && (
                         <div className="text-center py-20 text-gray-500">
                             <Folder className="w-20 h-20 mx-auto mb-4 text-gray-300" />
-                            <p className="text-lg">Thư mục trống</p>
+                            <p className="text-lg">
+                                {searchQuery ? 'Không tìm thấy kết quả' : 'Thư mục trống'}
+                            </p>
                             <p className="text-sm mt-2">
-                                {currentParentId === SHARED_FOLDER_ID
-                                    ? 'Chưa có file nào được chia sẻ với bạn'
-                                    : 'Tạo thư mục mới hoặc tải file lên để bắt đầu'}
+                                {searchQuery
+                                    ? `Không có thư mục hoặc file nào phù hợp với "${searchQuery}"`
+                                    : currentParentId === SHARED_FOLDER_ID
+                                        ? 'Chưa có file nào được chia sẻ với bạn'
+                                        : 'Tạo thư mục mới hoặc tải file lên để bắt đầu'}
                             </p>
                         </div>
                     )}
                 </div>
-            )}
+            )
+            }
 
             {/* Context Menu */}
-            {contextMenu && (
-                <div
-                    className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 min-w-[180px]"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {contextMenu.type === 'file' && (
-                        <>
-                            <button
-                                onClick={() => {
-                                    const file = files.find(f => f.id === contextMenu.id);
-                                    if (file) handleViewFile(file);
-                                    setContextMenu(null);
-                                }}
-                                className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
-                            >
-                                <Eye size={16} className="text-gray-500" />
-                                <span>Xem</span>
-                            </button>
-                            <button
-                                onClick={() => {
-                                    handleDownloadFile(contextMenu.id, contextMenu.name);
-                                    setContextMenu(null);
-                                }}
-                                className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
-                            >
-                                <Download size={16} className="text-gray-500" />
-                                <span>Tải xuống</span>
-                            </button>
-                        </>
-                    )}
+            {
+                contextMenu && (
+                    <div
+                        className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 min-w-[180px]"
+                        style={{ top: contextMenu.y, left: contextMenu.x }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {contextMenu.type === 'file' && (
+                            <>
+                                <button
+                                    onClick={() => {
+                                        const file = files.find(f => f.id === contextMenu.id);
+                                        if (file) handleViewFile(file);
+                                        setContextMenu(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
+                                >
+                                    <Eye size={16} className="text-gray-500" />
+                                    <span>Xem</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        handleDownloadFile(contextMenu.id, contextMenu.name);
+                                        setContextMenu(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
+                                >
+                                    <Download size={16} className="text-gray-500" />
+                                    <span>Tải xuống</span>
+                                </button>
+                            </>
+                        )}
 
-                    {/* Check ownership for Rename, Delete, Share */}
-                    {(contextMenu.userId === user?.id || !contextMenu.userId /* Fallback if userId missing */) && (
-                        <>
-                            <div className="my-1 border-t border-gray-100" />
+                        {/* Check ownership for Rename, Delete, Share */}
+                        {(contextMenu.userId === user?.id || !contextMenu.userId /* Fallback if userId missing */) && (
+                            <>
+                                <div className="my-1 border-t border-gray-100" />
 
-                            <button
-                                onClick={() => {
-                                    setShareDialog({
-                                        type: contextMenu.type,
-                                        id: contextMenu.id,
-                                        name: contextMenu.name
-                                    });
-                                    setContextMenu(null);
-                                }}
-                                className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
-                            >
-                                <User size={16} className="text-gray-500" />
-                                <span>Chia sẻ</span>
-                            </button>
+                                <button
+                                    onClick={() => {
+                                        setShareDialog({
+                                            type: contextMenu.type,
+                                            id: contextMenu.id,
+                                            name: contextMenu.name
+                                        });
+                                        setContextMenu(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
+                                >
+                                    <User size={16} className="text-gray-500" />
+                                    <span>Chia sẻ</span>
+                                </button>
 
-                            <button
-                                onClick={() => {
-                                    setRenameDialog({
-                                        type: contextMenu.type,
-                                        id: contextMenu.id,
-                                        name: contextMenu.name
-                                    });
-                                    setNewName(contextMenu.name);
-                                    setContextMenu(null);
-                                }}
-                                className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
-                            >
-                                <Edit2 size={16} className="text-gray-500" />
-                                <span>Đổi tên</span>
-                            </button>
+                                <button
+                                    onClick={() => {
+                                        setRenameDialog({
+                                            type: contextMenu.type,
+                                            id: contextMenu.id,
+                                            name: contextMenu.name
+                                        });
+                                        setNewName(contextMenu.name);
+                                        setContextMenu(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
+                                >
+                                    <Edit2 size={16} className="text-gray-500" />
+                                    <span>Đổi tên</span>
+                                </button>
 
-                            <button
-                                onClick={() => {
-                                    if (contextMenu.type === 'folder') {
-                                        handleDeleteFolder(contextMenu.id, contextMenu.name);
-                                    } else {
-                                        handleDeleteFile(contextMenu.id, contextMenu.name);
-                                    }
-                                    setContextMenu(null);
-                                }}
-                                className="flex items-center gap-2 w-full px-4 py-2 text-left text-red-600 hover:bg-red-50"
-                            >
-                                <Trash2 size={16} />
-                                <span>Xóa</span>
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
+                                <button
+                                    onClick={() => {
+                                        if (contextMenu.type === 'folder') {
+                                            handleDeleteFolder(contextMenu.id, contextMenu.name);
+                                        } else {
+                                            handleDeleteFile(contextMenu.id, contextMenu.name);
+                                        }
+                                        setContextMenu(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-4 py-2 text-left text-red-600 hover:bg-red-50"
+                                >
+                                    <Trash2 size={16} />
+                                    <span>Xóa</span>
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )
+            }
 
             {/* Share Dialog */}
-            {shareDialog && (
-                <ShareDialog
-                    type={shareDialog.type}
-                    id={shareDialog.id}
-                    name={shareDialog.name}
-                    onClose={() => setShareDialog(null)}
-                    token={token || ''}
-                />
-            )}
+            {
+                shareDialog && (
+                    <ShareDialog
+                        type={shareDialog.type}
+                        id={shareDialog.id}
+                        name={shareDialog.name}
+                        onClose={() => setShareDialog(null)}
+                        token={token || ''}
+                    />
+                )
+            }
 
             {/* Create Folder Dialog */}
-            {showCreateFolder && (
-                <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-3 bg-blue-100 rounded-full">
-                                <FolderPlus className="w-6 h-6 text-blue-600" />
+            {
+                showCreateFolder && (
+                    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-3 bg-blue-100 rounded-full">
+                                    <FolderPlus className="w-6 h-6 text-blue-600" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900">Tạo thư mục mới</h3>
                             </div>
-                            <h3 className="text-lg font-semibold text-gray-900">Tạo thư mục mới</h3>
-                        </div>
-                        <input
-                            type="text"
-                            value={newFolderName}
-                            onChange={(e) => setNewFolderName(e.target.value)}
-                            placeholder="Nhập tên thư mục"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            autoFocus
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleCreateFolder();
-                                if (e.key === 'Escape') setShowCreateFolder(false);
-                            }}
-                        />
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button
-                                onClick={() => setShowCreateFolder(false)}
-                                className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
-                            >
-                                Hủy
-                            </button>
-                            <button
-                                onClick={handleCreateFolder}
-                                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
-                            >
-                                Tạo thư mục
-                            </button>
+                            <input
+                                type="text"
+                                value={newFolderName}
+                                onChange={(e) => setNewFolderName(e.target.value)}
+                                placeholder="Nhập tên thư mục"
+                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleCreateFolder();
+                                    if (e.key === 'Escape') setShowCreateFolder(false);
+                                }}
+                            />
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    onClick={() => setShowCreateFolder(false)}
+                                    className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
+                                >
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={handleCreateFolder}
+                                    className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+                                >
+                                    Tạo thư mục
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Rename Dialog */}
-            {renameDialog && (
-                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-3 bg-amber-100 rounded-full">
-                                <Edit2 className="w-6 h-6 text-amber-600" />
+            {
+                renameDialog && (
+                    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-3 bg-amber-100 rounded-full">
+                                    <Edit2 className="w-6 h-6 text-amber-600" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    Đổi tên {renameDialog.type === 'folder' ? 'thư mục' : 'file'}
+                                </h3>
                             </div>
-                            <h3 className="text-lg font-semibold text-gray-900">
-                                Đổi tên {renameDialog.type === 'folder' ? 'thư mục' : 'file'}
-                            </h3>
-                        </div>
-                        <input
-                            type="text"
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value)}
-                            placeholder="Nhập tên mới"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                            autoFocus
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleRename();
-                                if (e.key === 'Escape') setRenameDialog(null);
-                            }}
-                        />
-                        <div className="flex justify-end gap-3 mt-6">
-                            <button
-                                onClick={() => setRenameDialog(null)}
-                                className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
-                            >
-                                Hủy
-                            </button>
-                            <button
-                                onClick={handleRename}
-                                className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
-                            >
-                                Đổi tên
-                            </button>
+                            <input
+                                type="text"
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                placeholder="Nhập tên mới"
+                                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRename();
+                                    if (e.key === 'Escape') setRenameDialog(null);
+                                }}
+                            />
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button
+                                    onClick={() => setRenameDialog(null)}
+                                    className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
+                                >
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={handleRename}
+                                    className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+                                >
+                                    Đổi tên
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Image Viewer */}
-            {viewingImage && (
-                <ImageViewer
-                    imageUrl={viewingImage.url}
-                    fileName={viewingImage.name}
-                    onClose={() => setViewingImage(null)}
-                />
-            )}
+            {
+                viewingImage && (
+                    <ImageViewer
+                        imageUrl={viewingImage.url}
+                        fileName={viewingImage.name}
+                        onClose={() => setViewingImage(null)}
+                    />
+                )
+            }
 
             {/* OnlyOffice Viewer */}
-            {viewingOffice && (
-                <OnlyOfficeViewer
-                    fileId={viewingOffice.id}
-                    fileName={viewingOffice.name}
-                    onClose={() => setViewingOffice(null)}
-                    token={token || ''}
-                />
-            )}
+            {
+                viewingOffice && (
+                    <OnlyOfficeViewer
+                        fileId={viewingOffice.id}
+                        fileName={viewingOffice.name}
+                        onClose={() => setViewingOffice(null)}
+                        token={token || ''}
+                    />
+                )
+            }
 
             {/* Upload Progress Dialog */}
-            {uploading && uploadProgress && (
-                <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                                <Upload className="w-6 h-6 text-blue-600 animate-bounce" />
+            {
+                uploading && uploadProgress && (
+                    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <Upload className="w-6 h-6 text-blue-600 animate-bounce" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-900">Đang upload file...</h3>
+                                    <p className="text-sm text-gray-500">
+                                        File {uploadProgress.currentIndex} / {uploadProgress.totalFiles}
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900">Đang upload file...</h3>
-                                <p className="text-sm text-gray-500">
-                                    File {uploadProgress.currentIndex} / {uploadProgress.totalFiles}
+
+                            <div className="mb-3">
+                                <p className="text-sm text-gray-700 truncate mb-2" title={uploadProgress.currentFile}>
+                                    📄 {uploadProgress.currentFile}
+                                </p>
+
+                                {/* Progress bar */}
+                                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                                    <div
+                                        className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+                                        style={{ width: `${uploadProgress.percentage}%` }}
+                                    />
+                                </div>
+
+                                <p className="text-sm text-gray-500 mt-2 text-center">
+                                    {uploadProgress.percentage}% hoàn thành
                                 </p>
                             </div>
-                        </div>
 
-                        <div className="mb-3">
-                            <p className="text-sm text-gray-700 truncate mb-2" title={uploadProgress.currentFile}>
-                                📄 {uploadProgress.currentFile}
-                            </p>
-
-                            {/* Progress bar */}
-                            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                                <div
-                                    className="bg-gradient-to-r from-blue-500 to-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
-                                    style={{ width: `${uploadProgress.percentage}%` }}
-                                />
-                            </div>
-
-                            <p className="text-sm text-gray-500 mt-2 text-center">
-                                {uploadProgress.percentage}% hoàn thành
+                            <p className="text-xs text-gray-400 text-center">
+                                Vui lòng không đóng trang này khi đang upload
                             </p>
                         </div>
+                    </div>
+                )
+            }
 
-                        <p className="text-xs text-gray-400 text-center">
-                            Vui lòng không đóng trang này khi đang upload
-                        </p>
+            {/* Google Drive Browser Modal */}
+            {showDriveBrowser && (
+                <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl">
+                        <GoogleDriveBrowser
+                            onClose={() => setShowDriveBrowser(false)}
+                        />
                     </div>
                 </div>
             )}

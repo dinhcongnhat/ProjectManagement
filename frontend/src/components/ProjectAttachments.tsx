@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useCloudStoragePicker } from '../hooks/useCloudStoragePicker';
+import { googleDriveService } from '../services/googleDriveService';
+import { GoogleDriveBrowser } from './GoogleDrive/GoogleDriveBrowser';
 import { FileText, Trash2, CloudUpload, FolderOpen, X, Loader2, Eye, Paperclip, ChevronDown, HardDrive, ExternalLink } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +24,20 @@ interface Attachment {
         id: number;
         name: string;
         role: string;
+    };
+}
+
+interface DriveLink {
+    id: number;
+    fileId: string;
+    name: string;
+    mimeType: string;
+    webViewLink: string | null;
+    iconLink: string | null;
+    resourceType: string;
+    addedBy: {
+        id: number;
+        name: string;
     };
 }
 
@@ -55,6 +70,7 @@ const formatFileSize = (bytes: number) => {
 
 const getFileIcon = (mimeType: string) => {
     if (mimeType.includes('google-drive')) return 'googledrive';
+    if (mimeType.includes('folder')) return '📁';
 
     if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return '📊';
     if (mimeType.includes('document') || mimeType.includes('word')) return '📄';
@@ -63,6 +79,7 @@ const getFileIcon = (mimeType: string) => {
     if (mimeType.includes('image')) return '🖼️';
     if (mimeType.includes('video')) return '🎬';
     if (mimeType.includes('audio')) return '🎵';
+    if (mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('rar') || mimeType.includes('tar') || mimeType.includes('7z')) return '📦';
     return '📎';
 };
 
@@ -77,8 +94,6 @@ const GoogleDriveIcon = () => (
         <path d="M6.6 66.85 20.25 43.2l11.75 20.35-6.15 10.65c-2.05 1.2-4.5 1.2-6.55 0L6.6 66.85z" fill="#ffba00" />
     </svg>
 );
-
-
 
 interface SelectedLink {
     name: string;
@@ -103,15 +118,15 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const uploadDropdownRef = useRef<HTMLDivElement>(null);
 
     const [attachments, setAttachments] = useState<Attachment[]>(initialAttachments);
+    const [driveLinks, setDriveLinks] = useState<DriveLink[]>([]);
     const [loading, setLoading] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [selectedLinks, setSelectedLinks] = useState<SelectedLink[]>([]);
     const [showFilePicker, setShowFilePicker] = useState(false);
+    const [showDriveBrowser, setShowDriveBrowser] = useState(false);
     const [dropdownCategory, setDropdownCategory] = useState<'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem' | null>(null);
     const [viewingAttachment, setViewingAttachment] = useState<Attachment | null>(null);
-
-
 
     const [activeCategory, setActiveCategory] = useState<'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem'>('TaiLieuDinhKem');
 
@@ -134,9 +149,8 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
 
     // Fetch attachments if not provided
     useEffect(() => {
-        if (initialAttachments.length === 0) {
-            fetchAttachments();
-        }
+        fetchAttachments();
+        fetchDriveLinks();
     }, [projectId]);
 
     useEffect(() => {
@@ -160,6 +174,15 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
         }
     };
 
+    const fetchDriveLinks = async () => {
+        try {
+            const links = await googleDriveService.getProjectLinks(projectId);
+            setDriveLinks(links);
+        } catch (error) {
+            console.error('Error fetching drive links:', error);
+        }
+    };
+
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const newFiles = Array.from(e.target.files);
@@ -169,21 +192,6 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
             fileInputRef.current.value = '';
         }
     };
-
-    // Use Picker Hook
-    const { openGoogleDrivePicker } = useCloudStoragePicker({
-        onSelect: (file: any) => {
-            setSelectedLinks(prev => [...prev, {
-                name: file.name,
-                url: file.url,
-                type: file.type || 'google-drive'
-            }]);
-            setDropdownCategory(null);
-        },
-        onError: (error) => {
-            showError(error);
-        }
-    });
 
     const removeSelectedFile = (index: number) => {
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
@@ -225,14 +233,6 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
             selectedFiles.forEach(file => {
                 formData.append('files', file);
             });
-
-            if (selectedLinks.length > 0) {
-                formData.append('links', JSON.stringify(selectedLinks.map(l => ({
-                    name: l.name,
-                    url: l.url,
-                    type: 'application/x-google-drive-link'
-                }))));
-            }
 
             // Use XMLHttpRequest for progress tracking
             const xhr = new XMLHttpRequest();
@@ -340,10 +340,6 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const adminAttachments = attachments.filter(a => a.category === 'TaiLieuDinhKem');
     const employeeAttachments = attachments.filter(a => a.category === 'NhanVienDinhKem');
 
-
-    // Determined permissions
-    // const implementerCanUpload = isImplementer && !isAdmin && !isManager; // Removed unused variable
-
     // Handle files selected from folder picker
     const handleFolderFilesSelected = async (files: SelectedFile[]) => {
         if (files.length === 0) return;
@@ -369,17 +365,6 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
             showError('Lỗi khi tải file từ thư mục');
         }
     };
-
-    // Check if user is a cooperator?
-    // We don't have isCooperator prop passed directly, but backend validates it.
-    // We can allow upload button if canUpload or Implementer or just let backend handle it.
-    // Assuming 'canUpload' might be too broad or too strict. 
-    // Let's assume if they can see the project, they might be able to upload if they are cooperator.
-    // We'll show the button and let backend reject if not allowed, or use isImplementer/isAdmin logic.
-    // Ideally we should have isCooperator prop. For now, assume isImplementer logic or similar.
-
-    // Actually, ProjectAttachmentsProps lacks isCooperator. 
-    // However, we can just show the button and handle error.
 
     const renderSection = (
         title: string,
@@ -435,7 +420,31 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                         className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
                                     >
                                         <HardDrive size={16} className="text-blue-500" />
-                                        <span className="text-gray-700">Từ thiết bị của bạn</span>
+                                        <span className="text-gray-700">File từ thiết bị</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setDropdownCategory(null);
+                                            // Handle folder selection
+                                            const folderInput = document.createElement('input');
+                                            folderInput.type = 'file';
+                                            folderInput.setAttribute('webkitdirectory', '');
+                                            folderInput.setAttribute('directory', '');
+                                            folderInput.multiple = true;
+                                            folderInput.style.display = 'none';
+                                            folderInput.onchange = (e) => {
+                                                const target = e.target as HTMLInputElement;
+                                                if (target.files && target.files.length > 0) {
+                                                    const newFiles = Array.from(target.files);
+                                                    setSelectedFiles(prev => [...prev, ...newFiles]);
+                                                }
+                                            };
+                                            folderInput.click();
+                                        }}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                        <FolderOpen size={16} className="text-indigo-500" />
+                                        <span className="text-gray-700">Thư mục từ thiết bị</span>
                                     </button>
                                     <button
                                         onClick={() => {
@@ -445,11 +454,14 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                         className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
                                     >
                                         <FolderOpen size={16} className="text-amber-500" />
-                                        <span className="text-gray-700">Từ thư mục</span>
+                                        <span className="text-gray-700">Từ Kho dữ liệu</span>
                                     </button>
                                     <div className="border-t border-gray-100 my-1"></div>
                                     <button
-                                        onClick={openGoogleDrivePicker}
+                                        onClick={() => {
+                                            setDropdownCategory(null);
+                                            setShowDriveBrowser(true);
+                                        }}
                                         className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
                                     >
                                         <GoogleDriveIcon />
@@ -462,79 +474,129 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                 </div>
 
                 <div className="p-4 space-y-4">
-                    {/* Selected Files Area */}
-                    {hasSelectedFiles && (
-                        <div className="w-full mb-4 space-y-2 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                            {selectedFiles.map((file, index) => (
-                                <div key={`file-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
-                                    <span className="text-lg">{getFileIcon(file.type)}</span>
-                                    <span className="flex-1 truncate">{file.name}</span>
-                                    <span className="text-gray-400 text-xs">{formatFileSize(file.size)}</span>
-                                    <button
-                                        onClick={() => removeSelectedFile(index)}
-                                        className="p-1 text-gray-400 hover:text-red-500 rounded"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                            {selectedLinks.map((link, index) => (
-                                <div key={`link-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
-                                    <span className="text-lg">
-                                        <GoogleDriveIcon />
-                                    </span>
-                                    <span className="flex-1 truncate text-blue-600">{link.name}</span>
-                                    <span className="text-gray-400 text-xs">Link</span>
-                                    <button
-                                        onClick={() => removeSelectedLink(index)}
-                                        className="p-1 text-gray-400 hover:text-red-500 rounded"
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                            <div className="flex gap-2 mt-2">
-                                <button
-                                    onClick={uploadFiles}
-                                    disabled={uploading}
-                                    className="flex-1 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                >
-                                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
-                                    {uploading ? 'Đang tải...' : 'Tải lên ngay'}
-                                </button>
-                                <button
-                                    onClick={() => { setSelectedFiles([]); setSelectedLinks([]); }}
-                                    className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition-colors"
-                                >
-                                    Hủy
-                                </button>
-                            </div>
-                        </div>
-                    )}
+                    {/* Selected Files Area */
+                        hasSelectedFiles && (
+                            <div className="w-full mb-4 space-y-2 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                                {selectedFiles.map((file, index) => (
+                                    <div key={`file-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
+                                        <span className="text-lg">{getFileIcon(file.type)}</span>
+                                        <span className="flex-1 truncate">{file.name}</span>
+                                        <span className="text-gray-400 text-xs">{formatFileSize(file.size)}</span>
+                                        <button
+                                            onClick={() => removeSelectedFile(index)}
+                                            className="p-1 text-gray-400 hover:text-red-500 rounded"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {selectedLinks.map((link, index) => (
+                                    <div key={`link-${index}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2 rounded-lg border border-gray-200">
+                                        <span className="text-lg">
+                                            <GoogleDriveIcon />
+                                        </span>
+                                        <span className="flex-1 truncate text-blue-600">{link.name}</span>
+                                        <span className="text-gray-400 text-xs">Link</span>
+                                        <button
+                                            onClick={() => removeSelectedLink(index)}
+                                            className="p-1 text-gray-400 hover:text-red-500 rounded"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ))}
 
-                    {/* Loading or Empty */}
+                                <div className="flex gap-2 mt-2">
+                                    <button
+                                        onClick={uploadFiles}
+                                        disabled={uploading}
+                                        className="flex-1 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                    >
+                                        {uploading ? <Loader2 size={16} className="animate-spin" /> : <CloudUpload size={16} />}
+                                        {uploading ? 'Đang tải...' : 'Tải lên ngay'}
+                                    </button>
+                                    <button
+                                        onClick={() => { setSelectedFiles([]); setSelectedLinks([]); }}
+                                        className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition-colors"
+                                    >
+                                        Hủy
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                    {/* Loading or Empty for Local Attachments */}
                     {loading ? (
                         <div className="flex items-center justify-center py-4">
                             <Loader2 className="animate-spin text-blue-600" size={20} />
                         </div>
-                    ) : sectionAttachments.length === 0 ? (
-                        <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-100 rounded-lg bg-gray-50/50">
-                            <FileText size={32} className="mx-auto mb-2 opacity-20" />
-                            <p className="text-sm">Chưa có tài liệu đính kèm</p>
-                        </div>
                     ) : (
-                        <div className="space-y-2">
-                            {sectionAttachments.map(attachment => (
-                                <AttachmentItem
-                                    key={attachment.id}
-                                    attachment={attachment}
-                                    downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
-                                    token={token || ''}
-                                    onView={() => setViewingAttachment(attachment)}
-                                    onDelete={() => deleteAttachment(attachment)}
-                                    canDelete={isAdmin || isManager || (attachment.uploadedBy.id === (useAuth().user?.id || 0))}
-                                />
-                            ))}
+                        <div className="space-y-4">
+                            {/* Local Attachments */}
+                            <div className="space-y-2">
+                                {sectionAttachments.map(attachment => (
+                                    <AttachmentItem
+                                        key={attachment.id}
+                                        attachment={attachment}
+                                        downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
+                                        token={token || ''}
+                                        onView={() => setViewingAttachment(attachment)}
+                                        onDelete={() => deleteAttachment(attachment)}
+                                        canDelete={isAdmin || isManager || (attachment.uploadedBy.id === (useAuth().user?.id || 0))}
+                                    />
+                                ))}
+                            </div>
+
+                            {/* Google Drive Links - integrated here if category matches or separate section? 
+                                Requirements say "Tree combined".
+                                For now, I'll list them here if they belong to "Project Documents" conceptually.
+                                Or I can add a dedicated section for Drive Links.
+                                Let's list them if this is the "Documents" section (admin/manager stuff) or if we put all drive links in one place.
+                                I'll render them in the "Project Documents" section (TaiLieuDinhKem).
+                            */}
+                            {category === 'TaiLieuDinhKem' && driveLinks.length > 0 && (
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                        <GoogleDriveIcon />
+                                        Google Drive Links
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {driveLinks.map(link => (
+                                            <div key={link.id} className="flex items-center gap-3 p-3 bg-blue-50/30 rounded-lg hover:bg-blue-50 transition-colors group border border-dashed border-blue-200">
+                                                <div className="shrink-0 flex items-center justify-center w-8">
+                                                    {link.iconLink ? <img src={link.iconLink} className="w-5 h-5" alt="" /> : <GoogleDriveIcon />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <a href={link.webViewLink || '#'} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-700 hover:underline truncate block">
+                                                        {link.name}
+                                                    </a>
+                                                    <p className="text-xs text-gray-500">
+                                                        {link.resourceType === 'folder' ? 'Folder' : 'File'} • Added by {link.addedBy.name}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <a
+                                                        href={link.webViewLink || '#'}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                                                        title="Open in Drive"
+                                                    >
+                                                        <ExternalLink size={16} />
+                                                    </a>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {sectionAttachments.length === 0 && (category !== 'TaiLieuDinhKem' || driveLinks.length === 0) && (
+                                <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-100 rounded-lg bg-gray-50/50">
+                                    <FileText size={32} className="mx-auto mb-2 opacity-20" />
+                                    <p className="text-sm">Chưa có tài liệu đính kèm</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -568,6 +630,22 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                 title="Chọn file từ thư mục cá nhân"
             />
 
+            {showDriveBrowser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="w-full max-w-4xl max-h-[85vh] shadow-2xl">
+                        <GoogleDriveBrowser
+                            projectId={undefined} // Don't pass projectId to avoid default link mode logic inside component if explicit mode wasn't enough (though explicit mode overrides)
+                            mode="select"
+                            onSelectFiles={(files) => {
+                                setSelectedFiles(prev => [...prev, ...files]);
+                                setShowDriveBrowser(false);
+                            }}
+                            onClose={() => setShowDriveBrowser(false)}
+                        />
+                    </div>
+                </div>
+            )}
+
             <input
                 type="file"
                 ref={fileInputRef}
@@ -584,8 +662,6 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                 adminAttachments,
                 isAdmin || isManager
             )}
-
-
 
             {/* Render Implementer Results (Employee Attachments) */}
             {renderSection(
@@ -705,16 +781,5 @@ const AttachmentItem: React.FC<AttachmentItemProps> = ({
         </div>
     );
 };
-// Attachment Item Component
-interface AttachmentItemProps {
-    attachment: Attachment;
-    downloadUrl: string;
-    token: string;
-    onView: () => void;
-    onDelete: () => void;
-    canDelete: boolean;
-}
-
-
 
 export default ProjectAttachments;
