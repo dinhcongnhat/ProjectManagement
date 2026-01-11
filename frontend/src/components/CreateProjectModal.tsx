@@ -5,9 +5,9 @@ import { API_URL } from '../config/api';
 import { useDialog } from './ui/Dialog';
 import { UploadProgressDialog } from './ui/UploadProgressDialog';
 import type { UploadFile } from './ui/UploadProgressDialog';
-import { useCloudStoragePicker } from '../hooks/useCloudStoragePicker';
 import { FilePickerDialog } from './ui/FilePickerDialog';
 import type { SelectedFile } from './ui/FilePickerDialog';
+import { GoogleDriveBrowser } from './GoogleDrive/GoogleDriveBrowser';
 
 interface UserData {
     id: number;
@@ -69,21 +69,8 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
     const CODE_PREFIX = 'DA2026';
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [showFilePicker, setShowFilePicker] = useState(false);
+    const [showDriveBrowser, setShowDriveBrowser] = useState(false);
     const [selectedLinks, setSelectedLinks] = useState<{ name: string; url: string; type: string }[]>([]);
-
-    // Cloud Storage Picker
-    const { openGoogleDrivePicker } = useCloudStoragePicker({
-        onSelect: (file: any) => {
-            setSelectedLinks(prev => [...prev, {
-                name: file.name,
-                url: file.url,
-                type: file.type || 'google-drive'
-            }]);
-        },
-        onError: (error) => {
-            showError(error);
-        }
-    });
 
     // Upload Progress State
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -261,6 +248,7 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
 
             const createdProject = await createResponse.json();
 
+
             if (selectedFiles.length > 0 || selectedLinks.length > 0) {
                 const filesFormData = new FormData();
                 selectedFiles.forEach(file => {
@@ -270,6 +258,9 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                 if (selectedLinks.length > 0) {
                     filesFormData.append('links', JSON.stringify(selectedLinks));
                 }
+
+                // Specify category as 'TaiLieuDinhKem' for project documents
+                filesFormData.append('category', 'TaiLieuDinhKem');
 
                 const xhr = new XMLHttpRequest();
                 await new Promise<void>((resolve) => {
@@ -386,14 +377,14 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
 
     const FileAttachment = () => {
         const fileInputRef = useRef<HTMLInputElement>(null);
-        const [showDropdown, setShowDropdown] = useState(false);
+        const [isDropdownOpen, setIsDropdownOpen] = useState(false);
         const dropdownRef = useRef<HTMLDivElement>(null);
 
         // Close dropdown when clicking outside
         useEffect(() => {
             const handleClickOutside = (event: MouseEvent) => {
                 if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                    setShowDropdown(false);
+                    setIsDropdownOpen(false);
                 }
             };
             document.addEventListener('mousedown', handleClickOutside);
@@ -408,6 +399,7 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
+            setIsDropdownOpen(false);
         };
 
         const removeFile = (index: number) => {
@@ -448,72 +440,90 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
             }
         };
 
+        const totalAttachments = selectedFiles.length + selectedLinks.length;
+
         return (
             <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Đính kèm tài liệu
-                </label>
-
                 <div className="relative" ref={dropdownRef}>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Đính kèm
+                    </label>
+
+                    {/* Dropdown trigger button */}
                     <button
                         type="button"
-                        onClick={() => setShowDropdown(!showDropdown)}
-                        className="w-full flex items-center justify-between px-4 py-3 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50/30 hover:bg-blue-50/50 transition-colors"
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                        className="w-full flex items-center justify-between gap-2 px-4 py-3 border border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50/30 transition-all bg-white"
                     >
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-500">
-                                <CloudUpload size={20} />
+                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <CloudUpload size={20} className="text-blue-600" />
                             </div>
-                            <span className="text-gray-600">Chọn phương thức đính kèm</span>
+                            <div className="text-left">
+                                <p className="font-medium text-gray-900 text-sm">
+                                    {totalAttachments > 0
+                                        ? `${totalAttachments} tệp đã chọn`
+                                        : 'Chọn nguồn đính kèm'}
+                                </p>
+                                <p className="text-xs text-gray-500">Thiết bị, Thư mục hoặc Google Drive</p>
+                            </div>
                         </div>
-                        <ChevronDown size={20} className={`text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+                        <ChevronDown size={18} className={`text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
 
-                    {showDropdown && (
-                        <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden bottom-full mb-1">
+                    {/* Dropdown menu - opens upward */}
+                    {isDropdownOpen && (
+                        <div className="absolute z-[100] w-full bottom-full mb-2 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                            {/* Option 1: Upload from device */}
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setShowDropdown(false);
                                     fileInputRef.current?.click();
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-gray-100"
                             >
-                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
-                                    <CloudUpload size={20} />
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                                    <CloudUpload size={20} className="text-blue-600" />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Tải lên từ thiết bị của bạn</p>
-                                    <p className="text-sm text-gray-500">Chọn tệp từ thiết bị của bạn</p>
+                                    <p className="font-medium text-gray-900 text-sm">Tải lên từ thiết bị</p>
+                                    <p className="text-xs text-gray-500">Chọn tệp từ máy tính của bạn</p>
                                 </div>
                             </button>
+
+                            {/* Option 2: From folder */}
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setShowDropdown(false);
+                                    setIsDropdownOpen(false);
                                     setShowFilePicker(true);
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-amber-50 transition-colors text-left border-b border-gray-100"
                             >
-                                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600">
-                                    <FolderOpen size={20} />
+                                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center shrink-0">
+                                    <FolderOpen size={20} className="text-amber-600" />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Từ thư mục</p>
-                                    <p className="text-sm text-gray-500">Chọn tệp từ thư mục cá nhân</p>
+                                    <p className="font-medium text-gray-900 text-sm">Từ thư mục</p>
+                                    <p className="text-xs text-gray-500">Chọn tệp từ kho dữ liệu cá nhân</p>
                                 </div>
                             </button>
+
+                            {/* Option 3: Google Drive */}
                             <button
                                 type="button"
-                                onClick={openGoogleDrivePicker}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
+                                onClick={() => {
+                                    setIsDropdownOpen(false);
+                                    setShowDriveBrowser(true);
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 transition-colors text-left"
                             >
-                                <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center">
+                                <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center shrink-0">
                                     <GoogleDriveIcon />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Google Drive</p>
-                                    <p className="text-sm text-gray-500">Chọn tệp từ Google Drive</p>
+                                    <p className="font-medium text-gray-900 text-sm">Google Drive</p>
+                                    <p className="text-xs text-gray-500">Chọn tệp từ Google Drive</p>
                                 </div>
                             </button>
                         </div>
@@ -539,7 +549,7 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
 
                 {selectedFiles.length > 0 && (
                     <div className="mt-3 space-y-2">
-                        <div className="text-xs text-gray-500">{selectedFiles.length} tệp đã chọn</div>
+                        <div className="text-xs text-gray-500 font-medium">{selectedFiles.length} tệp đã chọn</div>
                         {selectedFiles.map((file, index) => (
                             <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
                                 <span className="flex-1 truncate">{file.name}</span>
@@ -558,7 +568,7 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
 
                 {selectedLinks.length > 0 && (
                     <div className="mt-3 space-y-2">
-                        <div className="text-xs text-gray-500">{selectedLinks.length} liên kết đã chọn</div>
+                        <div className="text-xs text-gray-500 font-medium">{selectedLinks.length} liên kết đã chọn</div>
                         {selectedLinks.map((link, index) => (
                             <div key={`link-${index}`} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
                                 <span className="flex-1 truncate text-blue-600">{link.name}</span>
@@ -785,6 +795,23 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                                         placeholder="Nhập nhóm dự án"
                                     />
                                 </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Mức độ ưu tiên</label>
+                                    <div className="relative">
+                                        <select
+                                            name="priority"
+                                            value={formData.priority}
+                                            onChange={handleChange}
+                                            className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none text-sm font-medium ${formData.priority === 'HIGH' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-700 bg-white'
+                                                }`}
+                                        >
+                                            <option value="NORMAL" className="text-gray-700 bg-white">Dự án thường</option>
+                                            <option value="HIGH" className="text-red-600 bg-red-50">Dự án ưu tiên</option>
+                                        </select>
+                                        <ChevronDown className={`absolute right-3 top-2.5 pointer-events-none ${formData.priority === 'HIGH' ? 'text-red-400' : 'text-gray-400'}`} size={16} />
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Details & Permissions */}
@@ -861,6 +888,22 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                     totalProgress={uploadProgress}
                     status={uploadStatus}
                 />
+            )}
+
+            {showDriveBrowser && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="w-full max-w-4xl max-h-[85vh] shadow-2xl">
+                        <GoogleDriveBrowser
+                            projectId={undefined}
+                            mode="select"
+                            onSelectFiles={(files) => {
+                                setSelectedFiles(prev => [...prev, ...files]);
+                                setShowDriveBrowser(false);
+                            }}
+                            onClose={() => setShowDriveBrowser(false)}
+                        />
+                    </div>
+                </div>
             )}
         </div>
     );

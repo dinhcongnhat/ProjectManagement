@@ -9,6 +9,7 @@ import {
     deleteFile,
     getFileUrl,
     streamFile,
+    downloadUserFile,
     checkOnlyOfficeSupport,
     getOnlyOfficeConfig,
     onlyofficeCallback,
@@ -20,15 +21,19 @@ import {
     searchUsersForShare,
     shareFolder,
     shareFile,
+    getFolderShares,
+    getFileShares,
+    unshareFolder,
+    unshareFile,
     ensureFolderStructure
 } from '../controllers/folderController.js';
 
 const router = Router();
 
-// Configure multer for file uploads (50MB limit)
+// Configure multer for file uploads (500MB limit for large files)
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+    limits: { fileSize: 900 * 1024 * 1024 } // 900MB
 });
 
 // Protected routes (require authentication)
@@ -57,6 +62,9 @@ router.delete('/files/:id', authenticateToken, deleteFile);
 // Get file download URL
 router.get('/files/:id/url', authenticateToken, getFileUrl);
 
+// Download file stream (attachment)
+router.get('/files/:id/download', authenticateToken, downloadUserFile);
+
 // Stream file for viewing
 router.get('/files/:id/stream', authenticateToken, streamFile);
 
@@ -79,7 +87,17 @@ router.get('/files/:id/onlyoffice-download', downloadFileForOnlyOffice);
 router.get('/shared', authenticateToken, getSharedWithMe);
 router.get('/users/search', authenticateToken, searchUsersForShare);
 router.post('/ensure-structure', authenticateToken, ensureFolderStructure);
-router.post('/folders/:id/share', authenticateToken, shareFolder);
+
+// Share folder/file
+router.post('/:id/share', authenticateToken, shareFolder);
 router.post('/files/:id/share', authenticateToken, shareFile);
+
+// Get shares list
+router.get('/:id/shares', authenticateToken, getFolderShares);
+router.get('/files/:id/shares', authenticateToken, getFileShares);
+
+// Unshare folder/file  
+router.delete('/:id/share/:targetUserId', authenticateToken, unshareFolder);
+router.delete('/files/:id/share/:targetUserId', authenticateToken, unshareFile);
 
 export default router;

@@ -84,9 +84,9 @@ const isImageFile = (fileName: string): boolean => {
     return imageExtensions.includes(ext);
 };
 
-const getFileIcon = (fileName: string, size: 'sm' | 'lg' = 'lg') => {
+const getFileIcon = (fileName: string, size: 'xs' | 'sm' | 'lg' = 'lg') => {
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    const sizeClass = size === 'lg' ? 'w-10 h-10' : 'w-5 h-5';
+    const sizeClass = size === 'lg' ? 'w-10 h-10' : size === 'sm' ? 'w-5 h-5' : 'w-4 h-4';
 
     if (imageExtensions.includes(ext)) {
         return <ImageIcon className={`${sizeClass} text-green-500`} />;
@@ -263,7 +263,7 @@ const ShareDialog = ({ type, id, name, onClose, token }: ShareDialogProps) => {
                                     className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer"
                                 >
                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
-                                        {u.avatar ? <img src={u.avatar} className="w-8 h-8 rounded-full" /> : (u.name?.[0] || 'U')}
+                                        {u.avatar ? <img src={`${API_URL}/users/${u.id}/avatar`} className="w-8 h-8 rounded-full object-cover" alt={u.name} /> : (u.name?.[0] || 'U')}
                                     </div>
                                     <div className="flex-1">
                                         <div className="font-medium">{u.name}</div>
@@ -315,9 +315,10 @@ interface SaveAsDialogProps {
     onSave: (folderId: number | null, name: string) => Promise<void>;
     token: string;
     originalFileName?: string;
+    targetFormat?: string; // Format selected from OnlyOffice Save Copy As menu
 }
 
-const SaveAsDialog = ({ onClose, onSave, token, originalFileName }: SaveAsDialogProps) => {
+const SaveAsDialog = ({ onClose, onSave, token, originalFileName, targetFormat }: SaveAsDialogProps) => {
     const [folders, setFolders] = useState<UserFolder[]>([]);
     const [currentParentId, setCurrentParentId] = useState<number | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
@@ -358,9 +359,10 @@ const SaveAsDialog = ({ onClose, onSave, token, originalFileName }: SaveAsDialog
         if (originalFileName) {
             // Remove extension for initial name display
             setFileName(originalFileName.replace(/\.[^/.]+$/, ""));
-            setFormat(originalExt);
+            // Use targetFormat if provided (from OnlyOffice menu selection), otherwise use original extension
+            setFormat(targetFormat || originalExt);
         }
-    }, [originalFileName, originalExt]);
+    }, [originalFileName, originalExt, targetFormat]);
 
     const fetchFolders = useCallback(async (parentId: number | null) => {
         try {
@@ -520,6 +522,7 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
     const [error, setError] = useState<string | null>(null);
     const editorInstanceRef = useRef<any>(null); // Use any to access OnlyOffice methods
     const [showSaveAs, setShowSaveAs] = useState(false);
+    const [saveAsFormat, setSaveAsFormat] = useState<string | undefined>(undefined);
     const dialog = useDialog();
 
     useEffect(() => {
@@ -562,10 +565,14 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
 
                 const { config } = await configResponse.json();
 
-                // Inject saveAs handler
+                // Inject saveAs handler - OnlyOffice passes event data with fileType
                 config.events = {
                     ...config.events,
-                    onRequestSaveAs: () => {
+                    onRequestSaveAs: (event: any) => {
+                        // event.data contains: { fileType: 'pdf', title: 'filename.pdf', url: '...' }
+                        const targetFileType = event?.data?.fileType?.toLowerCase();
+                        console.log('[OnlyOffice] onRequestSaveAs event:', event?.data);
+                        setSaveAsFormat(targetFileType);
                         setShowSaveAs(true);
                     }
                 };
@@ -640,9 +647,13 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
 
             {showSaveAs && (
                 <SaveAsDialog
-                    onClose={() => setShowSaveAs(false)}
+                    onClose={() => {
+                        setShowSaveAs(false);
+                        setSaveAsFormat(undefined); // Reset format when closing
+                    }}
                     token={token}
                     originalFileName={fileName}
+                    targetFormat={saveAsFormat}
                     onSave={async (folderId, name) => {
                         // For MVP: We assume the user has saved or autosave is working (we enabled forceSave).
                         // We will copy the file on the backend.
@@ -670,7 +681,8 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                                     url,
                                     name,
                                     folderId,
-                                    sourceFileType
+                                    sourceFileType,
+                                    sourceFileId: fileId
                                 })
                             });
 
@@ -859,8 +871,12 @@ const UserFolders = () => {
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
             setContextMenu(null);
+            // Check action dropdown
             if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
                 setShowActionDropdown(false);
+            }
+            // Check search results dropdown separately
+            if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
                 setShowSearchResults(false);
             }
         };
@@ -922,124 +938,14 @@ const UserFolders = () => {
 
         setUploading(true);
 
-        try {
-            if (hasRelativePath) {
-                // Folder upload - need to preserve structure
-                // Step 1: Collect all unique folder paths
-                const folderPaths = new Set<string>();
-                const filesByFolder = new Map<string, File[]>();
-
-                for (let i = 0; i < selectedFiles.length; i++) {
-                    const file = selectedFiles[i];
-                    const relativePath = file.webkitRelativePath;
-                    const pathParts = relativePath.split('/');
-
-                    // Build folder paths (exclude the file name)
-                    let currentPath = '';
-                    for (let j = 0; j < pathParts.length - 1; j++) {
-                        currentPath = currentPath ? `${currentPath}/${pathParts[j]}` : pathParts[j];
-                        folderPaths.add(currentPath);
-                    }
-
-                    // Group files by their parent folder path
-                    const parentPath = pathParts.slice(0, -1).join('/');
-                    if (!filesByFolder.has(parentPath)) {
-                        filesByFolder.set(parentPath, []);
-                    }
-                    filesByFolder.get(parentPath)!.push(file);
-                }
-
-                // Step 2: Create folder structure
-                const sortedPaths = Array.from(folderPaths).sort((a, b) => a.split('/').length - b.split('/').length);
-                const folderIdMap = new Map<string, number>(); // path -> folderId
-
-                setUploadProgress({
-                    currentFile: 'Đang tạo cấu trúc thư mục...',
-                    currentIndex: 0,
-                    totalFiles,
-                    percentage: 0
-                });
-
-                for (const folderPath of sortedPaths) {
-                    const pathParts = folderPath.split('/');
-                    const folderName = pathParts[pathParts.length - 1];
-                    const parentPath = pathParts.slice(0, -1).join('/');
-
-                    // Determine parent folder ID
-                    let parentId = currentParentId;
-                    if (parentPath && folderIdMap.has(parentPath)) {
-                        parentId = folderIdMap.get(parentPath)!;
-                    }
-
-                    // Create folder
-                    const response = await fetch(`${API_URL}/folders/create`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            name: folderName,
-                            parentId: parentId
-                        })
-                    });
-
-                    if (response.ok) {
-                        const folder = await response.json();
-                        folderIdMap.set(folderPath, folder.id);
-                    } else {
-                        // Folder might already exist - try to find it
-                        console.warn(`Could not create folder: ${folderPath}, might already exist`);
-                    }
-                }
-
-                // Step 3: Upload files to their respective folders
-                let uploadedCount = 0;
-                for (const [folderPath, files] of filesByFolder) {
-                    const targetFolderId = folderPath ? folderIdMap.get(folderPath) : currentParentId;
-
-                    for (const file of files) {
-                        uploadedCount++;
-                        setUploadProgress({
-                            currentFile: file.name,
-                            currentIndex: uploadedCount,
-                            totalFiles,
-                            percentage: Math.round((uploadedCount / totalFiles) * 100)
-                        });
-
-                        const formData = new FormData();
-                        formData.append('file', file);
-                        if (targetFolderId) {
-                            formData.append('folderId', String(targetFolderId));
-                        }
-
-                        const response = await fetch(`${API_URL}/folders/upload`, {
-                            method: 'POST',
-                            headers: { Authorization: `Bearer ${token}` },
-                            body: formData
-                        });
-
-                        if (!response.ok) {
-                            console.error(`Failed to upload: ${file.name}`);
-                        }
-                    }
-                }
-            } else {
-                // Regular file upload
-                for (let i = 0; i < selectedFiles.length; i++) {
-                    const file = selectedFiles[i];
-
-                    setUploadProgress({
-                        currentFile: file.name,
-                        currentIndex: i + 1,
-                        totalFiles,
-                        percentage: Math.round(((i) / totalFiles) * 100)
-                    });
-
+        // Helper function to upload a single file with retry
+        const uploadSingleFile = async (file: File, targetFolderId: number | null, retries = 3): Promise<boolean> => {
+            for (let attempt = 1; attempt <= retries; attempt++) {
+                try {
                     const formData = new FormData();
                     formData.append('file', file);
-                    if (currentParentId) {
-                        formData.append('folderId', String(currentParentId));
+                    if (targetFolderId) {
+                        formData.append('folderId', String(targetFolderId));
                     }
 
                     const response = await fetch(`${API_URL}/folders/upload`, {
@@ -1048,21 +954,145 @@ const UserFolders = () => {
                         body: formData
                     });
 
-                    if (!response.ok) {
-                        const error = await response.json();
-                        throw new Error(error.message || 'Failed to upload file');
+                    if (response.ok) {
+                        return true;
                     }
 
-                    setUploadProgress({
-                        currentFile: file.name,
-                        currentIndex: i + 1,
-                        totalFiles,
-                        percentage: Math.round(((i + 1) / totalFiles) * 100)
-                    });
+                    // If server error, retry
+                    if (attempt < retries && response.status >= 500) {
+                        console.log(`Retry ${attempt}/${retries} for ${file.name}`);
+                        await new Promise(r => setTimeout(r, 1000 * attempt)); // Exponential backoff
+                        continue;
+                    }
+
+                    console.error(`Upload failed for ${file.name}: ${response.status}`);
+                    return false;
+                } catch (error) {
+                    console.error(`Upload error for ${file.name}:`, error);
+                    if (attempt < retries) {
+                        await new Promise(r => setTimeout(r, 1000 * attempt));
+                        continue;
+                    }
+                    return false;
+                }
+            }
+            return false;
+        };
+
+        // Helper to upload files in parallel batches
+        const uploadInBatches = async (
+            files: { file: File; folderId: number | null }[],
+            batchSize: number = 3
+        ): Promise<{ success: number; failed: number }> => {
+            let successCount = 0;
+            let failedCount = 0;
+            let uploadedCount = 0;
+
+            for (let i = 0; i < files.length; i += batchSize) {
+                const batch = files.slice(i, i + batchSize);
+
+                const results = await Promise.all(
+                    batch.map(async ({ file, folderId }) => {
+                        const success = await uploadSingleFile(file, folderId);
+                        uploadedCount++;
+                        setUploadProgress({
+                            currentFile: file.name,
+                            currentIndex: uploadedCount,
+                            totalFiles: files.length,
+                            percentage: Math.round((uploadedCount / files.length) * 100)
+                        });
+                        return success;
+                    })
+                );
+
+                successCount += results.filter(r => r).length;
+                failedCount += results.filter(r => !r).length;
+            }
+
+            return { success: successCount, failed: failedCount };
+        };
+
+        try {
+            if (hasRelativePath) {
+                // Folder upload - need to preserve structure
+                const folderPaths = new Set<string>();
+                const fileInfos: { file: File; folderPath: string }[] = [];
+
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    const relativePath = file.webkitRelativePath;
+                    const pathParts = relativePath.split('/');
+
+                    // Build folder paths
+                    let currentPath = '';
+                    for (let j = 0; j < pathParts.length - 1; j++) {
+                        currentPath = currentPath ? `${currentPath}/${pathParts[j]}` : pathParts[j];
+                        folderPaths.add(currentPath);
+                    }
+
+                    const parentPath = pathParts.slice(0, -1).join('/');
+                    fileInfos.push({ file, folderPath: parentPath });
+                }
+
+                // Create folder structure
+                const sortedPaths = Array.from(folderPaths).sort((a, b) => a.split('/').length - b.split('/').length);
+
+                setUploadProgress({
+                    currentFile: 'Đang tạo cấu trúc thư mục...',
+                    currentIndex: 0,
+                    totalFiles,
+                    percentage: 0
+                });
+
+                const structureResponse = await fetch(`${API_URL}/folders/ensure-structure`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        paths: sortedPaths,
+                        parentId: currentParentId
+                    })
+                });
+
+                if (!structureResponse.ok) {
+                    throw new Error('Failed to create folder structure');
+                }
+
+                const { pathMap } = await structureResponse.json();
+                const folderIdMap = new Map<string, number>(Object.entries(pathMap).map(([k, v]) => [k, v as number]));
+
+                // Prepare files with their target folder IDs
+                const filesToUpload = fileInfos.map(({ file, folderPath }) => ({
+                    file,
+                    folderId: folderPath ? folderIdMap.get(folderPath) ?? currentParentId : currentParentId
+                }));
+
+                // Upload in parallel batches (3 at a time)
+                const { success, failed } = await uploadInBatches(filesToUpload, 3);
+
+                if (failed > 0) {
+                    dialog.showError(`Đã upload ${success} file. ${failed} file thất bại.`, { title: 'Upload hoàn tất (có lỗi)' });
+                } else {
+                    dialog.showSuccess(`Đã upload ${success} file thành công!`, { title: 'Thành công' });
+                }
+            } else {
+                // Regular file upload
+                const filesToUpload = Array.from(selectedFiles).map(file => ({
+                    file,
+                    folderId: currentParentId
+                }));
+
+                const { success, failed } = await uploadInBatches(filesToUpload, 3);
+
+                if (failed > 0) {
+                    dialog.showError(`Đã upload ${success} file. ${failed} file thất bại.`, { title: 'Upload hoàn tất (có lỗi)' });
+                } else {
+                    dialog.showSuccess(`Đã upload ${success} file thành công!`, { title: 'Thành công' });
                 }
             }
 
-            dialog.showSuccess(`Đã upload ${selectedFiles.length} file thành công!`, { title: 'Thành công' });
             fetchData();
         } catch (error: any) {
             dialog.showError(error.message || 'Lỗi khi upload file', { title: 'Lỗi' });
@@ -1476,7 +1506,7 @@ const UserFolders = () => {
                 </div>
 
                 {/* Small Search Bar */}
-                <div className="relative w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
+                <div ref={searchRef} className="relative w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                     <input
                         type="text"

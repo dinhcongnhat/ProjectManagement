@@ -42,6 +42,8 @@ function App() {
                   <Route path="folders" element={<UserFolders />} />
                   <Route path="workflow" element={<Workflow />} />
                   <Route path="create-project" element={<CreateProject />} />
+                  <Route path="my-tasks" element={<MyTasks />} />
+                  <Route path="profile" element={<UserProfile />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
               </Route>

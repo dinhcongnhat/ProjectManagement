@@ -106,8 +106,8 @@ app.use((req, res, next) => {
 });
 
 // Body parsing middleware - must be before routes
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
 // Ensure body is always an object for JSON requests
 app.use((req, res, next) => {
@@ -142,24 +142,24 @@ app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
 app.get('/api/onlyoffice/download/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        console.log('[OnlyOffice Download] Project ID:', id);
+        console.log('[OnlyOffice Download] Attachment ID:', id);
 
-        const project = await prisma.project.findUnique({
+        const attachment = await prisma.projectAttachment.findUnique({
             where: { id: Number(id) },
         });
 
-        if (!project || !project.attachment) {
+        if (!attachment || !attachment.minioPath) {
             console.log('[OnlyOffice Download] Attachment not found');
             return res.status(404).json({ message: 'Attachment not found' });
         }
 
-        console.log('[OnlyOffice Download] Found attachment:', project.attachment);
+        console.log('[OnlyOffice Download] Found attachment:', attachment.minioPath);
 
         const { getFileStream, getFileStats } = await import('./services/minioService.js');
 
         let fileStats;
         try {
-            fileStats = await getFileStats(project.attachment);
+            fileStats = await getFileStats(attachment.minioPath);
             console.log('[OnlyOffice Download] File stats:', fileStats.size, 'bytes');
         } catch (statsError: any) {
             console.error('[OnlyOffice Download] Failed to get file stats:', statsError?.message);
@@ -168,25 +168,14 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
 
         let fileStream;
         try {
-            fileStream = await getFileStream(project.attachment);
+            fileStream = await getFileStream(attachment.minioPath);
         } catch (streamError: any) {
             console.error('[OnlyOffice Download] Failed to get file stream:', streamError?.message);
             return res.status(500).json({ message: 'Cannot read file from storage' });
         }
 
-        // Extract original filename
-        let originalName = project.attachment.split('-').slice(1).join('-');
-        if (project.attachment.includes('/')) {
-            const pathParts = project.attachment.split('/');
-            const fileName = pathParts[pathParts.length - 1] || '';
-            originalName = fileName.split('-').slice(1).join('-');
-        }
-
-        try {
-            originalName = decodeURIComponent(originalName);
-        } catch {
-            // If decoding fails, use as is
-        }
+        // Use the attachment's original filename
+        const originalName = attachment.name;
 
         const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
         const asciiFilename = originalName.replace(/[^\x00-\x7F]/g, '_');
@@ -203,7 +192,7 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
             'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
             'pdf': 'application/pdf',
         };
-        res.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
+        res.setHeader('Content-Type', mimeTypes[ext || ''] || attachment.fileType || 'application/octet-stream');
 
         if (fileStats.size) {
             res.setHeader('Content-Length', fileStats.size);
@@ -213,7 +202,7 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-        console.log('[OnlyOffice Download] Streaming file:', project.attachment);
+        console.log('[OnlyOffice Download] Streaming file:', attachment.minioPath);
         fileStream.pipe(res);
     } catch (error: any) {
         console.error('[OnlyOffice Download] Error:', error?.message, error?.stack);
@@ -645,19 +634,41 @@ app.get('/health', async (req, res) => {
 });
 
 // Socket.io authentication middleware
+// Socket.io authentication middleware
 io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
+    let token = socket.handshake.auth.token;
+
+    // Fallback: Check headers
+    if (!token && socket.handshake.headers.authorization) {
+        const authHeader = socket.handshake.headers.authorization;
+        if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        }
+    }
+
+    // Fallback: Check query
+    if (!token && socket.handshake.query && socket.handshake.query.token) {
+        token = socket.handshake.query.token as string;
+    }
+
+    console.log(`[WebSocket Auth] SocketID: ${socket.id}, Attempting auth. Token provided: ${!!token}`);
+
     if (!token) {
-        return next(new Error('Authentication error'));
+        console.log('[WebSocket Auth] No token provided in auth, headers, or query');
+        return next(new Error('Authentication error: No token provided'));
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any;
+        const secret = process.env.JWT_SECRET || 'secret';
+        const decoded = jwt.verify(token, secret) as any;
+        console.log('[WebSocket Auth] Success. UserID:', decoded.id);
+
         socket.data.userId = decoded.id;
         socket.data.user = decoded;
         next();
-    } catch (err) {
-        next(new Error('Authentication error'));
+    } catch (err: any) {
+        console.error(`[WebSocket Auth] Verification failed for socket ${socket.id}:`, err.message);
+        next(new Error(`Authentication error: ${err.message}`));
     }
 });
 
@@ -671,7 +682,7 @@ io.on('connection', async (socket) => {
             where: { id: socket.data.userId },
             data: { isOnline: true, lastActive: new Date() }
         });
-        io.emit('user:online', { userId: socket.data.userId });
+        io.emit('user:online', { userId: socket.data.userId, lastActive: new Date().toISOString() });
     } catch (err) {
         console.error('Error updating online status:', err);
     }
@@ -841,6 +852,7 @@ httpServer.listen(Number(port), host, () => {
     console.log(`Socket.io server ready`);
     console.log(`Access from LAN: http://<your-ip>:${port}`);
 
+
     // Start deadline scheduler for push notifications
     import('./services/deadlineScheduler.js').then(({ startDeadlineScheduler }) => {
         startDeadlineScheduler();
@@ -849,15 +861,32 @@ httpServer.listen(Number(port), host, () => {
     });
 });
 
+// Simple Ping endpoint for frontend to check connectivity
+app.get('/api/ping', (req, res) => {
+    res.send('pong');
+});
+
 // Keep alive / Pulse check for terminal health
+// This helps the user know if the terminal is "paused" (Windows QuickEdit mode)
 setInterval(() => {
-    // This simple log helps confirm the process is not paused (e.g. by QuickEdit mode in Windows Terminal)
-    const memUsage = process.memoryUsage().heapUsed / 1024 / 1024;
-    // We only log if NOT in production to avoid log spam, BUT user specifically asked for "activity"
-    // So we'll log extremely minimally:
-    if (process.env.NODE_ENV !== 'production') {
-        // console.log(`[Pulse] Server active. Heap: ${memUsage.toFixed(2)} MB`);
+    const timestamp = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+    // Use process.stdout.write to be less intrusive but visible
+    // console.log(`[${timestamp}] System Active - Press Enter if stuck`);
+    // We print to ensure the user sees the process is ALIVE.
+    // If this stops printing, the user knows to press Enter.
+    console.log(`[${timestamp}] ⚡ Server Heartbeat | Active`);
+}, 30000);
+
+// Explicit Database Connection Check on Startup
+// This ensures we fail fast or confirm connection immediately
+(async () => {
+    try {
+        console.log('Testing Database Connection...');
+        await prisma.$connect();
+        console.log('✅ Database connection successful');
+    } catch (error) {
+        console.error('❌ Database connection failed:', error);
     }
-}, 60000);
+})();
 
 

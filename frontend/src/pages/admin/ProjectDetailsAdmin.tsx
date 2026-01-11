@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
-import { OnlyOfficeViewer } from '../../components/OnlyOfficeViewer';
 import { ProjectAttachments } from '../../components/ProjectAttachments';
 import { ProjectWorkflow } from '../../components/ProjectWorkflow';
 import { useDialog } from '../../components/ui/Dialog';
@@ -89,7 +88,6 @@ const ProjectDetailsAdmin = () => {
     const [approving, setApproving] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'workflow' | 'discussion' | 'activity'>('info');
-    const [showOnlyOffice, setShowOnlyOffice] = useState(false);
     const { showConfirm, showSuccess, showError } = useDialog();
 
     const fetchProject = async () => {
@@ -461,13 +459,15 @@ const ProjectDetailsAdmin = () => {
                                             Dự án con ({project.children?.length || 0})
                                         </h2>
                                     </div>
-                                    <Link
-                                        to={`/admin/create-project?parentId=${project.id}`}
-                                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-all shadow-md"
-                                    >
-                                        <Plus size={16} />
-                                        Thêm
-                                    </Link>
+                                    {(user?.role === 'ADMIN' || isManager) && (
+                                        <Link
+                                            to={`/admin/create-project?parentId=${project.id}`}
+                                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-all shadow-md"
+                                        >
+                                            <Plus size={16} />
+                                            Thêm
+                                        </Link>
+                                    )}
                                 </div>
 
                                 {project.children && project.children.length > 0 ? (
@@ -549,14 +549,8 @@ const ProjectDetailsAdmin = () => {
                 )}
             </div>
 
-            {/* OnlyOffice Viewer Modal */}
-            {showOnlyOffice && (
-                <OnlyOfficeViewer
-                    projectId={project.id}
-                    onClose={() => setShowOnlyOffice(false)}
-                    token={token || ''}
-                />
-            )}
+
+
 
             {/* Image Preview Modal */}
             {previewImage && (

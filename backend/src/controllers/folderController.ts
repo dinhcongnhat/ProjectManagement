@@ -469,13 +469,64 @@ export const getFileUrl = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
         }
 
-        // Get presigned URL
-        const url = await minioClient.presignedGetObject(bucketName, file.minioPath, 3600);
+        // Use backend download endpoint instead of presigned URL
+        const url = `${BACKEND_URL}/folders/files/${fileId}/download`;
 
         res.json({ url, file });
     } catch (error) {
         console.error('Error getting file URL:', error);
         res.status(500).json({ message: 'Lỗi khi lấy URL file' });
+    }
+};
+
+// Download file (attachment)
+export const downloadUserFile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const fileId = parseInt(req.params.id || '0');
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        // Get file
+        const file = await prisma.userFile.findUnique({
+            where: { id: fileId }
+        });
+
+        if (!file) {
+            return res.status(404).json({ message: 'File không tồn tại' });
+        }
+
+        if (file.userId !== userId) {
+            // Check implicit permissions
+            const permission = await getEffectiveFilePermission(fileId, userId);
+            if (!permission) {
+                return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
+            }
+        }
+
+        // Get file from MinIO
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        const fileStream = await getFileStream(file.minioPath);
+        const fileStats = await getFileStats(file.minioPath);
+
+        // Set headers
+        res.setHeader('Content-Type', file.fileType);
+
+        // Encode filename for Content-Disposition header
+        const encodedFilename = encodeURIComponent(file.name).replace(/'/g, "%27");
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        fileStream.pipe(res);
+    } catch (error) {
+        console.error('Error downloading file:', error);
+        res.status(500).json({ message: 'Lỗi khi download file' });
     }
 };
 
@@ -657,7 +708,7 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                     // Collaboration features
                     chat: true,
                     comments: true,
-                    review: true,
+                    // review is configured below with trackChanges settings
 
                     // UI Layout - Full featured like Word
                     compactHeader: false,
@@ -685,8 +736,11 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                     goback: false,
                     mentionShare: true,
 
-                    // Track changes
-                    trackChanges: true,
+                    // Review/Track changes settings
+                    // trackChanges: false means don't track new changes
+                    // showReviewChanges: false means don't show review panel by default
+                    trackChanges: false,
+                    showReviewChanges: false,
 
                     // Features
                     features: {
@@ -917,14 +971,15 @@ export const renameFile = async (req: AuthRequest, res: Response) => {
 export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user?.id;
-        const { url, name, folderId, sourceFileType } = req.body;
+        const { url, name: originalName, folderId, sourceFileType, sourceFileId } = req.body;
+        let fileName = originalName; // Use mutable variable for file name
 
         if (!userId) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
-        if (!url || !name) {
-            return res.status(400).json({ message: 'URL và tên file là bắt buộc' });
+        if ((!url && !sourceFileId) || !fileName) {
+            return res.status(400).json({ message: 'URL hoặc SourceFile và tên file là bắt buộc' });
         }
 
         // Get user info
@@ -947,22 +1002,41 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
             }
         }
 
-        const minioPath = `${basePath}/${name.trim()}`;
+        const minioPath = `${basePath}/${fileName.trim()}`;
 
         // Determine File Types
         // Extract extension from new filename
-        const targetExt = name.split('.').pop()?.toLowerCase() || '';
-
-        // Extract source extension from sourceFileType param or URL
-        let sourceExt = sourceFileType || '';
-        if (!sourceExt) {
-            // Try to extract from URL if possible (often presigned URLs have the path)
-            // But decoding might be tricky, let's assume if it's not passed we skip conversion or try our best
-            const urlPath = url.split('?')[0];
-            sourceExt = urlPath.split('.').pop()?.toLowerCase() || '';
-        }
+        const targetExt = fileName.split('.').pop()?.toLowerCase() || '';
 
         let downloadUrl = url;
+        let sourceExt = sourceFileType || '';
+
+        // If sourceFileId is provided, use the backend download URL
+        // OnlyOffice Document Server cannot access MinIO directly (400 error),
+        // but it can access our backend via public URL
+        if (sourceFileId) {
+            const sourceFile = await prisma.userFile.findUnique({
+                where: { id: parseInt(sourceFileId) }
+            });
+
+            if (sourceFile) {
+                // Use Backend download URL - OnlyOffice can access this since it's public
+                downloadUrl = `${BACKEND_URL}/folders/files/${sourceFileId}/onlyoffice-download`;
+
+                if (!sourceExt) {
+                    sourceExt = sourceFile.name.split('.').pop()?.toLowerCase() || '';
+                }
+                console.log(`[SaveFile] Using Backend download URL for file ${sourceFileId}: ${downloadUrl}`);
+            }
+        }
+
+        // Extract source extension from URL if not yet found
+        if (!sourceExt && downloadUrl) {
+            // Try to extract from URL if possible (often presigned URLs have the path)
+            // But decoding might be tricky, let's assume if it's not passed we skip conversion or try our best
+            const urlPath = downloadUrl.split('?')[0];
+            sourceExt = urlPath.split('.').pop()?.toLowerCase() || '';
+        }
 
         // Perform Conversion if needed
         // Only convert if extensions differ and both are present
@@ -972,14 +1046,25 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
                 const key = Date.now().toString(); // Generate a temporary key for conversion
                 const conversionUrl = `${ONLYOFFICE_URL}/ConvertService.ashx`;
 
-                const payload = {
+                // Create payload for conversion (without token first for signing)
+                const conversionPayload: any = {
                     async: false,
                     filetype: sourceExt,
                     key: key,
                     outputtype: targetExt,
-                    title: name,
-                    url: url
+                    title: fileName,
+                    url: downloadUrl // Ensure we use the updated downloadUrl (MinIO or Backend)
                 };
+
+                // Sign the conversion payload with JWT (OnlyOffice requires this when JWT is enabled)
+                const conversionToken = signOnlyOfficeConfig(conversionPayload);
+
+                // Add token to payload for the request
+                conversionPayload.token = conversionToken;
+
+                console.log(`[SaveFile] Sending conversion request. Source: ${sourceExt}, Target: ${targetExt}`);
+                console.log(`[SaveFile] Download URL sent to OnlyOffice: ${downloadUrl}`);
+                console.log(`[SaveFile] JWT token included in request body`);
 
                 const convertRes = await fetch(conversionUrl, {
                     method: 'POST',
@@ -987,7 +1072,7 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(conversionPayload)
                 });
 
                 if (!convertRes.ok) {
@@ -998,8 +1083,6 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
 
                 if (convertData.error) {
                     console.error('[SaveFile] Conversion error code:', convertData.error);
-                    // If conversion fails, fallback to original file (maybe? No, that would be wrong extension)
-                    // Throw error
                     throw new Error(`Conversion failed with error code ${convertData.error}`);
                 }
 
@@ -1046,7 +1129,7 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
             where: {
                 userId,
                 folderId: folderId ? parseInt(folderId) : null,
-                name: name.trim()
+                name: fileName.trim()
             }
         });
 
@@ -1063,7 +1146,7 @@ export const saveFileFromUrl = async (req: AuthRequest, res: Response) => {
         } else {
             file = await prisma.userFile.create({
                 data: {
-                    name: name.trim(),
+                    name: fileName.trim(),
                     minioPath,
                     fileType: mimeType,
                     fileSize,
@@ -1201,6 +1284,122 @@ export const shareFile = async (req: AuthRequest, res: Response) => {
     } catch (error) {
         console.error('Error sharing file:', error);
         res.status(500).json({ message: 'Lỗi khi chia sẻ file' });
+    }
+};
+
+// Get Folder Shares - List all users who have access to this folder
+export const getFolderShares = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const folderId = parseInt(req.params.id || '0');
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const folder = await prisma.userFolder.findUnique({ where: { id: folderId } });
+        if (!folder) return res.status(404).json({ message: 'Thư mục không tồn tại' });
+        if (folder.userId !== userId) return res.status(403).json({ message: 'Chỉ chủ sở hữu mới xem được' });
+
+        const shares = await prisma.userFolderShare.findMany({
+            where: { folderId },
+            include: {
+                user: {
+                    select: { id: true, name: true, username: true, avatar: true }
+                }
+            }
+        });
+
+        res.json(shares.map(s => ({
+            userId: s.user.id,
+            name: s.user.name,
+            username: s.user.username,
+            avatar: s.user.avatar,
+            permission: s.permission
+        })));
+    } catch (error) {
+        console.error('Error getting folder shares:', error);
+        res.status(500).json({ message: 'Lỗi khi lấy danh sách chia sẻ' });
+    }
+};
+
+// Get File Shares - List all users who have access to this file
+export const getFileShares = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const fileId = parseInt(req.params.id || '0');
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const file = await prisma.userFile.findUnique({ where: { id: fileId } });
+        if (!file) return res.status(404).json({ message: 'File không tồn tại' });
+        if (file.userId !== userId) return res.status(403).json({ message: 'Chỉ chủ sở hữu mới xem được' });
+
+        const shares = await prisma.userFileShare.findMany({
+            where: { fileId },
+            include: {
+                user: {
+                    select: { id: true, name: true, username: true, avatar: true }
+                }
+            }
+        });
+
+        res.json(shares.map(s => ({
+            userId: s.user.id,
+            name: s.user.name,
+            username: s.user.username,
+            avatar: s.user.avatar,
+            permission: s.permission
+        })));
+    } catch (error) {
+        console.error('Error getting file shares:', error);
+        res.status(500).json({ message: 'Lỗi khi lấy danh sách chia sẻ' });
+    }
+};
+
+// Unshare Folder - Remove a user's access to this folder
+export const unshareFolder = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const folderId = parseInt(req.params.id || '0');
+        const targetUserId = parseInt(req.params.targetUserId || '0');
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const folder = await prisma.userFolder.findUnique({ where: { id: folderId } });
+        if (!folder) return res.status(404).json({ message: 'Thư mục không tồn tại' });
+        if (folder.userId !== userId) return res.status(403).json({ message: 'Chỉ chủ sở hữu mới dừng chia sẻ được' });
+
+        await prisma.userFolderShare.deleteMany({
+            where: { folderId, userId: targetUserId }
+        });
+
+        res.json({ message: 'Đã dừng chia sẻ thư mục' });
+    } catch (error) {
+        console.error('Error unsharing folder:', error);
+        res.status(500).json({ message: 'Lỗi khi dừng chia sẻ thư mục' });
+    }
+};
+
+// Unshare File - Remove a user's access to this file
+export const unshareFile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const fileId = parseInt(req.params.id || '0');
+        const targetUserId = parseInt(req.params.targetUserId || '0');
+
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const file = await prisma.userFile.findUnique({ where: { id: fileId } });
+        if (!file) return res.status(404).json({ message: 'File không tồn tại' });
+        if (file.userId !== userId) return res.status(403).json({ message: 'Chỉ chủ sở hữu mới dừng chia sẻ được' });
+
+        await prisma.userFileShare.deleteMany({
+            where: { fileId, userId: targetUserId }
+        });
+
+        res.json({ message: 'Đã dừng chia sẻ file' });
+    } catch (error) {
+        console.error('Error unsharing file:', error);
+        res.status(500).json({ message: 'Lỗi khi dừng chia sẻ file' });
     }
 };
 

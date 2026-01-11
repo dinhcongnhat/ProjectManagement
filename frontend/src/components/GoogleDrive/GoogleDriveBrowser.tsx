@@ -317,7 +317,18 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
                         <h3 className="font-bold text-lg text-gray-900 tracking-tight">
                             {mode === 'select' ? 'Select Files' : 'Google Drive'}
                         </h3>
-                        {files.length > 0 && <p className="text-xs text-gray-500 font-medium">{files.length} items</p>}
+                        {files.length > 0 && (
+                            <p className="text-xs text-gray-500 font-medium">
+                                {(() => {
+                                    const folderCount = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder').length;
+                                    const fileCount = files.length - folderCount;
+                                    const parts = [];
+                                    if (folderCount > 0) parts.push(`${folderCount} thư mục`);
+                                    if (fileCount > 0) parts.push(`${fileCount} tệp`);
+                                    return parts.join(', ') || `${files.length} mục`;
+                                })()}
+                            </p>
+                        )}
                     </div>
                 </div>
                 <div className="flex items-center gap-2">

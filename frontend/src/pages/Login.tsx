@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User as UserIcon, Loader2, ArrowRight, Cpu, Globe, Shield, Zap } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 
@@ -52,32 +53,77 @@ const Login = () => {
             {/* Animated Tech Background - Hidden on mobile for performance */}
             <div className="absolute inset-0 overflow-hidden hidden sm:block">
                 {/* Grid Pattern */}
-                <div className="absolute inset-0 opacity-[0.03]" 
+                <div className="absolute inset-0 opacity-[0.03]"
                     style={{
                         backgroundImage: `linear-gradient(rgba(59, 130, 246, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(59, 130, 246, 0.5) 1px, transparent 1px)`,
                         backgroundSize: '50px 50px'
                     }}
                 />
-                
+
                 {/* Floating Tech Icons */}
-                <div className="absolute top-20 left-20 text-blue-200 animate-pulse">
+                <motion.div
+                    className="absolute top-20 left-20 text-blue-200"
+                    animate={{
+                        y: [0, -10, 0],
+                        rotate: [0, 5, 0]
+                    }}
+                    transition={{
+                        duration: 4,
+                        repeat: Infinity,
+                        ease: 'easeInOut'
+                    }}
+                >
                     <Cpu size={40} />
-                </div>
-                <div className="absolute top-40 right-32 text-cyan-200 animate-bounce" style={{ animationDuration: '3s' }}>
+                </motion.div>
+                <motion.div
+                    className="absolute top-40 right-32 text-cyan-200"
+                    animate={{
+                        y: [0, 15, 0],
+                        x: [0, 5, 0]
+                    }}
+                    transition={{
+                        duration: 5,
+                        repeat: Infinity,
+                        ease: 'easeInOut'
+                    }}
+                >
                     <Globe size={32} />
-                </div>
-                <div className="absolute bottom-32 left-32 text-blue-200 animate-pulse" style={{ animationDelay: '1s' }}>
+                </motion.div>
+                <motion.div
+                    className="absolute bottom-32 left-32 text-blue-200"
+                    animate={{
+                        y: [0, -15, 0],
+                        rotate: [0, -5, 0]
+                    }}
+                    transition={{
+                        duration: 6,
+                        repeat: Infinity,
+                        ease: 'easeInOut',
+                        delay: 1
+                    }}
+                >
                     <Shield size={36} />
-                </div>
-                <div className="absolute bottom-40 right-20 text-cyan-200 animate-bounce" style={{ animationDuration: '2.5s' }}>
+                </motion.div>
+                <motion.div
+                    className="absolute bottom-40 right-20 text-cyan-200"
+                    animate={{
+                        y: [0, 12, 0],
+                        scale: [1, 1.1, 1]
+                    }}
+                    transition={{
+                        duration: 3,
+                        repeat: Infinity,
+                        ease: 'easeInOut'
+                    }}
+                >
                     <Zap size={28} />
-                </div>
-                
+                </motion.div>
+
                 {/* Gradient Orbs */}
                 <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/20 to-cyan-400/20 rounded-full blur-3xl" />
                 <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-cyan-400/20 to-blue-400/20 rounded-full blur-3xl" />
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-blue-300/10 to-cyan-300/10 rounded-full blur-3xl" />
-                
+
                 {/* Connecting Lines */}
                 <svg className="absolute inset-0 w-full h-full opacity-10" xmlns="http://www.w3.org/2000/svg">
                     <defs>
@@ -98,92 +144,97 @@ const Login = () => {
             </div>
 
             {/* Login Card */}
-            <div className="max-w-md w-full relative z-10">
-                {/* Glowing border effect - simplified on mobile */}
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500 rounded-2xl opacity-75 blur-sm animate-pulse hidden sm:block" />
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500 rounded-2xl opacity-50 hidden sm:block" />
-                
+            <motion.div
+                className="max-w-md w-full relative z-10"
+                initial={{ opacity: 0, y: 30, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{
+                    duration: 0.5,
+                    ease: 'easeOut'
+                }}
+            >
                 <div className="relative bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl shadow-blue-500/20 overflow-hidden">
                     <div className="p-6 lg:p-8">
-                    <div className="text-center mb-6 lg:mb-8">
-                        <div className="flex justify-center mb-4">
-                            <img src="/Logo.png" alt="Logo" className="h-16 lg:h-20 w-auto" />
+                        <div className="text-center mb-6 lg:mb-8">
+                            <div className="flex justify-center mb-4">
+                                <img src="/Logo.png" alt="Logo" className="h-16 lg:h-20 w-auto" />
+                            </div>
+                            <h2 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-2 tracking-tight">PROJECT MANAGEMENT</h2>
+                            <p className="text-gray-500 text-sm lg:text-base">Đăng nhập để truy cập hệ thống quản lý dự án</p>
                         </div>
-                        <h2 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-2 tracking-tight">PROJECT MANAGEMENT</h2>
-                        <p className="text-gray-500 text-sm lg:text-base">Đăng nhập để truy cập hệ thống quản lý dự án</p>
+
+                        {error && (
+                            <div className="mb-4 lg:mb-6 p-3 lg:p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                                {error}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-5">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700 ml-1">Tên đăng nhập</label>
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                                        <UserIcon className="w-5 h-5" />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
+                                        placeholder="Nhập tên đăng nhập"
+                                        required
+                                        autoComplete="username"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700 ml-1">Mật khẩu</label>
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                                        <Lock className="w-5 h-5" />
+                                    </div>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
+                                        placeholder="••••••••"
+                                        required
+                                        autoComplete="current-password"
+                                    />
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 active:from-blue-700 active:to-cyan-700 text-white font-semibold py-3.5 lg:py-4 rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group touch-target"
+                            >
+                                {loading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    <>
+                                        Đăng nhập
+                                        <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                                    </>
+                                )}
+                            </button>
+                        </form>
                     </div>
 
-                    {error && (
-                        <div className="mb-4 lg:mb-6 p-3 lg:p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 text-sm flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                            {error}
-                        </div>
-                    )}
-
-                    <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-5">
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-700 ml-1">Tên đăng nhập</label>
-                            <div className="relative group">
-                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
-                                    <UserIcon className="w-5 h-5" />
-                                </div>
-                                <input
-                                    type="text"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
-                                    placeholder="Nhập tên đăng nhập"
-                                    required
-                                    autoComplete="username"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-gray-700 ml-1">Mật khẩu</label>
-                            <div className="relative group">
-                                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
-                                    <Lock className="w-5 h-5" />
-                                </div>
-                                <input
-                                    type="password"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
-                                    placeholder="••••••••"
-                                    required
-                                    autoComplete="current-password"
-                                />
-                            </div>
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 active:from-blue-700 active:to-cyan-700 text-white font-semibold py-3.5 lg:py-4 rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:ring-offset-2 transition-all duration-300 disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group touch-target"
-                        >
-                            {loading ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <>
-                                    Đăng nhập
-                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                                </>
-                            )}
-                        </button>
-                    </form>
+                    <div className="px-6 lg:px-8 py-3 lg:py-4 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 border-t border-gray-100 text-center">
+                        <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
+                            <Shield className="w-3.5 h-3.5 text-blue-500" />
+                            Được bảo vệ bởi hệ thống bảo mật cấp doanh nghiệp
+                        </p>
+                    </div>
                 </div>
-
-                <div className="px-6 lg:px-8 py-3 lg:py-4 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 border-t border-gray-100 text-center">
-                    <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
-                        <Shield className="w-3.5 h-3.5 text-blue-500" />
-                        Được bảo vệ bởi hệ thống bảo mật cấp doanh nghiệp
-                    </p>
-                </div>
-                </div>
-            </div>
+            </motion.div>
         </div>
     );
 };
 
 export default Login;
+

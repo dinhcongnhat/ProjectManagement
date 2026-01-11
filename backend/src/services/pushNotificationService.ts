@@ -248,7 +248,8 @@ export const notifyNewChatMessage = async (
     const payload: PushPayload = {
         title: isGroup ? conversationName : senderName,
         body: isGroup ? `${senderName}: ${messagePreview}` : messagePreview,
-        tag: `chat-${conversationId}`,
+        // Don't use tag - let each message be a separate notification
+        // tag: `chat-${conversationId}`,
         data: {
             type: 'chat',
             url: '/',
@@ -518,6 +519,31 @@ export const notifyTaskDeadlineUpcoming = async (
     return sendPushToUser(userId, payload);
 };
 
+// Notify task reminder (specific time)
+export const notifyTaskReminder = async (
+    userId: number,
+    taskId: number,
+    taskTitle: string,
+    reminderAt: Date
+) => {
+    const timeStr = reminderAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+    const payload: PushPayload = {
+        title: '🔔 Nhắc nhở công việc',
+        body: `Đã đến giờ cho công việc "${taskTitle}" (${timeStr})`,
+        tag: `task-reminder-${taskId}`,
+        data: {
+            type: 'task',
+            url: '/my-tasks',
+            taskId
+        },
+        requireInteraction: true,
+        vibrate: [200, 100, 200, 100, 200]
+    };
+
+    return sendPushToUser(userId, payload);
+};
+
 export default {
     getVapidPublicKey,
     subscribePush,
@@ -533,5 +559,6 @@ export default {
     notifyProjectDeadlineOverdue,
     notifyProjectDeadlineUpcoming,
     notifyTaskDeadlineOverdue,
-    notifyTaskDeadlineUpcoming
+    notifyTaskDeadlineUpcoming,
+    notifyTaskReminder
 };

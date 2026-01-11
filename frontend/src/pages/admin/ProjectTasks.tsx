@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, FileSpreadsheet, Check } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, FileSpreadsheet, Check, Search, User, FolderTree } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useDialog } from '../../components/ui/Dialog';
@@ -29,6 +29,8 @@ interface Project {
     description: string;
     managerId: number;
     parentId?: number | null;
+    progress?: number;
+    status?: 'IN_PROGRESS' | 'PENDING_APPROVAL' | 'COMPLETED';
     children?: Project[];
 }
 
@@ -114,6 +116,12 @@ const ProjectTasks = () => {
     const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
     const [expandedChildDetails, setExpandedChildDetails] = useState<Set<number>>(new Set());
 
+    // Search state
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+    const searchRef = useRef<HTMLDivElement>(null);
+    const navigate = useNavigate();
+
     // Import/Export Modal State
     const [showImportExport, setShowImportExport] = useState(false);
 
@@ -137,6 +145,41 @@ const ProjectTasks = () => {
         cooperatorIds: [] as string[],
         description: ''
     });
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+                setShowSearchDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Flatten all projects for search (including children)
+    const allProjectsFlat = useMemo(() => {
+        const result: Project[] = [];
+        const flatten = (items: Project[]) => {
+            items.forEach(p => {
+                result.push(p);
+                if (p.children) flatten(p.children);
+            });
+        };
+        flatten(projects);
+        return result;
+    }, [projects]);
+
+    // Filter projects based on search
+    const searchResults = useMemo(() => {
+        if (!searchQuery.trim()) return [];
+        const query = searchQuery.toLowerCase();
+        return allProjectsFlat.filter(p =>
+            p.name.toLowerCase().includes(query) ||
+            p.code.toLowerCase().includes(query) ||
+            p.manager?.name?.toLowerCase().includes(query)
+        ).slice(0, 10);
+    }, [allProjectsFlat, searchQuery]);
 
     const fetchProjects = async () => {
         try {
@@ -285,13 +328,95 @@ const ProjectTasks = () => {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+                <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50 gap-4">
                     <div className="flex items-center gap-2">
                         <button title="Lọc dự án" className="p-2 hover:bg-gray-200 rounded-lg text-gray-600">
                             <Filter size={20} />
                         </button>
                         <div className="h-6 w-px bg-gray-300 mx-2"></div>
                         <span className="text-sm font-medium text-gray-700">{projects.length} dự án</span>
+                    </div>
+
+                    {/* Search Bar with Dropdown */}
+                    <div className="relative flex-1 max-w-md" ref={searchRef}>
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search size={16} className="text-gray-400" />
+                        </div>
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => {
+                                setSearchQuery(e.target.value);
+                                setShowSearchDropdown(true);
+                            }}
+                            onFocus={() => searchQuery && setShowSearchDropdown(true)}
+                            placeholder="Tìm kiếm dự án..."
+                            className="w-full pl-9 pr-8 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                        {searchQuery && (
+                            <button
+                                onClick={() => {
+                                    setSearchQuery('');
+                                    setShowSearchDropdown(false);
+                                }}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
+
+                        {/* Search Dropdown Results */}
+                        {showSearchDropdown && searchQuery && searchResults.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 max-h-80 overflow-y-auto z-50">
+                                <div className="p-2">
+                                    <p className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                                        Kết quả ({searchResults.length})
+                                    </p>
+                                    {searchResults.map((project) => (
+                                        <div
+                                            key={project.id}
+                                            onClick={() => {
+                                                navigate(`/admin/projects/${project.id}`);
+                                                setShowSearchDropdown(false);
+                                            }}
+                                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 cursor-pointer rounded-lg transition-colors group"
+                                        >
+                                            <div className={`p-1.5 rounded-lg text-white ${project.status === 'COMPLETED' ? 'bg-gradient-to-br from-emerald-500 to-green-500' :
+                                                    project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-br from-amber-500 to-orange-500' :
+                                                        'bg-gradient-to-br from-blue-500 to-indigo-500'
+                                                }`}>
+                                                {project.parentId ? <FolderTree size={14} /> : <Briefcase size={14} />}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-600">
+                                                    {project.name}
+                                                    {project.parentId && (
+                                                        <span className="ml-2 text-xs text-purple-500 font-normal">(Dự án con)</span>
+                                                    )}
+                                                </p>
+                                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                                    <span className="font-mono">{project.code}</span>
+                                                    <span>•</span>
+                                                    <span className="flex items-center gap-1">
+                                                        <User size={10} />
+                                                        {project.manager?.name || 'Chưa gán'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <ChevronRight size={14} className="text-gray-400 group-hover:text-blue-600" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* No Results */}
+                        {showSearchDropdown && searchQuery && searchResults.length === 0 && (
+                            <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-gray-100 p-4 text-center z-50">
+                                <Search size={24} className="mx-auto text-gray-300 mb-1" />
+                                <p className="text-gray-500 text-sm">Không tìm thấy dự án</p>
+                            </div>
+                        )}
                     </div>
                 </div>
 

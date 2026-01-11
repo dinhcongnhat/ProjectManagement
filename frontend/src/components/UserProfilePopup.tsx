@@ -56,7 +56,8 @@ export default function UserProfilePopup() {
 
     const handleProfileClick = () => {
         setIsOpen(false);
-        navigate('/profile');
+        const path = user?.role === 'ADMIN' ? '/admin/profile' : '/profile';
+        navigate(path);
     };
 
     const getInitials = (name: string) => {
@@ -124,7 +125,8 @@ export default function UserProfilePopup() {
                         <button
                             onClick={() => {
                                 setIsOpen(false);
-                                navigate('/settings');
+                                const path = user?.role === 'ADMIN' ? '/admin/settings' : '/settings';
+                                navigate(path);
                             }}
                             className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
                         >

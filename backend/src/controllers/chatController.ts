@@ -438,9 +438,21 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
             };
         });
 
+        // Get member read status for "Seen" feature
+        const memberReads = await prisma.conversationMember.findMany({
+            where: { conversationId: Number(id) },
+            select: { userId: true, lastRead: true }
+        });
+
+        const readReceipts = memberReads.reduce((acc: any, curr) => {
+            if (curr.lastRead) acc[curr.userId] = curr.lastRead;
+            return acc;
+        }, {});
+
         res.json({
             messages: messagesWithUrls.reverse(),
-            hasMore: messages.length === Number(limit)
+            hasMore: messages.length === Number(limit),
+            readReceipts
         });
     } catch (error) {
         console.error('Error fetching messages:', error);
@@ -595,8 +607,16 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         if (message.sender?.avatar) {
             senderAvatarUrl = `/api/users/${message.sender.id}/avatar`;
         }
-        const messageWithAvatar = {
+
+        // Add attachment URL if exists
+        let attachmentUrl = null;
+        if (message.attachment) {
+            attachmentUrl = `/api/chat/conversations/${id}/messages/${message.id}/file`;
+        }
+
+        const messageWithUrls = {
             ...message,
+            attachmentUrl,
             sender: { ...message.sender, avatar: senderAvatarUrl }
         };
 
@@ -608,10 +628,31 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
 
         // Emit WebSocket event for realtime update
         const io = getIO();
+
+        // Emit to conversation room (for users who have joined)
         io.to(`conversation:${id}`).emit('chat:new_message', {
             conversationId: Number(id),
-            message: messageWithAvatar
+            message: messageWithUrls
         });
+
+        // Also emit to each member's user room (for real-time even if not in conversation room)
+        // This ensures push update to all conversation members
+        const conversationForEmit = await prisma.conversation.findUnique({
+            where: { id: Number(id) },
+            select: { members: { select: { userId: true } } }
+        });
+
+        if (conversationForEmit) {
+            conversationForEmit.members.forEach(member => {
+                // Don't send to sender (they already have the message via API response)
+                if (member.userId !== userId) {
+                    io.to(`user:${member.userId}`).emit('chat:new_message', {
+                        conversationId: Number(id),
+                        message: messageWithUrls
+                    });
+                }
+            });
+        }
 
         // Send push notifications to other members
         try {
@@ -672,7 +713,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             // Don't fail the request if push fails
         }
 
-        res.status(201).json(messageWithAvatar);
+        res.status(201).json(messageWithUrls);
     } catch (error) {
         console.error('Error sending message:', error);
         res.status(500).json({ message: 'Server error' });
@@ -765,10 +806,29 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
 
         // Emit WebSocket event for realtime update
         const io = getIO();
+
+        // Emit to conversation room
         io.to(`conversation:${id}`).emit('chat:new_message', {
             conversationId: Number(id),
             message: responseMessage
         });
+
+        // Also emit to each member's user room for guaranteed delivery
+        const conversationForEmit = await prisma.conversation.findUnique({
+            where: { id: Number(id) },
+            select: { members: { select: { userId: true } } }
+        });
+
+        if (conversationForEmit) {
+            conversationForEmit.members.forEach(member => {
+                if (member.userId !== userId) {
+                    io.to(`user:${member.userId}`).emit('chat:new_message', {
+                        conversationId: Number(id),
+                        message: responseMessage
+                    });
+                }
+            });
+        }
 
         res.status(201).json(responseMessage);
     } catch (error) {
@@ -845,10 +905,29 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
 
         // Emit WebSocket event for realtime update
         const io = getIO();
+
+        // Emit to conversation room
         io.to(`conversation:${id}`).emit('chat:new_message', {
             conversationId: Number(id),
             message: responseMessage
         });
+
+        // Also emit to each member's user room for guaranteed delivery
+        const conversationForEmit = await prisma.conversation.findUnique({
+            where: { id: Number(id) },
+            select: { members: { select: { userId: true } } }
+        });
+
+        if (conversationForEmit) {
+            conversationForEmit.members.forEach(member => {
+                if (member.userId !== userId) {
+                    io.to(`user:${member.userId}`).emit('chat:new_message', {
+                        conversationId: Number(id),
+                        message: responseMessage
+                    });
+                }
+            });
+        }
 
         res.status(201).json(responseMessage);
     } catch (error) {
@@ -1650,35 +1729,47 @@ export const getConversationMedia = async (req: AuthRequest, res: Response) => {
 
         let whereCondition: any = {
             conversationId: Number(id),
-            messageType: { in: ['IMAGE', 'FILE', 'TEXT_WITH_FILE'] }
+            attachment: { not: null }, // Only messages with attachments
+            messageType: { in: ['IMAGE', 'FILE', 'TEXT_WITH_FILE', 'VOICE'] }
         };
 
         if (type === 'media') {
             whereCondition.messageType = 'IMAGE';
         } else if (type === 'files') {
-            whereCondition.messageType = { in: ['FILE', 'TEXT_WITH_FILE'] };
+            whereCondition.messageType = { in: ['FILE', 'TEXT_WITH_FILE', 'VOICE'] };
         }
 
         const messages = await prisma.chatMessage.findMany({
             where: whereCondition,
             include: {
                 sender: {
-                    select: { id: true, name: true }
+                    select: { id: true, name: true, avatar: true }
                 }
             },
             orderBy: { createdAt: 'desc' },
-            take: 50 // Limit to last 50 files
+            take: 100 // Increased limit
         });
 
-        // Add attachment URLs
+        // Add attachment URLs and avatar URLs
         const messagesWithUrls = messages.map((msg: any) => {
             let attachmentUrl = null;
             if (msg.attachment) {
                 attachmentUrl = `/api/chat/conversations/${id}/messages/${msg.id}/file`;
             }
+
+            // Add avatar URL for sender
+            let senderAvatarUrl = null;
+            if (msg.sender?.avatar) {
+                senderAvatarUrl = `/api/users/${msg.sender.id}/avatar`;
+            }
+
             return {
                 ...msg,
-                attachmentUrl
+                attachmentUrl,
+                sender: {
+                    ...msg.sender,
+                    avatar: senderAvatarUrl
+                }
             };
         });
 

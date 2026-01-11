@@ -1024,8 +1024,17 @@ const ChatPopup: React.FC = () => {
 
         // Listen for new messages
         const handleNewMessage = (data: { conversationId: number; message: Message }) => {
+            console.log('[ChatPopup] Received new message via WebSocket:', {
+                conversationId: data.conversationId,
+                messageId: data.message.id,
+                senderId: data.message.senderId,
+                currentUserId: user?.id,
+                isOwnMessage: data.message.senderId === user?.id
+            });
+
             // Skip if this is our own message (already added via optimistic update or API response)
             if (data.message.senderId === user?.id) {
+                console.log('[ChatPopup] Skipping own message');
                 return;
             }
 
@@ -1289,14 +1298,27 @@ const ChatPopup: React.FC = () => {
         if (!connected || !socketRef.current) return;
 
         // Map to track online users
-        const handleUserOnline = (data: { userId: number }) => {
+        const handleUserOnline = (data: { userId: number; lastActive?: string }) => {
             setConversations(prev => prev.map(conv => ({
                 ...conv,
                 members: conv.members.map(m =>
                     m.userId === data.userId
-                        ? { ...m, user: { ...m.user, isOnline: true } }
+                        ? { ...m, user: { ...m.user, isOnline: true, lastActive: data.lastActive || new Date().toISOString() } }
                         : m
                 )
+            })));
+
+            // Also update chat windows
+            setChatWindows(prev => prev.map(w => ({
+                ...w,
+                conversation: {
+                    ...w.conversation,
+                    members: w.conversation.members.map(m =>
+                        m.userId === data.userId
+                            ? { ...m, user: { ...m.user, isOnline: true, lastActive: data.lastActive || new Date().toISOString() } }
+                            : m
+                    )
+                }
             })));
         };
 
@@ -1308,6 +1330,19 @@ const ChatPopup: React.FC = () => {
                         ? { ...m, user: { ...m.user, isOnline: false, lastActive: data.lastActive } }
                         : m
                 )
+            })));
+
+            // Also update chat windows
+            setChatWindows(prev => prev.map(w => ({
+                ...w,
+                conversation: {
+                    ...w.conversation,
+                    members: w.conversation.members.map(m =>
+                        m.userId === data.userId
+                            ? { ...m, user: { ...m.user, isOnline: false, lastActive: data.lastActive } }
+                            : m
+                    )
+                }
             })));
         };
 
@@ -1429,16 +1464,17 @@ const ChatPopup: React.FC = () => {
         });
     };
 
-    const fetchMessages = async (conversationId: number): Promise<Message[]> => {
+    const fetchMessages = async (conversationId: number): Promise<{ messages: Message[]; readReceipts: Record<number, string> }> => {
         try {
             const response = await api.get(`/chat/conversations/${conversationId}/messages`);
             const data = response.data;
             const messages = Array.isArray(data) ? data : (data.messages || []);
+            const readReceipts = (!Array.isArray(data) && data.readReceipts) ? data.readReceipts : {};
             console.log('Fetched messages:', messages); // Debug log
-            return messages;
+            return { messages, readReceipts };
         } catch (error) {
             console.error('Error fetching messages:', error);
-            return [];
+            return { messages: [], readReceipts: {} };
         }
     };
 
@@ -1539,15 +1575,25 @@ const ChatPopup: React.FC = () => {
         if (existingWindow) {
             // Join room if not already joined
             if (socketRef.current?.connected) {
+                console.log('[ChatPopup] Rejoining conversation room (existing window):', conversation.id);
                 socketRef.current.emit('join_conversation', String(conversation.id));
+            } else {
+                console.warn('[ChatPopup] Cannot rejoin conversation - socket not connected');
             }
 
             if (isMobile) {
                 setMobileActiveChat(existingWindow);
                 setIsOpen(false);
             } else {
+                // Fetch fresh messages and read receipts
+                const { messages, readReceipts } = await fetchMessages(conversation.id);
                 setChatWindows(prev => prev.map(w =>
-                    w.conversationId === conversation.id ? { ...w, isMinimized: false } : w
+                    w.conversationId === conversation.id ? {
+                        ...w,
+                        isMinimized: false,
+                        messages, // Update with fresh messages
+                        readBy: readReceipts // Update read receipts
+                    } : w
                 ));
                 // Đóng popup khi mở conversation
                 setIsOpen(false);
@@ -1575,7 +1621,7 @@ const ChatPopup: React.FC = () => {
             setChatWindows(prev => prev.slice(1));
         }
 
-        const messages = await fetchMessages(conversation.id);
+        const { messages, readReceipts } = await fetchMessages(conversation.id);
 
         const newWindow: ChatWindow = {
             id: Date.now(),
@@ -1584,7 +1630,8 @@ const ChatPopup: React.FC = () => {
             isMinimized: false,
             isMaximized: false,
             messages,
-            unread: 0
+            unread: 0,
+            readBy: readReceipts
         };
 
         if (isMobile) {
@@ -1602,7 +1649,10 @@ const ChatPopup: React.FC = () => {
 
         // Join conversation room for realtime updates
         if (socketRef.current?.connected) {
+            console.log('[ChatPopup] Joining conversation room:', conversation.id);
             socketRef.current.emit('join_conversation', String(conversation.id));
+        } else {
+            console.warn('[ChatPopup] Cannot join conversation room - socket not connected');
         }
 
         // Mark as read
@@ -2913,8 +2963,8 @@ const ChatPopup: React.FC = () => {
                                                                 className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 transition-colors text-left"
                                                             >
                                                                 <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                                                                    {member.user.avatarUrl ? (
-                                                                        <img src={resolveAttachmentUrl(member.user.avatarUrl) || ''} alt="" className="w-full h-full object-cover" />
+                                                                    {member.user.id ? (
+                                                                        <img src={`${API_URL}/users/${member.user.id}/avatar`} alt="" className="w-full h-full object-cover" />
                                                                     ) : (
                                                                         <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
                                                                     )}
@@ -3030,7 +3080,7 @@ const ChatPopup: React.FC = () => {
                                                                 <div key={msg.id} onClick={() => jumpToMessage(msg.id, conversationId)} className="p-2 hover:bg-gray-50 rounded-lg cursor-pointer border border-transparent hover:border-gray-100 group">
                                                                     <div className="flex items-center gap-2 mb-1">
                                                                         <div className="w-5 h-5 rounded-full bg-blue-100 overflow-hidden">
-                                                                            {msg.sender?.avatar && <img src={msg.sender.avatar} className="w-full h-full object-cover" />}
+                                                                            {msg.sender?.id ? <img src={`${API_URL}/users/${msg.sender.id}/avatar`} className="w-full h-full object-cover" alt="" /> : null}
                                                                         </div>
                                                                         <span className="text-xs font-bold text-gray-700">{msg.sender?.name}</span>
                                                                         <span className="text-[10px] text-gray-400">{formatMessageTime(msg.createdAt)}</span>
@@ -4149,8 +4199,17 @@ const ChatPopup: React.FC = () => {
                                                                 ? 'bg-purple-600'
                                                                 : 'bg-blue-600'
                                                                 }`}>
-                                                                {conv.displayAvatar ? (
+                                                                {conv.displayAvatar && conv.type === 'GROUP' ? (
                                                                     <img src={conv.displayAvatar} alt="" className="w-full h-full object-cover" />
+                                                                ) : conv.type === 'PRIVATE' ? (
+                                                                    (() => {
+                                                                        const otherMember = conv.members.find(m => m.userId !== user?.id);
+                                                                        return otherMember?.user?.id ? (
+                                                                            <img src={`${API_URL}/users/${otherMember.user.id}/avatar`} alt="" className="w-full h-full object-cover" />
+                                                                        ) : (
+                                                                            conv.displayName.charAt(0).toUpperCase()
+                                                                        );
+                                                                    })()
                                                                 ) : conv.type === 'GROUP' ? (
                                                                     <Users size={22} className="text-white" />
                                                                 ) : (
@@ -4300,8 +4359,8 @@ const ChatPopup: React.FC = () => {
                                                     >
                                                         <div className="relative shrink-0">
                                                             <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-sm">
-                                                                {u.avatarUrl || u.avatar ? (
-                                                                    <img src={resolveAttachmentUrl(u.avatarUrl || u.avatar || null) || ''} alt="" className="w-full h-full object-cover" />
+                                                                {u.id ? (
+                                                                    <img src={`${API_URL}/users/${u.id}/avatar`} alt="" className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     u.name.charAt(0).toUpperCase()
                                                                 )}

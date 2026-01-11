@@ -4,7 +4,7 @@ import prisma from '../config/prisma.js';
 
 export const createTask = async (req: AuthRequest, res: Response) => {
     try {
-        const { title, description, assigneeId, startDate, endDate, type } = req.body;
+        const { title, description, assigneeId, startDate, endDate, type, reminderAt } = req.body;
         const creatorId = req.user!.id;
 
         // If user is not admin, they can only create PERSONAL tasks
@@ -24,6 +24,8 @@ export const createTask = async (req: AuthRequest, res: Response) => {
                 type: taskType,
                 startDate: startDate ? new Date(startDate) : null,
                 endDate: endDate ? new Date(endDate) : null,
+                reminderAt: reminderAt ? new Date(reminderAt) : null,
+                isReminderSent: false,
                 creatorId,
                 assigneeId: assignedTo,
                 createdAt: now, // Tự động cập nhật thời gian tạo
@@ -72,7 +74,7 @@ export const getTasks = async (req: AuthRequest, res: Response) => {
 export const updateTask = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const { title, description, status, startDate, endDate, note } = req.body;
+        const { title, description, status, startDate, endDate, note, reminderAt } = req.body;
         const userId = req.user!.id;
         const role = req.user!.role;
 
@@ -90,11 +92,6 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
             }
             if (task.type === 'ASSIGNED' && task.assigneeId === userId) {
                 // Assigned task: can only update status
-                // But maybe allow description update? Requirement says "update status".
-                // I'll allow updating status.
-                // If they try to update other fields, ignore or error?
-                // For simplicity, I'll just update what's passed, but in a real app I'd restrict fields.
-                // Let's restrict to status for assigned tasks for non-admins.
             }
         }
 
@@ -105,7 +102,12 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
         };
         if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
         if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
-        
+        if (reminderAt !== undefined) {
+            updateData.reminderAt = reminderAt ? new Date(reminderAt) : null;
+            // Reset reminder sent flag if date changed
+            if (reminderAt) updateData.isReminderSent = false;
+        }
+
         // Xử lý ghi chú
         if (note !== undefined) {
             updateData.note = note;

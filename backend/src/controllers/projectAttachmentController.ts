@@ -463,8 +463,9 @@ export const downloadProjectAttachment = async (req: AuthRequest, res: Response)
 
         // Encode filename for Content-Disposition header
         const encodedFilename = encodeURIComponent(attachment.name).replace(/'/g, "%27");
+        const safeFilename = attachment.name.replace(/[^\x20-\x7E]/g, '_');
 
-        res.setHeader('Content-Disposition', `inline; filename="${attachment.name}"; filename*=UTF-8''${encodedFilename}`);
+        res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
         res.setHeader('Content-Type', attachment.fileType || 'application/octet-stream');
         res.setHeader('Content-Length', fileStats.size);
 
@@ -494,7 +495,8 @@ export const getAttachmentPresignedUrl = async (req: AuthRequest, res: Response)
             return res.json({ url }); // Frontend should handle redirect
         }
 
-        const url = await getPresignedUrl(attachment.minioPath, 3600);
+        // Use backend download endpoint instead of presigned URL (MinIO might be internal)
+        const url = `${process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api'}/projects/attachments/${attachmentId}/download`;
         res.json({ url });
     } catch (error) {
         console.error('Error getting presigned URL:', error);

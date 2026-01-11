@@ -73,27 +73,35 @@ const getFileType = (filename: string): string => {
 // JWT token generation removed - OnlyOffice JWT disabled
 
 // Get OnlyOffice editor configuration for a project attachment
+// Get OnlyOffice editor configuration for a project attachment
 export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const userId = req.user?.id;
         const userRole = req.user?.role;
 
-        const project = await prisma.project.findUnique({
+        // Fetch attachment with project details for permission checking
+        const attachment = await prisma.projectAttachment.findUnique({
             where: { id: Number(id) },
             include: {
-                implementers: { select: { id: true } },
-                followers: { select: { id: true } },
-                manager: { select: { id: true } },
-            },
+                project: {
+                    include: {
+                        implementers: { select: { id: true } },
+                        followers: { select: { id: true } },
+                        manager: { select: { id: true } },
+                    }
+                }
+            }
         });
 
-        if (!project || !project.attachment) {
+        if (!attachment) {
             return res.status(404).json({ message: 'Attachment not found' });
         }
 
+        const project = attachment.project;
+
         // Check if it's an Office file
-        if (!isOfficeFile(project.attachment)) {
+        if (!isOfficeFile(attachment.name)) {
             return res.status(400).json({ message: 'File is not an Office document' });
         }
 
@@ -107,58 +115,35 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
         const isImplementer = project.implementers.some(impl => impl.id === userId);
         const canEdit = isAdmin || isManager || isImplementer;
 
-        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
-        const fileUrl = await getPresignedUrl(project.attachment, 3600); // 1 hour expiry
+        // Use backend download endpoint instead of presigned URL (OnlyOffice server may not be able to access MinIO directly)
+        const fileUrl = `${BACKEND_URL}/onlyoffice/download/${attachment.id}`;
 
-        // Extract original filename from attachment path
-        // Path format could be: "projects/123/filename.ext" or "projects/123/timestamp-filename.ext"
-        let originalName = project.attachment;
+        // Use original filename
+        let originalName = attachment.name;
 
-        // Get the last part after the last slash
-        if (project.attachment.includes('/')) {
-            const pathParts = project.attachment.split('/');
-            originalName = pathParts[pathParts.length - 1] || project.attachment;
-        }
-
-        // If filename starts with timestamp (number followed by dash), remove it
-        // Pattern: 1702728000000-filename.ext
-        const timestampPattern = /^\d{10,}-/;
-        if (timestampPattern.test(originalName)) {
-            originalName = originalName.replace(timestampPattern, '');
-        }
-
-        // Decode the filename if it was encoded
-        let decodedName = originalName;
+        // Decode the filename if it was encoded (just in case)
         try {
-            decodedName = decodeURIComponent(originalName);
+            originalName = decodeURIComponent(originalName);
         } catch {
             // If decoding fails, use as is
         }
 
-        // Make sure we have a valid filename with extension
-        if (!decodedName || !decodedName.includes('.')) {
-            // Fallback: get from original attachment path
-            decodedName = project.attachment.split('/').pop() || 'document.docx';
-        }
+        console.log('[OnlyOffice Project] Attachment Key:', attachment.minioPath);
+        console.log('[OnlyOffice Project] Name:', originalName);
 
-        console.log('[OnlyOffice Project] Attachment:', project.attachment);
-        console.log('[OnlyOffice Project] Extracted name:', decodedName);
+        const documentType = getDocumentType(originalName);
+        const fileType = getFileType(originalName);
 
-        const documentType = getDocumentType(decodedName);
-        const fileType = getFileType(decodedName);
+        // Create unique document key based on attachment id and updated timestamp
+        // This ensures that when the file is updated, a new key is generated, forcing a fresh session
+        const documentKey = `attachment_${attachment.id}_${attachment.updatedAt.getTime()}`;
 
-        // Create unique document key based on project id and attachment
-        // Use stable key for editing session (without timestamp for same document)
-        // Create unique document key based on project id and timestamp to ensure fresh session on file update
-        const documentKey = `project_${project.id}_${project.updatedAt.getTime()}`;
-
-        // JWT Payload - only include what OnlyOffice expects to be signed
-        // According to OnlyOffice docs: document, editorConfig, and documentType
+        // JWT Payload
         const jwtPayload = {
             document: {
                 fileType: fileType,
                 key: documentKey,
-                title: decodedName,
+                title: originalName,
                 url: fileUrl,
                 permissions: {
                     download: true,
@@ -173,7 +158,7 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                 },
             },
             editorConfig: {
-                callbackUrl: `${BACKEND_URL}/onlyoffice/callback/${project.id}`,
+                callbackUrl: `${BACKEND_URL}/onlyoffice/callback/${attachment.id}`,
                 lang: 'en',
                 mode: canEdit ? 'edit' : 'view',
                 user: {
@@ -181,61 +166,32 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
                     name: 'User',
                 },
                 customization: {
-                    // Auto save settings
                     autosave: true,
                     forcesave: true,
-
-                    // Collaboration features
                     chat: true,
                     comments: true,
-                    review: true,
-
-                    // UI Layout - Full featured like Word
-                    compactHeader: false,
-                    compactToolbar: false,
-                    toolbarNoTabs: false,
-                    toolbarHideFileName: false,
-                    hideRightMenu: false,
+                    compactHeader: true,
+                    compactToolbar: true,
+                    toolbarNoTabs: true,
+                    toolbarHideFileName: true,
+                    hideRightMenu: true,
                     leftMenu: true,
                     rightMenu: true,
                     statusBar: true,
-
-                    // Advanced features
                     plugins: true,
-                    macros: true,
-                    macrosMode: 'warn', // 'disable', 'enable', 'warn'
                     spellcheck: true,
-
-                    // Display settings
-                    unit: 'cm', // 'cm', 'pt', 'inch'
+                    unit: 'cm',
                     zoom: 100,
-
-                    // Help and feedback
                     help: true,
                     feedback: false,
                     goback: false,
                     mentionShare: true,
-
-                    // Track changes
-                    trackChanges: true,
-
-                    // Features object for additional options
-                    features: {
-                        spellcheck: {
-                            mode: true,
-                            change: true,
-                        },
-                        tabBackground: true,
-                        tabStyle: 'fill', // 'fill', 'line'
-                    },
                 },
             },
         };
 
-        // Sign the payload
         const token = signOnlyOfficeConfig(jwtPayload);
 
-        // Full config for frontend (includes UI-only fields + token)
         const signedConfig = {
             ...jwtPayload,
             documentType: documentType,
@@ -244,9 +200,6 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
             type: 'desktop',
             token: token
         };
-
-        console.log('[OnlyOffice] Config generated for project:', id);
-        console.log('[OnlyOffice] JWT token generated:', token.substring(0, 50) + '...');
 
         res.json({
             config: signedConfig,
@@ -260,51 +213,37 @@ export const getOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
 };
 
 // Callback endpoint for OnlyOffice - handles document saving
+// Callback endpoint for OnlyOffice - handles document saving
 export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
-    // Set CORS headers immediately for OnlyOffice server
+    // Set CORS headers immediately
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     try {
         const { id } = req.params;
-        const { status, url, key, users, actions, forcesavetype, history } = req.body;
+        const { status, url } = req.body;
 
         // ==================== DEBUG LOGGING ====================
-        console.log('\n========== ONLYOFFICE CALLBACK DEBUG ==========');
-        console.log('[Callback] Project ID:', id);
-        console.log('[Callback] Status:', status);
-        console.log('[Callback] URL:', url);
-        console.log('[Callback] Key:', key);
-        console.log('[Callback] Users:', users);
-        console.log('[Callback] Actions:', actions);
-        console.log('[Callback] Force Save Type:', forcesavetype);
-        console.log('[Callback] Request Headers:', JSON.stringify(req.headers, null, 2));
-        console.log('[Callback] Request Origin:', req.headers.origin || req.headers.referer || 'N/A');
-        console.log('[Callback] Request Body:', JSON.stringify(req.body, null, 2));
-        console.log('[Callback] Timestamp:', new Date().toISOString());
-        console.log('================================================\n');
+        console.log(`\n[Callback] Attachment ID: ${id}, Status: ${status}, URL: ${url ? 'Provided' : 'None'}`);
         // ==================== END DEBUG ====================
-
-        // Status codes:
-        // 0 - no document with the key identifier could be found
-        // 1 - document is being edited
-        // 2 - document is ready for saving
-        // 3 - document saving error has occurred
-        // 4 - document is closed with no changes
-        // 6 - document is being edited, but the current document state is saved (forcesave)
-        // 7 - error has occurred while force saving the document
 
         // Status 2 or 6 means document needs to be saved
         if (status === 2 || status === 6) {
             try {
-                const project = await prisma.project.findUnique({
+                // Find attachment
+                const attachment = await prisma.projectAttachment.findUnique({
                     where: { id: Number(id) },
                 });
 
-                if (!project || !project.attachment) {
-                    console.error('Project or attachment not found for callback');
+                if (!attachment) {
+                    console.error('Attachment not found for callback');
                     return res.json({ error: 0 });
+                }
+
+                if (!url) {
+                    console.error('No download URL provided by OnlyOffice');
+                    return res.json({ error: 1 });
                 }
 
                 // Download the edited file from OnlyOffice
@@ -316,19 +255,29 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
 
                 const buffer = Buffer.from(await response.arrayBuffer());
 
-                // Import uploadFile dynamically to avoid circular dependency
+                // Import uploadFile dynamically
                 const { minioClient, bucketName } = await import('../config/minio.js');
 
                 // Upload the updated file back to MinIO with the same path
-                await minioClient.putObject(bucketName, project.attachment, buffer);
+                await minioClient.putObject(bucketName, attachment.minioPath, buffer);
 
-                // Update project timestamp to generate new key for next session
-                await prisma.project.update({
-                    where: { id: project.id },
-                    data: { updatedAt: new Date() }
-                });
+                // Update attachment timestamp (and size if possible)
+                // Also update Project's updatedAt to reflect activity
+                await prisma.$transaction([
+                    prisma.projectAttachment.update({
+                        where: { id: attachment.id },
+                        data: {
+                            updatedAt: new Date(),
+                            fileSize: buffer.length
+                        }
+                    }),
+                    prisma.project.update({
+                        where: { id: attachment.projectId },
+                        data: { updatedAt: new Date() }
+                    })
+                ]);
 
-                console.log(`File saved successfully: ${project.attachment}`);
+                console.log(`File saved successfully: ${attachment.minioPath}`);
             } catch (saveError) {
                 console.error('Error saving file to MinIO or DB:', saveError);
                 return res.json({ error: 1, message: 'Error saving file' });
@@ -343,29 +292,26 @@ export const onlyofficeCallback = async (req: AuthRequest, res: Response) => {
 };
 
 // Check if a file can be opened with OnlyOffice
+// Check if a file can be opened with OnlyOffice
 export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        const project = await prisma.project.findUnique({
+        const attachment = await prisma.projectAttachment.findUnique({
             where: { id: Number(id) },
         });
 
-        if (!project || !project.attachment) {
+        if (!attachment) {
             return res.status(404).json({
                 supported: false,
                 message: 'Attachment not found'
             });
         }
 
-        const supported = isOfficeFile(project.attachment);
-        const originalName = project.attachment.includes('/')
-            ? project.attachment.split('/').pop()?.split('-').slice(1).join('-') || project.attachment
-            : project.attachment.split('-').slice(1).join('-');
-
+        const supported = isOfficeFile(attachment.name);
         res.json({
             supported,
-            fileName: decodeURIComponent(originalName),
-            documentType: supported ? getDocumentType(originalName) : null,
+            fileName: attachment.name,
+            documentType: supported ? getDocumentType(attachment.name) : null,
             onlyofficeUrl: ONLYOFFICE_URL,
         });
     } catch (error) {
@@ -376,33 +322,45 @@ export const checkOnlyOfficeSupport = async (req: AuthRequest, res: Response) =>
 
 // Download file for OnlyOffice - this endpoint is called by OnlyOffice server
 // No auth required as OnlyOffice server needs to access it directly
+// Download file for OnlyOffice - this endpoint is called by OnlyOffice server
+// No auth required as OnlyOffice server needs to access it directly
 export const downloadFileForOnlyOffice = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        console.log('[OnlyOffice Download] Request for project:', id);
+        console.log('[OnlyOffice Download] Request for attachment:', id);
 
         // Set CORS headers immediately
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-        const project = await prisma.project.findUnique({
+        const attachment = await prisma.projectAttachment.findUnique({
             where: { id: Number(id) },
         });
 
-        if (!project || !project.attachment) {
-            console.log('[OnlyOffice Download] Attachment not found for project:', id);
+        if (!attachment) {
+            console.log('[OnlyOffice Download] Attachment not found:', id);
             return res.status(404).json({ message: 'Attachment not found' });
         }
 
-        console.log('[OnlyOffice Download] Attachment path:', project.attachment);
+        console.log('[OnlyOffice Download] Attachment path:', attachment.minioPath);
 
-        // Use presigned URL instead of streaming
-        const { getPresignedUrl } = await import('../services/minioService.js');
-        const presignedUrl = await getPresignedUrl(project.attachment, 3600); // 1 hour
+        // Stream file directly instead of redirecting to presigned URL
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        const fileStream = await getFileStream(attachment.minioPath);
+        const fileStats = await getFileStats(attachment.minioPath);
 
-        console.log('[OnlyOffice Download] Redirecting to presigned URL');
-        res.redirect(presignedUrl);
+        // Set headers
+        const encodedFilename = encodeURIComponent(attachment.name).replace(/'/g, "%27");
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+        res.setHeader('Content-Type', fileStats.metaData?.['content-type'] || 'application/octet-stream');
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        console.log('[OnlyOffice Download] Streaming file');
+        fileStream.pipe(res);
     } catch (error: any) {
         console.error('[OnlyOffice Download] Error:', error?.message || error);
         if (!res.headersSent) {
@@ -551,7 +509,7 @@ export const getGoogleDriveOnlyOfficeConfig = async (req: AuthRequest, res: Resp
                     // Collaboration features
                     chat: true,
                     comments: true,
-                    review: true,
+                    // review is configured below with trackChanges settings
 
                     // UI Layout - Full featured like Word
                     compactHeader: false,
@@ -579,8 +537,9 @@ export const getGoogleDriveOnlyOfficeConfig = async (req: AuthRequest, res: Resp
                     goback: false,
                     mentionShare: true,
 
-                    // Track changes
-                    trackChanges: true,
+                    // Review/Track changes settings
+                    trackChanges: false,
+                    showReviewChanges: false,
 
                     // Features
                     features: {
@@ -1078,8 +1037,8 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
             documentType = 'pdf';
         }
 
-        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
-        const fileUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
+        // Use backend download endpoint instead of presigned URL (OnlyOffice server may not be able to access MinIO directly)
+        const fileUrl = `${BACKEND_URL}/onlyoffice/discussion/download/${messageId}`;
 
         // JWT Payload for signing
         const jwtPayload = {
@@ -1414,8 +1373,8 @@ export const getChatOnlyOfficeConfig = async (req: AuthRequest, res: Response) =
             documentType = 'pdf';
         }
 
-        // Use presigned URL from MinIO - OnlyOffice will download directly from MinIO storage
-        const fileUrl = await getPresignedUrl(message.attachment, 3600); // 1 hour expiry
+        // Use backend download endpoint instead of presigned URL (OnlyOffice server may not be able to access MinIO directly)
+        const fileUrl = `${BACKEND_URL}/onlyoffice/chat/download/${messageId}`;
 
         // JWT Payload for signing
         const jwtPayload = {

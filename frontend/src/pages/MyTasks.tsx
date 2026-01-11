@@ -14,6 +14,7 @@ interface Task {
     type: 'ASSIGNED' | 'PERSONAL';
     startDate: string | null;
     endDate: string | null;
+    reminderAt: string | null;
     note: string | null;
     lastNoteAt: string | null;
     createdAt: string;
@@ -113,6 +114,7 @@ const MyTasks = () => {
         description: '',
         startDate: '',
         endDate: '',
+        reminderAt: '',
         type: 'PERSONAL'
     });
 
@@ -129,12 +131,11 @@ const MyTasks = () => {
     }, [token]);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         if (token) fetchTasks();
     }, [token, fetchTasks]);
 
     const resetForm = () => {
-        setFormData({ title: '', description: '', startDate: '', endDate: '', type: 'PERSONAL' });
+        setFormData({ title: '', description: '', startDate: '', endDate: '', reminderAt: '', type: 'PERSONAL' });
         setEditingTask(null);
         setShowModal(false);
     };
@@ -189,6 +190,17 @@ const MyTasks = () => {
         });
     };
 
+    const formatDateTimeSimple = (dateString: string | null) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleString('vi-VN', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
     const handleCreateOrUpdateTask = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -198,13 +210,33 @@ const MyTasks = () => {
 
             const method = editingTask ? 'PUT' : 'POST';
 
+            // Prepare payload
+            const payload: any = {
+                title: formData.title,
+                description: formData.description,
+                type: formData.type
+            };
+
+            if (formData.type === 'PERSONAL') {
+                if (formData.reminderAt) {
+                    payload.reminderAt = new Date(formData.reminderAt).toISOString();
+                } else {
+                    payload.reminderAt = null;
+                }
+                payload.startDate = null;
+                payload.endDate = null;
+            } else {
+                if (formData.startDate) payload.startDate = new Date(formData.startDate).toISOString();
+                if (formData.endDate) payload.endDate = new Date(formData.endDate).toISOString();
+            }
+
             const response = await fetch(url, {
                 method,
                 headers: {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify(formData),
+                body: JSON.stringify(payload),
             });
 
             if (response.ok) {
@@ -232,11 +264,21 @@ const MyTasks = () => {
 
     const openEditModal = (task: Task) => {
         setEditingTask(task);
+
+        let reminderAtStr = '';
+        if (task.reminderAt) {
+            const date = new Date(task.reminderAt);
+            const offset = date.getTimezoneOffset() * 60000;
+            const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
+            reminderAtStr = localISOTime;
+        }
+
         setFormData({
             title: task.title,
             description: task.description || '',
             startDate: task.startDate ? new Date(task.startDate).toISOString().split('T')[0] : '',
             endDate: task.endDate ? new Date(task.endDate).toISOString().split('T')[0] : '',
+            reminderAt: reminderAtStr,
             type: task.type
         });
         setShowModal(true);
@@ -255,7 +297,6 @@ const MyTasks = () => {
                 },
                 body: JSON.stringify({ status }),
             });
-            // fetchTasks(); // No need to re-fetch immediately if optimistic update is correct
         } catch (error) {
             console.error('Error updating status:', error);
             fetchTasks(); // Revert on error
@@ -269,7 +310,6 @@ const MyTasks = () => {
             const taskId = Number(active.id);
             const newStatus = over.id as string;
 
-            // Check if status actually changed (though over.id check handles most)
             const task = tasks.find(t => t.id === taskId);
             if (task && task.status !== newStatus) {
                 updateStatus(taskId, newStatus);
@@ -338,7 +378,7 @@ const MyTasks = () => {
                 </div>
             </div>
 
-            {/* Stats Grid - Mobile Optimized */}
+            {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
                 <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
@@ -398,7 +438,12 @@ const MyTasks = () => {
                                                     <span className={`px-1.5 py-0.5 rounded ${task.type === 'PERSONAL' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
                                                         {task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}
                                                     </span>
-                                                    <span>Tạo: {formatDateTime(task.createdAt)}</span>
+                                                    {task.reminderAt && (
+                                                        <span className="flex items-center gap-1 text-purple-600 font-medium bg-purple-50 px-1.5 py-0.5 rounded">
+                                                            <Clock size={12} />
+                                                            {formatDateTime(task.reminderAt)} {new Date(task.reminderAt) < new Date() && task.status !== 'COMPLETED' ? '(Quá hạn)' : ''}
+                                                        </span>
+                                                    )}
                                                     {task.note && (
                                                         <span className="flex items-center gap-1 text-amber-600">
                                                             <StickyNote size={12} />
@@ -464,7 +509,15 @@ const MyTasks = () => {
                                     <DraggableTask key={task.id} task={task}>
                                         <div className="bg-white p-3 lg:p-4 rounded-lg shadow-sm border border-gray-200 group relative cursor-move hover:shadow-md transition-shadow">
                                             <h4 className="font-medium text-gray-900 text-sm lg:text-base pr-12 lg:pr-16">{task.title}</h4>
-                                            <p className="text-xs text-gray-500 mt-1">{task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}</p>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <p className="text-xs text-gray-500">{task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}</p>
+                                                {task.reminderAt && (
+                                                    <div className="text-xs text-purple-600 flex items-center gap-1 bg-purple-50 px-1 rounded">
+                                                        <Clock size={10} />
+                                                        <span className="truncate max-w-[80px]">{formatDateTimeSimple(task.reminderAt)}</span>
+                                                    </div>
+                                                )}
+                                            </div>
 
                                             {/* Note indicator */}
                                             {task.note && (
@@ -509,99 +562,13 @@ const MyTasks = () => {
 
             {view === 'gantt' && (
                 <div className="bg-white p-4 lg:p-6 rounded-xl border border-gray-200">
-                    <h3 className="font-bold text-gray-900 mb-4">📅 Timeline</h3>
-
-                    {/* Mobile: Card layout */}
-                    <div className="lg:hidden space-y-3">
-                        {tasks.map(task => (
-                            <div key={task.id} className="p-3 border border-gray-100 rounded-lg bg-gray-50 group">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <span className="font-medium text-sm truncate">{task.title}</span>
-                                        {task.note && <StickyNote size={12} className="text-amber-500 shrink-0" />}
-                                    </div>
-                                    <div className="flex gap-1 shrink-0">
-                                        <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
-                                        {task.type === 'PERSONAL' && (
-                                            <>
-                                                <button onClick={() => openEditModal(task)} className="p-1.5 text-gray-400 hover:text-blue-600">
-                                                    <Pencil size={14} />
-                                                </button>
-                                                <button onClick={() => handleDeleteTask(task.id)} className="p-1.5 text-gray-400 hover:text-red-600">
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className={`text-xs px-2 py-1 rounded inline-block ${task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
-                                    task.status === 'IN_PROGRESS' ? 'bg-orange-100 text-orange-600' :
-                                        'bg-green-100 text-green-600'
-                                    }`}>
-                                    {task.status === 'TODO' ? 'Todo' : task.status === 'IN_PROGRESS' ? 'Đang làm' : 'Xong'}
-                                </div>
-                                {task.startDate && task.endDate ? (
-                                    <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
-                                        <Calendar size={12} />
-                                        <span>{new Date(task.startDate).toLocaleDateString('vi-VN')} - {new Date(task.endDate).toLocaleDateString('vi-VN')}</span>
-                                    </div>
-                                ) : (
-                                    <div className="mt-2 text-xs text-gray-400">Chưa đặt thời gian</div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Desktop: Table layout */}
-                    <div className="hidden lg:block overflow-x-auto">
-                        <div className="min-w-[800px]">
-                            <div className="flex border-b border-gray-200 pb-2 mb-4">
-                                <div className="w-1/4 font-medium text-gray-500">Task</div>
-                                <div className="w-3/4 flex justify-between text-gray-500 text-sm">
-                                    <span>Start</span>
-                                    <span>End</span>
-                                </div>
-                            </div>
-                            {tasks.map(task => (
-                                <div key={task.id} className="flex items-center py-2 border-b border-gray-50 group">
-                                    <div className="w-1/4 pr-4 truncate font-medium flex justify-between items-center gap-2">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className="truncate">{task.title}</span>
-                                            {task.note && (
-                                                <StickyNote size={12} className="text-amber-500 shrink-0" />
-                                            )}
-                                        </div>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                            <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
-                                            {task.type === 'PERSONAL' && (
-                                                <>
-                                                    <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-blue-600" title="Chỉnh sửa">
-                                                        <Pencil size={14} />
-                                                    </button>
-                                                    <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa">
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="w-3/4 relative h-8 bg-gray-50 rounded">
-                                        {task.startDate && task.endDate && (
-                                            <div
-                                                className="absolute h-full bg-blue-500 rounded opacity-75 flex items-center px-2 text-white text-xs"
-                                                style={{
-                                                    left: '0%',
-                                                    width: '50%'
-                                                }}
-                                            >
-                                                {new Date(task.startDate).toLocaleDateString()} - {new Date(task.endDate).toLocaleDateString()}
-                                            </div>
-                                        )}
-                                        {(!task.startDate || !task.endDate) && <span className="text-xs text-gray-400 p-2">No dates set</span>}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                    <div className="flex flex-col items-center justify-center p-8 text-center">
+                        <Calendar size={48} className="text-gray-300 mb-3" />
+                        <h3 className="text-lg font-semibold text-gray-700">Chế độ Gantt không khả dụng</h3>
+                        <p className="text-gray-500 max-w-sm mt-1">Chế độ xem Gantt hiện chỉ hỗ trợ cho các dự án có ngày bắt đầu và kết thúc cụ thể.</p>
+                        <button onClick={() => setView('list')} className="mt-4 text-blue-600 hover:text-blue-700 font-medium">
+                            Quay lại danh sách
+                        </button>
                     </div>
                 </div>
             )}
@@ -636,28 +603,54 @@ const MyTasks = () => {
                                     placeholder="Nhập mô tả"
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
+
+                            {formData.type === 'PERSONAL' ? (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="p-1 bg-amber-100 text-amber-600 rounded">
+                                                <Clock size={14} />
+                                            </div>
+                                            Hẹn giờ nhắc nhở
+                                        </div>
+                                    </label>
                                     <input
-                                        type="date"
+                                        type="datetime-local"
                                         className="w-full px-3 py-3 lg:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                                        value={formData.startDate}
-                                        onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                                        title="Ngày bắt đầu"
+                                        value={formData.reminderAt}
+                                        onChange={(e) => setFormData({ ...formData, reminderAt: e.target.value })}
                                     />
+                                    <p className="text-xs text-gray-500 mt-1.5">
+                                        Hệ thống sẽ gửi thông báo và email khi đến giờ hẹn.
+                                    </p>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc</label>
-                                    <input
-                                        type="date"
-                                        className="w-full px-3 py-3 lg:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                                        value={formData.endDate}
-                                        onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                                        title="Ngày kết thúc"
-                                    />
+                            ) : (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu</label>
+                                        <input
+                                            type="date"
+                                            className="w-full px-3 py-3 lg:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                            value={formData.startDate}
+                                            onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                                            disabled={true} // Assigned tasks usually manage dates in Project
+                                            title="Ngày bắt đầu (Chỉ xem)"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc</label>
+                                        <input
+                                            type="date"
+                                            className="w-full px-3 py-3 lg:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                            value={formData.endDate}
+                                            onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                                            disabled={true} // Assigned tasks usually manage dates in Project
+                                            title="Ngày kết thúc (Chỉ xem)"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
                             <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 pb-safe">
                                 <button
                                     type="button"

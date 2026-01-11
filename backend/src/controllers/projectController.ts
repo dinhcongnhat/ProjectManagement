@@ -270,6 +270,19 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                         manager: { select: { id: true, name: true } },
                         implementers: { select: { id: true, name: true } },
                         cooperators: { select: { id: true, name: true } },
+                        // Nested children (3rd level)
+                        children: {
+                            select: {
+                                id: true,
+                                name: true,
+                                code: true,
+                                progress: true,
+                                status: true,
+                                startDate: true,
+                                endDate: true,
+                                manager: { select: { id: true, name: true } },
+                            }
+                        }
                     }
                 },
                 workflow: true,
@@ -304,6 +317,20 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                         startDate: true,
                         endDate: true,
                         manager: { select: { id: true, name: true } },
+                        // Nested children (3rd level)
+                        children: {
+                            select: {
+                                id: true,
+                                name: true,
+                                code: true,
+                                progress: true,
+                                status: true,
+                                startDate: true,
+                                endDate: true,
+                                manager: { select: { id: true, name: true } },
+                            },
+                            orderBy: { createdAt: 'desc' },
+                        }
                     },
                     orderBy: { createdAt: 'desc' },
                 },
@@ -430,7 +457,8 @@ export const downloadAttachment = async (req: AuthRequest, res: Response) => {
 
         // Use 'inline' to allow browser preview, fallback to 'attachment' if needed
         // Use RFC 5987 encoding for non-ASCII filenames
-        res.setHeader('Content-Disposition', `inline; filename="${originalName}"; filename*=UTF-8''${encodedFilename}`);
+        const safeFilename = originalName.replace(/[^\x20-\x7E]/g, '_');
+        res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"; filename*=UTF-8''${encodedFilename}`);
 
         // Set correct Content-Type from MinIO stats
         if (fileStats.metaData && fileStats.metaData['content-type']) {

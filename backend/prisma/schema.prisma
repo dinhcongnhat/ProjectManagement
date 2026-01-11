@@ -122,6 +122,8 @@ model Task {
   endDate     DateTime?
   note        String?    // Ghi chú của người dùng
   lastNoteAt  DateTime?  // Thời gian ghi chú cuối cùng
+  reminderAt  DateTime?  // Thời gian nhắc nhở
+  isReminderSent Boolean @default(false) // Trạng thái đã gửi nhắc nhở chưa
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

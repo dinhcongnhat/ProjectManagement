@@ -6,7 +6,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useDialog } from '../../components/ui/Dialog';
 import { UploadProgressDialog } from '../../components/ui/UploadProgressDialog';
 import type { UploadFile } from '../../components/ui/UploadProgressDialog';
-import { useCloudStoragePicker } from '../../hooks/useCloudStoragePicker';
+import { GoogleDriveBrowser } from '../../components/GoogleDrive/GoogleDriveBrowser';
 
 interface UserData {
     id: number;
@@ -65,19 +65,8 @@ const CreateProject = () => {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [selectedLinks, setSelectedLinks] = useState<{ name: string; url: string; type: string }[]>([]);
 
-    // Cloud Storage Picker
-    const { openGoogleDrivePicker } = useCloudStoragePicker({
-        onSelect: (file: any) => {
-            setSelectedLinks(prev => [...prev, {
-                name: file.name,
-                url: file.url,
-                type: file.type || 'google-drive'
-            }]);
-        },
-        onError: (error) => {
-            showError(error);
-        }
-    });
+    // Google Drive Browser state
+    const [showDriveBrowser, setShowDriveBrowser] = useState(false);
 
     // Upload Progress State
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -572,7 +561,7 @@ const CreateProject = () => {
                             </button>
                             <button
                                 type="button"
-                                onClick={openGoogleDrivePicker}
+                                onClick={() => setShowDriveBrowser(true)}
                                 className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
                             >
                                 <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center">
@@ -1061,6 +1050,23 @@ const CreateProject = () => {
                             <h3 className="text-lg font-semibold text-gray-900 mb-1">Đang tạo dự án</h3>
                             <p className="text-sm text-gray-500">Vui lòng đợi trong giây lát...</p>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Google Drive Browser Modal */}
+            {showDriveBrowser && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="w-full max-w-4xl max-h-[85vh] shadow-2xl">
+                        <GoogleDriveBrowser
+                            projectId={undefined}
+                            mode="select"
+                            onSelectFiles={(files) => {
+                                setSelectedFiles(prev => [...prev, ...files]);
+                                setShowDriveBrowser(false);
+                            }}
+                            onClose={() => setShowDriveBrowser(false)}
+                        />
                     </div>
                 </div>
             )}

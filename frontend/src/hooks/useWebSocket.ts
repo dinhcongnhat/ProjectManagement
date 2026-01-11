@@ -45,19 +45,16 @@ export const useWebSocket = (token: string | null): UseWebSocketReturn => {
         }
 
         console.log('[WebSocket] Connecting...', isStandalonePWA ? '(PWA mode)' : '(Web mode)');
+        console.log('[WebSocket] Token:', token ? `${token.substring(0, 20)}...` : 'NONE');
 
-        // Connect to Socket.io server with improved settings for PWA
+        // Connect to Socket.io server with default auto-negotiation
         const newSocket = io(WS_URL, {
             auth: { token },
-            transports: isStandalonePWA ? ['polling', 'websocket'] : ['websocket', 'polling'], // PWA: polling first for reliability
-            timeout: 30000,
+            timeout: 20000,
             reconnection: true,
             reconnectionAttempts: maxReconnectAttempts,
             reconnectionDelay: 1000,
-            reconnectionDelayMax: 10000,
-            forceNew: true,
-            upgrade: true,
-            rememberUpgrade: false, // Don't remember - always try fresh for PWA
+            reconnectionDelayMax: 5000,
         });
 
         newSocket.on('connect', () => {
@@ -92,12 +89,12 @@ export const useWebSocket = (token: string | null): UseWebSocketReturn => {
         newSocket.on('disconnect', (reason) => {
             console.log('[WebSocket] Disconnected:', reason);
             setConnected(false);
-            
+
             // Clear heartbeat
             if (heartbeatRef.current) {
                 clearInterval(heartbeatRef.current);
             }
-            
+
             // Auto reconnect for all disconnect reasons
             if (reconnectAttempts.current < maxReconnectAttempts) {
                 reconnectAttempts.current++;

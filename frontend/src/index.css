@@ -38,6 +38,64 @@
     border-radius: 0;
   }
 
+  /* ==================== Animation Performance Optimizations ==================== */
+
+  /* GPU acceleration for animated elements */
+  [class*="motion"],
+  .animate-fadeIn,
+  .animate-slideUp,
+  .animate-scaleIn,
+  .slide-up,
+  .slide-down,
+  .fade-in {
+    will-change: transform, opacity;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+
+  /* Respect user preference for reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    /* Framer Motion specific - disable all transforms */
+    [class*="motion"] {
+      transform: none !important;
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* Optimize animations on mobile for battery and performance */
+  @media (max-width: 768px) {
+
+    /* Reduce animation complexity on mobile */
+    .animate-bounce,
+    .animate-pulse {
+      animation-duration: 1.5s;
+    }
+
+    /* Disable expensive blur effects on low-end devices */
+    @media (prefers-reduced-motion: no-preference) {
+
+      .backdrop-blur-sm,
+      .backdrop-blur-md,
+      .backdrop-blur-lg {
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+      }
+    }
+  }
+
   /* PWA Standalone Mode - Apply safe areas */
   @media (display-mode: standalone) {
     body {
@@ -394,5 +452,44 @@
 
   .animate-slideInRight {
     animation: slideInRight 0.3s ease-out;
+  }
+
+  /* Fade in up animation for slogan */
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fadeInUp {
+    animation: fadeInUp 0.8s ease-out 0.2s both;
+  }
+
+  /* Gradient shift animation for text */
+  @keyframes gradientShift {
+
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
+  .animate-gradientShift {
+    animation: gradientShift 3s ease-in-out infinite;
+  }
+
+  /* Animation delay utilities */
+  .animation-delay-200 {
+    animation-delay: 0.2s;
   }
 }

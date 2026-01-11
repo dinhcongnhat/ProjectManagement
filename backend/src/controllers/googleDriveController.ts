@@ -216,7 +216,11 @@ export const listDriveFiles = async (req: Request, res: Response) => {
             pageSize: 1000,
         });
 
-        console.log(`[Drive] Query: "${query}" | Found: ${response.data.files?.length || 0} files`);
+        // Count folders vs files
+        const files = response.data.files || [];
+        const folderCount = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder').length;
+        const fileCount = files.length - folderCount;
+        console.log(`[Drive] Query: "${query}" | Found: ${files.length} items (${folderCount} folders, ${fileCount} files)`);
 
         res.json({ files: response.data.files, nextPageToken: response.data.nextPageToken });
     } catch (error: any) {

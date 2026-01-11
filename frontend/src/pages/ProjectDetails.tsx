@@ -4,15 +4,15 @@ import { useAuth } from '../context/AuthContext';
 import {
     ArrowLeft, Users, X, FileText,
     MessageSquare, History, CheckCircle2, FolderTree, ChevronRight,
-    Briefcase, Target, Loader2, AlertCircle, Calendar, Clock, Flag
+    Briefcase, Target, Loader2, AlertCircle, Calendar, Clock, Flag, Plus
 } from 'lucide-react';
 import { DiscussionPanel } from '../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../components/ActivityHistoryPanel';
-import { OnlyOfficeViewer } from '../components/OnlyOfficeViewer';
 import { ProjectAttachments } from '../components/ProjectAttachments';
 import { ProjectWorkflow } from '../components/ProjectWorkflow';
 import { API_URL } from '../config/api';
 import { useDialog } from '../components/ui/Dialog';
+import { CreateProjectModal } from '../components/CreateProjectModal';
 
 interface WorkflowData {
     id: number;
@@ -38,6 +38,7 @@ interface SubProject {
     startDate: string;
     endDate: string;
     manager?: { id: number, name: string };
+    children?: SubProject[]; // Nested children
 }
 
 interface ProjectAttachmentType {
@@ -88,8 +89,8 @@ const ProjectDetails = () => {
     const [loading, setLoading] = useState(true);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'workflow' | 'discussion' | 'activity'>('info');
-    const [showOnlyOffice, setShowOnlyOffice] = useState(false);
     const [approving, setApproving] = useState(false);
+    const [showCreateChildModal, setShowCreateChildModal] = useState(false);
     const { showConfirm, showSuccess, showError } = useDialog();
 
     const fetchProject = useCallback(async () => {
@@ -111,6 +112,42 @@ const ProjectDetails = () => {
     useEffect(() => {
         if (token && id) fetchProject();
     }, [token, id, fetchProject]);
+
+    // Auto-confirm "Đã nhận thông tin" khi người thực hiện xem dự án
+    useEffect(() => {
+        const autoConfirmReceived = async () => {
+            if (!project || !token || !user) return;
+
+            // Chỉ confirm nếu:
+            // 1. Người xem là implementer hoặc cooperator
+            // 2. Workflow chưa được confirm received
+            const isImplementer = project.implementers?.some(imp => imp.id === user.id) || false;
+            const isCooperator = project.cooperators?.some(coop => coop.id === user.id) || false;
+            const workflow = project.workflow;
+
+            if ((isImplementer || isCooperator) && workflow && !workflow.receivedConfirmedAt) {
+                try {
+                    const response = await fetch(`${API_URL}/projects/${project.id}/workflow/confirm-received`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        console.log('[ProjectDetails] Auto-confirmed "Đã nhận thông tin" for implementer');
+                        // Refresh project to get updated workflow
+                        fetchProject();
+                    }
+                } catch (error) {
+                    console.error('Error auto-confirming received:', error);
+                }
+            }
+        };
+
+        autoConfirmReceived();
+    }, [project?.id, project?.workflow?.receivedConfirmedAt, user?.id]); // Only run when project is loaded
 
     const handleApprove = async () => {
         if (!project) return;
@@ -243,6 +280,16 @@ const ProjectDetails = () => {
                         </div>
                         <div className="flex items-center gap-3 flex-wrap">
                             {getStatusBadge(project.status)}
+                            {/* Button tạo dự án con - chỉ hiển thị cho manager */}
+                            {isManager && !project.parentId && (
+                                <button
+                                    onClick={() => setShowCreateChildModal(true)}
+                                    className="px-4 py-2.5 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-medium rounded-xl shadow-lg shadow-purple-500/30 flex items-center gap-2 transition-all duration-200"
+                                >
+                                    <Plus size={18} />
+                                    <span className="hidden sm:inline">Tạo dự án con</span>
+                                </button>
+                            )}
                             {canApprove && (
                                 <button
                                     onClick={handleApprove}
@@ -340,23 +387,29 @@ const ProjectDetails = () => {
                                 </div>
                             </div>
 
-                            {/* Details Grid */}
-                            <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 p-6">
-                                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                    <Briefcase size={18} className="text-indigo-600" />
-                                    Thông tin chi tiết
-                                </h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-                                        <p className="text-xs text-blue-600 font-semibold mb-1 uppercase tracking-wide">Nhóm dự án</p>
-                                        <p className="font-bold text-gray-900">{project.group || 'N/A'}</p>
-                                    </div>
-                                    <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-100">
-                                        <p className="text-xs text-emerald-600 font-semibold mb-1 uppercase tracking-wide">Giá trị</p>
-                                        <p className="font-bold text-gray-900">{project.value || 'N/A'}</p>
+                            {/* Details Grid - Only show if values exist */}
+                            {(project.group || project.value) && (
+                                <div className="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 p-6">
+                                    <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                                        <Briefcase size={18} className="text-indigo-600" />
+                                        Thông tin chi tiết
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {project.group && (
+                                            <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                                                <p className="text-xs text-blue-600 font-semibold mb-1 uppercase tracking-wide">Nhóm dự án</p>
+                                                <p className="font-bold text-gray-900">{project.group}</p>
+                                            </div>
+                                        )}
+                                        {project.value && (
+                                            <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl border border-emerald-100">
+                                                <p className="text-xs text-emerald-600 font-semibold mb-1 uppercase tracking-wide">Giá trị</p>
+                                                <p className="font-bold text-gray-900">{project.value}</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Project Attachments */}
                             <ProjectAttachments
@@ -478,44 +531,84 @@ const ProjectDetails = () => {
 
                                     <div className="space-y-3">
                                         {project.children.map(child => (
-                                            <Link
-                                                key={child.id}
-                                                to={`/projects/${child.id}`}
-                                                className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
-                                            >
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${child.status === 'COMPLETED' ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
-                                                    child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-br from-orange-500 to-amber-600' :
-                                                        'bg-gradient-to-br from-blue-500 to-indigo-600'
-                                                    }`}>
-                                                    <FolderTree size={16} />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-semibold text-gray-900 truncate group-hover:text-blue-600">
-                                                        {child.name}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-xs text-gray-500">{child.code}</span>
-                                                        <span className="text-xs text-gray-400">•</span>
-                                                        <span className={`text-xs font-semibold ${child.status === 'COMPLETED' ? 'text-green-600' :
-                                                            child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
-                                                            }`}>
-                                                            {child.progress}%
-                                                        </span>
+                                            <div key={child.id}>
+                                                <Link
+                                                    to={`/projects/${child.id}`}
+                                                    className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
+                                                >
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${child.status === 'COMPLETED' ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
+                                                        child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-br from-orange-500 to-amber-600' :
+                                                            'bg-gradient-to-br from-blue-500 to-indigo-600'
+                                                        }`}>
+                                                        <FolderTree size={16} />
                                                     </div>
-                                                </div>
-                                                <div className="flex flex-col items-end gap-1.5">
-                                                    <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                                        <div
-                                                            className={`h-full rounded-full transition-all ${child.status === 'COMPLETED' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                                                                child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
-                                                                    'bg-gradient-to-r from-blue-500 to-indigo-500'
-                                                                }`}
-                                                            style={{ width: `${child.progress}%` }}
-                                                        />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-semibold text-gray-900 truncate group-hover:text-blue-600">
+                                                            {child.name}
+                                                            {child.children && child.children.length > 0 && (
+                                                                <span className="ml-2 text-xs text-purple-500 font-normal">
+                                                                    ({child.children.length} dự án con)
+                                                                </span>
+                                                            )}
+                                                        </p>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-xs text-gray-500">{child.code}</span>
+                                                            <span className="text-xs text-gray-400">•</span>
+                                                            <span className={`text-xs font-semibold ${child.status === 'COMPLETED' ? 'text-green-600' :
+                                                                child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
+                                                                }`}>
+                                                                {child.progress}%
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <ChevronRight size={14} className="text-gray-400 group-hover:text-blue-600" />
-                                                </div>
-                                            </Link>
+                                                    <div className="flex flex-col items-end gap-1.5">
+                                                        <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                            <div
+                                                                className={`h-full rounded-full transition-all ${child.status === 'COMPLETED' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
+                                                                    child.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-orange-500 to-amber-500' :
+                                                                        'bg-gradient-to-r from-blue-500 to-indigo-500'
+                                                                    }`}
+                                                                style={{ width: `${child.progress}%` }}
+                                                            />
+                                                        </div>
+                                                        <ChevronRight size={14} className="text-gray-400 group-hover:text-blue-600" />
+                                                    </div>
+                                                </Link>
+
+                                                {/* Nested Children (Level 3) */}
+                                                {child.children && child.children.length > 0 && (
+                                                    <div className="mt-2 ml-6 space-y-2 pl-4 border-l-2 border-purple-200">
+                                                        {child.children.map(grandChild => (
+                                                            <Link
+                                                                key={grandChild.id}
+                                                                to={`/projects/${grandChild.id}`}
+                                                                className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors group border border-purple-100 hover:border-purple-300"
+                                                            >
+                                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white ${grandChild.status === 'COMPLETED' ? 'bg-gradient-to-br from-green-500 to-emerald-600' :
+                                                                    grandChild.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-br from-orange-500 to-amber-600' :
+                                                                        'bg-gradient-to-br from-purple-500 to-indigo-600'
+                                                                    }`}>
+                                                                    <FolderTree size={14} />
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="font-medium text-gray-900 truncate group-hover:text-purple-600 text-sm">
+                                                                        {grandChild.name}
+                                                                    </p>
+                                                                    <p className="text-xs text-gray-500">{grandChild.code}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`text-xs font-bold ${grandChild.status === 'COMPLETED' ? 'text-green-600' :
+                                                                        grandChild.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-purple-600'
+                                                                        }`}>
+                                                                        {grandChild.progress}%
+                                                                    </span>
+                                                                    <ChevronRight size={12} className="text-gray-400 group-hover:text-purple-600" />
+                                                                </div>
+                                                            </Link>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
                                 </div>
@@ -549,14 +642,8 @@ const ProjectDetails = () => {
                 )}
             </div>
 
-            {/* OnlyOffice Viewer Modal */}
-            {showOnlyOffice && (
-                <OnlyOfficeViewer
-                    projectId={project.id}
-                    onClose={() => setShowOnlyOffice(false)}
-                    token={token || ''}
-                />
-            )}
+
+
 
             {/* Image Preview Modal */}
             {previewImage && (
@@ -579,6 +666,17 @@ const ProjectDetails = () => {
                     </div>
                 </div>
             )}
+
+            {/* Create Child Project Modal */}
+            <CreateProjectModal
+                isOpen={showCreateChildModal}
+                onClose={() => setShowCreateChildModal(false)}
+                onSuccess={() => {
+                    setShowCreateChildModal(false);
+                    fetchProject();
+                }}
+                parentId={project.id}
+            />
 
             {/* Add shimmer animation */}
             <style>{`

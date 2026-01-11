@@ -272,14 +272,80 @@ export const runDeadlineChecks = async (): Promise<void> => {
     console.log('[DeadlineScheduler] ========== Deadline checks completed ==========');
 };
 
+import { notifyTaskReminder } from './pushNotificationService.js';
+import { sendTaskReminderEmail } from './emailService.js';
+
+// ... (existing imports)
+
+// Check processable task reminders
+export const checkTaskReminders = async (): Promise<void> => {
+    // console.log('[DeadlineScheduler] Checking task reminders...');
+    const now = new Date();
+
+    try {
+        const tasksToRemind = await prisma.task.findMany({
+            where: {
+                reminderAt: {
+                    lte: now
+                },
+                isReminderSent: false,
+                status: {
+                    not: 'COMPLETED'
+                }
+            },
+            include: {
+                creator: { select: { id: true, name: true, email: true } }
+            }
+        });
+
+        if (tasksToRemind.length > 0) {
+            console.log(`[DeadlineScheduler] Found ${tasksToRemind.length} tasks to remind`);
+
+            for (const task of tasksToRemind) {
+                if (!task.reminderAt) continue;
+
+                // Send push notification
+                await notifyTaskReminder(
+                    task.creatorId,
+                    task.id,
+                    task.title,
+                    task.reminderAt
+                );
+
+                // Send email
+                if (task.creator.email) {
+                    await sendTaskReminderEmail(
+                        task.creator.email,
+                        task.creator.name,
+                        task.id,
+                        task.title,
+                        task.reminderAt
+                    );
+                }
+
+                // Mark as sent
+                await prisma.task.update({
+                    where: { id: task.id },
+                    data: { isReminderSent: true }
+                });
+            }
+        }
+    } catch (error) {
+        console.error('[DeadlineScheduler] Error checking task reminders:', error);
+    }
+};
+
+// ... (existing imports)
+
 // Interval ID for cleanup
 let schedulerIntervalId: NodeJS.Timeout | null = null;
+let reminderIntervalId: NodeJS.Timeout | null = null;
 
 // Start the deadline scheduler (runs daily at 8:00 AM)
 export const startDeadlineScheduler = (): void => {
     console.log('[DeadlineScheduler] Starting deadline scheduler...');
 
-    // Calculate time until next 8:00 AM
+    // 1. Setup Daily Deadline Check (8:00 AM)
     const now = new Date();
     const next8AM = new Date();
     next8AM.setHours(8, 0, 0, 0);
@@ -290,22 +356,19 @@ export const startDeadlineScheduler = (): void => {
     }
 
     const msUntil8AM = next8AM.getTime() - now.getTime();
-    const hoursUntil8AM = (msUntil8AM / (1000 * 60 * 60)).toFixed(2);
+    console.log(`[DeadlineScheduler] Next daily check scheduled for ${next8AM.toISOString()}`);
 
-    console.log(`[DeadlineScheduler] Next check scheduled for ${next8AM.toISOString()} (in ${hoursUntil8AM} hours)`);
-
-    // First, schedule initial run at 8 AM
     setTimeout(() => {
-        // Run immediately at 8 AM
         runDeadlineChecks();
-
-        // Then run every 24 hours
         schedulerIntervalId = setInterval(runDeadlineChecks, 24 * 60 * 60 * 1000);
     }, msUntil8AM);
 
-    // Also run immediately on server start for testing (optional - comment out in production)
-    // Uncomment the line below to test immediately on server start
-    // setTimeout(runDeadlineChecks, 5000); // Run 5 seconds after server start
+    // 2. Setup Minutely Reminder Check
+    console.log('[DeadlineScheduler] Starting minutely reminder check...');
+    // Run immediately
+    checkTaskReminders();
+    // Then run every minute
+    reminderIntervalId = setInterval(checkTaskReminders, 60 * 1000);
 };
 
 // Stop the deadline scheduler
@@ -313,8 +376,12 @@ export const stopDeadlineScheduler = (): void => {
     if (schedulerIntervalId) {
         clearInterval(schedulerIntervalId);
         schedulerIntervalId = null;
-        console.log('[DeadlineScheduler] Scheduler stopped');
     }
+    if (reminderIntervalId) {
+        clearInterval(reminderIntervalId);
+        reminderIntervalId = null;
+    }
+    console.log('[DeadlineScheduler] Scheduler stopped');
 };
 
 export default {
@@ -324,5 +391,6 @@ export default {
     checkOverdueProjects,
     checkUpcomingProjectDeadlines,
     checkOverdueTasks,
-    checkUpcomingTaskDeadlines
+    checkUpcomingTaskDeadlines,
+    checkTaskReminders
 };

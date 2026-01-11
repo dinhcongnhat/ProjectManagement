@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { X, AlertCircle, CheckCircle, AlertTriangle, Info } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Dialog types
 type DialogType = 'info' | 'success' | 'warning' | 'error' | 'confirm';
@@ -15,6 +16,52 @@ interface DialogProps {
     cancelText?: string;
     showCancel?: boolean;
 }
+
+const backdropVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1 },
+    exit: { opacity: 0 }
+};
+
+const dialogVariants = {
+    hidden: {
+        opacity: 0,
+        scale: 0.9,
+        y: 20
+    },
+    visible: {
+        opacity: 1,
+        scale: 1,
+        y: 0,
+        transition: {
+            type: 'spring' as const,
+            stiffness: 350,
+            damping: 25
+        }
+    },
+    exit: {
+        opacity: 0,
+        scale: 0.95,
+        y: 10,
+        transition: {
+            duration: 0.2
+        }
+    }
+};
+
+const iconVariants = {
+    hidden: { scale: 0, rotate: -180 },
+    visible: {
+        scale: 1,
+        rotate: 0,
+        transition: {
+            type: 'spring' as const,
+            stiffness: 200,
+            damping: 15,
+            delay: 0.1
+        }
+    }
+};
 
 const Dialog: React.FC<DialogProps> = ({
     isOpen,
@@ -47,19 +94,18 @@ const Dialog: React.FC<DialogProps> = ({
         }
     }, [isOpen]);
 
-    if (!isOpen) return null;
-
     const getIcon = () => {
+        const iconProps = { className: "w-12 h-12" };
         switch (type) {
             case 'success':
-                return <CheckCircle className="w-12 h-12 text-green-500" />;
+                return <CheckCircle {...iconProps} className="w-12 h-12 text-green-500" />;
             case 'warning':
             case 'confirm':
-                return <AlertTriangle className="w-12 h-12 text-amber-500" />;
+                return <AlertTriangle {...iconProps} className="w-12 h-12 text-amber-500" />;
             case 'error':
-                return <AlertCircle className="w-12 h-12 text-red-500" />;
+                return <AlertCircle {...iconProps} className="w-12 h-12 text-red-500" />;
             default:
-                return <Info className="w-12 h-12 text-blue-500" />;
+                return <Info {...iconProps} className="w-12 h-12 text-blue-500" />;
         }
     };
 
@@ -85,67 +131,106 @@ const Dialog: React.FC<DialogProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-            {/* Backdrop */}
-            <div 
-                className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fadeIn"
-                onClick={onClose}
-            />
-            
-            {/* Dialog */}
-            <div 
-                ref={dialogRef}
-                tabIndex={-1}
-                className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full transform animate-scaleIn overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Close button */}
-                <button
-                    onClick={onClose}
-                    className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
-                >
-                    <X size={20} />
-                </button>
+        <AnimatePresence>
+            {isOpen && (
+                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+                    {/* Backdrop */}
+                    <motion.div
+                        variants={backdropVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        transition={{ duration: 0.2 }}
+                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        onClick={onClose}
+                    />
 
-                {/* Content */}
-                <div className="p-6 pt-8 text-center">
-                    {/* Icon */}
-                    <div className="flex justify-center mb-4">
-                        {getIcon()}
-                    </div>
-
-                    {/* Title */}
-                    {title && (
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                            {title}
-                        </h3>
-                    )}
-
-                    {/* Message */}
-                    <p className="text-gray-600 mb-6 whitespace-pre-wrap">
-                        {message}
-                    </p>
-
-                    {/* Actions */}
-                    <div className={`flex gap-3 ${showCancel || type === 'confirm' ? 'justify-center' : 'justify-center'}`}>
-                        {(showCancel || type === 'confirm') && (
-                            <button
-                                onClick={onClose}
-                                className="px-6 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
-                            >
-                                {cancelText}
-                            </button>
-                        )}
-                        <button
-                            onClick={handleConfirm}
-                            className={`px-6 py-2.5 rounded-xl text-white font-medium transition-colors focus:outline-none focus:ring-2 ${getButtonColor()}`}
+                    {/* Dialog */}
+                    <motion.div
+                        ref={dialogRef}
+                        tabIndex={-1}
+                        variants={dialogVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Close button */}
+                        <motion.button
+                            onClick={onClose}
+                            className="absolute top-4 right-4 p-1 rounded-full hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                            whileHover={{ scale: 1.1, rotate: 90 }}
+                            whileTap={{ scale: 0.9 }}
                         >
-                            {confirmText}
-                        </button>
-                    </div>
+                            <X size={20} />
+                        </motion.button>
+
+                        {/* Content */}
+                        <div className="p-6 pt-8 text-center">
+                            {/* Icon */}
+                            <motion.div
+                                className="flex justify-center mb-4"
+                                variants={iconVariants}
+                                initial="hidden"
+                                animate="visible"
+                            >
+                                {getIcon()}
+                            </motion.div>
+
+                            {/* Title */}
+                            {title && (
+                                <motion.h3
+                                    className="text-xl font-semibold text-gray-900 mb-2"
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.15 }}
+                                >
+                                    {title}
+                                </motion.h3>
+                            )}
+
+                            {/* Message */}
+                            <motion.p
+                                className="text-gray-600 mb-6 whitespace-pre-wrap"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 }}
+                            >
+                                {message}
+                            </motion.p>
+
+                            {/* Actions */}
+                            <motion.div
+                                className={`flex gap-3 ${showCancel || type === 'confirm' ? 'justify-center' : 'justify-center'}`}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.25 }}
+                            >
+                                {(showCancel || type === 'confirm') && (
+                                    <motion.button
+                                        onClick={onClose}
+                                        className="px-6 py-2.5 rounded-xl bg-gray-100 text-gray-700 font-medium hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                    >
+                                        {cancelText}
+                                    </motion.button>
+                                )}
+                                <motion.button
+                                    onClick={handleConfirm}
+                                    className={`px-6 py-2.5 rounded-xl text-white font-medium transition-colors focus:outline-none focus:ring-2 ${getButtonColor()}`}
+                                    whileHover={{ scale: 1.02 }}
+                                    whileTap={{ scale: 0.98 }}
+                                >
+                                    {confirmText}
+                                </motion.button>
+                            </motion.div>
+                        </div>
+                    </motion.div>
                 </div>
-            </div>
-        </div>
+            )}
+        </AnimatePresence>
     );
 };
 

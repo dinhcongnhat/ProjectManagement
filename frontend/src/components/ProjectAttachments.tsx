@@ -10,6 +10,8 @@ import type { UploadFile } from './ui/UploadProgressDialog';
 import { FileDownloadButton } from './ui/DownloadOptions';
 import { FilePickerDialog } from './ui/FilePickerDialog';
 import type { SelectedFile } from './ui/FilePickerDialog';
+import { OnlyOfficeViewer } from './OnlyOfficeViewer';
+
 import { ProjectAttachmentViewer } from './ProjectAttachmentViewer';
 
 interface Attachment {
@@ -386,7 +388,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
         };
 
         return (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
                 <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                     <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                         <FolderOpen size={18} className={folderColor} />
@@ -674,12 +676,20 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
 
             {/* OnlyOffice Viewer / Image Viewer */}
             {viewingAttachment && (
-                <ProjectAttachmentViewer
-                    attachmentId={viewingAttachment.id}
-                    fileName={viewingAttachment.name}
-                    onClose={() => setViewingAttachment(null)}
-                    token={token || ''}
-                />
+                isOfficeFile(viewingAttachment.name) ? (
+                    <OnlyOfficeViewer
+                        attachmentId={viewingAttachment.id}
+                        onClose={() => setViewingAttachment(null)}
+                        token={token || ''}
+                    />
+                ) : (
+                    <ProjectAttachmentViewer
+                        attachmentId={viewingAttachment.id}
+                        fileName={viewingAttachment.name}
+                        onClose={() => setViewingAttachment(null)}
+                        token={token || ''}
+                    />
+                )
             )}
         </>
     );

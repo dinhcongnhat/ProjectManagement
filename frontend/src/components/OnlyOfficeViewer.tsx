@@ -3,7 +3,7 @@ import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../config/api';
 
 interface OnlyOfficeViewerProps {
-    projectId: number;
+    attachmentId: number;
     onClose: () => void;
     token: string;
 }
@@ -24,6 +24,7 @@ const isMobile = typeof window !== 'undefined' && (
 );
 
 // Singleton script loader - prevents multiple loads
+
 const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     // Return existing promise if already loading
     if (window._onlyofficeScriptLoading) {
@@ -51,7 +52,7 @@ const loadOnlyOfficeScript = (onlyofficeUrl: string): Promise<void> => {
     return window._onlyofficeScriptLoading;
 };
 
-export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewerProps) => {
+export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeViewerProps) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -80,7 +81,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
         const loadScript = async () => {
             try {
                 // First, check if file is supported and get OnlyOffice URL
-                const checkResponse = await fetch(`${API_URL}/onlyoffice/check/${projectId}`, {
+                const checkResponse = await fetch(`${API_URL}/onlyoffice/check/${attachmentId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -114,7 +115,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
                 editorInstanceRef.current = null;
             }
         };
-    }, [projectId, token]);
+    }, [attachmentId, token]);
 
     // Initialize editor when script is loaded
     useEffect(() => {
@@ -123,7 +124,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
         const initEditor = async () => {
             try {
                 // Get OnlyOffice configuration from backend
-                const response = await fetch(`${API_URL}/onlyoffice/config/${projectId}`, {
+                const response = await fetch(`${API_URL}/onlyoffice/config/${attachmentId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -134,10 +135,10 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
 
                 const data = await response.json();
 
-                // Add token to config with mobile optimizations
+                // Backend already returns fully signed config with token
+                // Just add mobile optimizations if needed
                 const configWithToken = {
                     ...data.config,
-                    token: data.token,
                     // Mobile-specific settings
                     ...(isMobile && {
                         width: '100%',
@@ -172,7 +173,7 @@ export const OnlyOfficeViewer = ({ projectId, onClose, token }: OnlyOfficeViewer
         };
 
         initEditor();
-    }, [scriptLoaded, projectId, token]);
+    }, [scriptLoaded, attachmentId, token]);
 
     return (
         <div className="fixed inset-0 z-[9999] bg-black flex flex-col">

@@ -494,8 +494,115 @@ export const sendTestEmail = async (toEmail: string): Promise<boolean> => {
     }
 };
 
+// Send task reminder email
+export const sendTaskReminderEmail = async (
+    toEmail: string,
+    userName: string,
+    taskId: number,
+    taskTitle: string,
+    reminderAt: Date
+): Promise<boolean> => {
+    if (!toEmail) return false;
+
+    try {
+        const taskUrl = `${FRONTEND_URL}/my-tasks`;
+        const formattedDate = reminderAt.toLocaleString('vi-VN', {
+            hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric'
+        });
+
+        const { data, error } = await resend.emails.send({
+            from: FROM_EMAIL,
+            to: toEmail,
+            subject: `[NHẮC NHỞ] Công việc "${taskTitle}"`,
+            html: `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nhắc nhở công việc</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #f0f2f5; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table cellpadding="0" cellspacing="0" border="0" width="600" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 35px 40px; text-align: center;">
+                            <img src="${LOGO_URL}" alt="JTSC Logo" style="height: 50px; margin-bottom: 15px;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.5px;">
+                                🔔 NHẮC NHỞ CÔNG VIỆC
+                            </h1>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px 45px;">
+                            <p style="color: #1e293b; font-size: 16px; line-height: 1.7; margin: 0 0 25px;">
+                                Kính gửi <strong>${userName}</strong>,
+                            </p>
+                            
+                            <p style="color: #475569; font-size: 15px; line-height: 1.7; margin: 0 0 25px;">
+                                Đây là thông báo nhắc nhở cho công việc bạn đã đặt lịch:
+                            </p>
+                            
+                            <!-- Task Card -->
+                            <div style="background-color: #fffbeb; border-radius: 12px; padding: 28px; border-left: 5px solid #f59e0b; margin-bottom: 25px;">
+                                <h2 style="color: #1e293b; margin: 0 0 15px; font-size: 18px; font-weight: 600;">
+                                    📌 ${taskTitle}
+                                </h2>
+                                <p style="color: #b45309; margin: 0; font-size: 14px; font-weight: 500;">
+                                    ⏰ Thời gian: ${formattedDate}
+                                </p>
+                            </div>
+                            
+                            <!-- CTA Button -->
+                            <div style="text-align: center;">
+                                <a href="${taskUrl}" style="display: inline-block; padding: 14px 35px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 14px; letter-spacing: 0.5px; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);">
+                                    XEM CÔNG VIỆC →
+                                </a>
+                            </div>
+                            
+                            <p style="color: #94a3b8; font-size: 13px; line-height: 1.6; margin: 30px 0 0; text-align: center;">
+                                Nếu bạn đã hoàn thành công việc này, hãy đánh dấu hoàn thành trên hệ thống.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #1e293b; padding: 25px 35px; text-align: center;">
+                            <p style="color: #64748b; font-size: 11px; margin: 0;">
+                                © ${new Date().getFullYear()} JTSC. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+            `
+        });
+
+        if (error) {
+            console.error('[EmailService] Failed to send task reminder email:', error);
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.error('[EmailService] Error sending task reminder email:', error);
+        return false;
+    }
+};
+
 export default {
     sendProjectAssignmentEmail,
     sendDeadlineReminderEmail,
+    sendTaskReminderEmail,
     sendTestEmail
 };
