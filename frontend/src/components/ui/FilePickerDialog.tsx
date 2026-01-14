@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FolderOpen, File, Loader2, ChevronRight, Home, X, FileText, Image, Film, Music, Archive, Check } from 'lucide-react';
+import { FolderOpen, File, Loader2, ChevronRight, Home, X, FileText, Image, Film, Music, Archive, Check, Users } from 'lucide-react';
 import { API_URL } from '../../config/api';
 
 interface Folder {
@@ -103,15 +103,43 @@ export const FilePickerDialog: React.FC<FilePickerDialogProps> = ({
     const [, setCurrentFolderId] = useState<number | null>(null);
     const [breadcrumbs, setBreadcrumbs] = useState<FolderBreadcrumb[]>([{ id: null, name: 'Thư mục gốc' }]);
     const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
+    const [activeTab, setActiveTab] = useState<'personal' | 'shared'>('personal');
+    const [sharedFolders, setSharedFolders] = useState<any[]>([]);
+    const [sharedFiles, setSharedFiles] = useState<FileItem[]>([]);
 
     useEffect(() => {
         if (isOpen) {
             setSelectedFiles([]);
             setCurrentFolderId(null);
             setBreadcrumbs([{ id: null, name: 'Thư mục gốc' }]);
+            setActiveTab('personal');
             fetchFoldersAndFiles(null);
+            fetchSharedWithMe();
         }
     }, [isOpen]);
+
+    const fetchSharedWithMe = async () => {
+        try {
+            const response = await fetch(`${API_URL}/folders/shared`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setSharedFolders(data.folders || []);
+                const fileList: FileItem[] = (data.files || []).map((f: any) => ({
+                    id: f.id,
+                    name: f.name,
+                    mimeType: f.fileType || f.mimeType || 'application/octet-stream',
+                    fileType: f.fileType || f.mimeType || 'application/octet-stream',
+                    fileSize: f.fileSize || f.size || 0,
+                    minioPath: f.minioPath
+                }));
+                setSharedFiles(fileList);
+            }
+        } catch (error) {
+            console.error('[FilePickerDialog] Error fetching shared:', error);
+        }
+    };
 
     const fetchFoldersAndFiles = async (parentId: number | null) => {
         setLoading(true);
@@ -243,57 +271,157 @@ export const FilePickerDialog: React.FC<FilePickerDialogProps> = ({
                     </button>
                 </div>
 
-                {/* Breadcrumbs */}
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-1 overflow-x-auto bg-gray-50">
-                    {breadcrumbs.map((crumb, index) => (
-                        <React.Fragment key={index}>
-                            {index > 0 && <ChevronRight size={16} className="text-gray-400 shrink-0" />}
-                            <button
-                                onClick={() => handleNavigateToBreadcrumb(index)}
-                                className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${index === breadcrumbs.length - 1
-                                    ? 'bg-blue-100 text-blue-700 font-medium'
-                                    : 'hover:bg-gray-200 text-gray-600'
-                                    }`}
-                            >
-                                {index === 0 ? <Home size={14} className="inline mr-1" /> : null}
-                                {crumb.name}
-                            </button>
-                        </React.Fragment>
-                    ))}
+                {/* Tab Switcher */}
+                <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 flex gap-2">
+                    <button
+                        onClick={() => {
+                            setActiveTab('personal');
+                            setBreadcrumbs([{ id: null, name: 'Thư mục gốc' }]);
+                            fetchFoldersAndFiles(null);
+                        }}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'personal'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                            }`}
+                    >
+                        <FolderOpen size={16} className="inline mr-1.5 -mt-0.5" />
+                        Thư mục cá nhân
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('shared')}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'shared'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                            }`}
+                    >
+                        <Users size={16} className="inline mr-1.5 -mt-0.5" />
+                        Được chia sẻ
+                    </button>
                 </div>
+
+                {/* Breadcrumbs (only for personal tab) */}
+                {activeTab === 'personal' && (
+                    <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-1 overflow-x-auto bg-gray-50">
+                        {breadcrumbs.map((crumb, index) => (
+                            <React.Fragment key={index}>
+                                {index > 0 && <ChevronRight size={16} className="text-gray-400 shrink-0" />}
+                                <button
+                                    onClick={() => handleNavigateToBreadcrumb(index)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${index === breadcrumbs.length - 1
+                                        ? 'bg-blue-100 text-blue-700 font-medium'
+                                        : 'hover:bg-gray-200 text-gray-600'
+                                        }`}
+                                >
+                                    {index === 0 ? <Home size={14} className="inline mr-1" /> : null}
+                                    {crumb.name}
+                                </button>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                )}
 
                 {/* Content */}
                 <div className="p-4 flex-1 overflow-y-auto bg-white">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-16">
-                            <div className="text-center">
-                                <Loader2 size={40} className="animate-spin text-blue-600 mx-auto mb-3" />
-                                <p className="text-gray-500 text-sm">Đang tải...</p>
+                    {activeTab === 'personal' ? (
+                        // Personal folders content
+                        loading ? (
+                            <div className="flex items-center justify-center py-16">
+                                <div className="text-center">
+                                    <Loader2 size={40} className="animate-spin text-blue-600 mx-auto mb-3" />
+                                    <p className="text-gray-500 text-sm">Đang tải...</p>
+                                </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {/* Folders */}
-                            {folders.map((folder) => (
-                                <div
-                                    key={`folder-${folder.id}`}
-                                    onClick={() => handleNavigateToFolder(folder)}
-                                    className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200 hover:border-amber-400 hover:bg-amber-100 cursor-pointer transition-all hover:shadow-md"
-                                >
-                                    <div className="w-10 h-10 rounded-lg bg-amber-200 flex items-center justify-center">
-                                        <FolderOpen size={22} className="text-amber-600" />
+                        ) : (
+                            <div className="space-y-2">
+                                {/* Folders */}
+                                {folders.map((folder) => (
+                                    <div
+                                        key={`folder-${folder.id}`}
+                                        onClick={() => handleNavigateToFolder(folder)}
+                                        className="flex items-center gap-3 p-3 bg-amber-50 rounded-xl border border-amber-200 hover:border-amber-400 hover:bg-amber-100 cursor-pointer transition-all hover:shadow-md"
+                                    >
+                                        <div className="w-10 h-10 rounded-lg bg-amber-200 flex items-center justify-center">
+                                            <FolderOpen size={22} className="text-amber-600" />
+                                        </div>
+                                        <span className="flex-1 font-medium text-gray-800">{folder.name}</span>
+                                        <ChevronRight size={20} className="text-amber-400" />
                                     </div>
-                                    <span className="flex-1 font-medium text-gray-800">{folder.name}</span>
-                                    <ChevronRight size={20} className="text-amber-400" />
+                                ))}
+
+                                {/* Files */}
+                                {files.map((file) => {
+                                    const isSelected = selectedFiles.some(f => f.id === file.id);
+                                    return (
+                                        <div
+                                            key={`file-${file.id}`}
+                                            onClick={() => handleToggleFile(file)}
+                                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all hover:shadow-md ${isSelected
+                                                ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
+                                                : 'bg-white border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                                                }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${isSelected ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                                                {getFileIcon(file.name, file.mimeType)}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-medium text-gray-800 truncate">{file.name}</p>
+                                                <p className="text-xs text-gray-500">{formatFileSize(file.fileSize)}</p>
+                                            </div>
+                                            {isSelected && (
+                                                <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+                                                    <Check size={16} className="text-white" />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Empty state */}
+                                {folders.length === 0 && files.length === 0 && (
+                                    <div className="text-center py-16 text-gray-400">
+                                        <FolderOpen size={56} className="mx-auto mb-4 opacity-40" />
+                                        <p className="text-lg font-medium text-gray-500">Thư mục trống</p>
+                                        <p className="text-sm mt-1">Không có file nào trong thư mục này</p>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    ) : (
+                        // Shared folders/files content
+                        <div className="space-y-2">
+                            {/* Shared Folders */}
+                            {sharedFolders.map((folder: any) => (
+                                <div
+                                    key={`shared-folder-${folder.id}`}
+                                    onClick={() => {
+                                        setActiveTab('personal');
+                                        setBreadcrumbs([
+                                            { id: null, name: 'Thư mục gốc' },
+                                            { id: folder.id, name: folder.name }
+                                        ]);
+                                        fetchFoldersAndFiles(folder.id);
+                                    }}
+                                    className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl border border-purple-200 hover:border-purple-400 hover:bg-purple-100 cursor-pointer transition-all hover:shadow-md"
+                                >
+                                    <div className="w-10 h-10 rounded-lg bg-purple-200 flex items-center justify-center">
+                                        <FolderOpen size={22} className="text-purple-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <span className="font-medium text-gray-800">{folder.name}</span>
+                                        {folder.ownerName && (
+                                            <p className="text-xs text-gray-500">Chia sẻ bởi {folder.ownerName}</p>
+                                        )}
+                                    </div>
+                                    <ChevronRight size={20} className="text-purple-400" />
                                 </div>
                             ))}
 
-                            {/* Files */}
-                            {files.map((file) => {
+                            {/* Shared Files */}
+                            {sharedFiles.map((file) => {
                                 const isSelected = selectedFiles.some(f => f.id === file.id);
                                 return (
                                     <div
-                                        key={`file-${file.id}`}
+                                        key={`shared-file-${file.id}`}
                                         onClick={() => handleToggleFile(file)}
                                         className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all hover:shadow-md ${isSelected
                                             ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-200'
@@ -316,12 +444,12 @@ export const FilePickerDialog: React.FC<FilePickerDialogProps> = ({
                                 );
                             })}
 
-                            {/* Empty state */}
-                            {folders.length === 0 && files.length === 0 && (
+                            {/* Empty state for shared */}
+                            {sharedFolders.length === 0 && sharedFiles.length === 0 && (
                                 <div className="text-center py-16 text-gray-400">
-                                    <FolderOpen size={56} className="mx-auto mb-4 opacity-40" />
-                                    <p className="text-lg font-medium text-gray-500">Thư mục trống</p>
-                                    <p className="text-sm mt-1">Không có file nào trong thư mục này</p>
+                                    <Users size={56} className="mx-auto mb-4 opacity-40" />
+                                    <p className="text-lg font-medium text-gray-500">Chưa có nội dung được chia sẻ</p>
+                                    <p className="text-sm mt-1">Các thư mục và tệp được chia sẻ với bạn sẽ hiển thị ở đây</p>
                                 </div>
                             )}
                         </div>

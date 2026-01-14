@@ -43,6 +43,7 @@ enum MessageType {
   VOICE
   FILE
   IMAGE
+  VIDEO
   TEXT_WITH_FILE
   LINK
 }
@@ -157,6 +158,14 @@ model Project {
   priority       ProjectPriority @default(NORMAL)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+
+  // New fields for sub-project (công việc con)
+  documentNumber    String?   // Số hiệu văn bản
+  documentDate      DateTime? // Ngày văn bản
+  implementingUnit  String?   // Đơn vị thực hiện
+  appraisalUnit     String?   // Đơn vị thẩm định
+  approver          String?   // Người phê duyệt
+  productType       String?   // Loại sản phẩm
 
   managerId Int
   manager   User @relation("ProjectManager", fields: [managerId], references: [id])

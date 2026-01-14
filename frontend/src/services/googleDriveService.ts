@@ -16,10 +16,12 @@ export const googleDriveService = {
         return response.data;
     },
 
-    listFiles: async (folderId?: string, q?: string) => {
+    listFiles: async (folderId?: string, q?: string, starred?: boolean, sharedWithMe?: boolean) => {
         const params: Record<string, string> = {};
         if (folderId) params.folderId = folderId;
         if (q) params.q = q;
+        if (starred) params.starred = 'true';
+        if (sharedWithMe) params.sharedWithMe = 'true';
 
         const response = await api.get('/drive/files', { params });
         return response.data;
@@ -47,5 +49,10 @@ export const googleDriveService = {
 
     disconnect: async () => {
         await api.delete('/drive/disconnect');
+    },
+
+    toggleStar: async (fileId: string, starred: boolean) => {
+        const response = await api.patch(`/drive/files/${fileId}/star`, { starred });
+        return response.data;
     }
 };

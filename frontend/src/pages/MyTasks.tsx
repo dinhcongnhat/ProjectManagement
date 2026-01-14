@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X, StickyNote, MessageSquare } from 'lucide-react';
-import { DndContext, useDraggable, useDroppable, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, useDraggable, useDroppable, type DragEndEvent, DragOverlay, type DragStartEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
@@ -28,14 +29,26 @@ const NoteButton = ({ task, onOpenNote, formatDateTime }: {
     onOpenNote: (task: Task) => void;
     formatDateTime: (date: string | null) => string;
 }) => {
-    const [showTooltip, setShowTooltip] = useState(false);
+    const [tooltipPos, setTooltipPos] = useState<{ x: number, y: number } | null>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+
+    const handleMouseEnter = () => {
+        if (buttonRef.current && task.note) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setTooltipPos({
+                x: rect.left + rect.width / 2,
+                y: rect.top
+            });
+        }
+    };
 
     return (
-        <div className="relative">
+        <>
             <button
+                ref={buttonRef}
                 onClick={(e) => { e.stopPropagation(); onOpenNote(task); }}
-                onMouseEnter={() => setShowTooltip(true)}
-                onMouseLeave={() => setShowTooltip(false)}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={() => setTooltipPos(null)}
                 onPointerDown={(e) => e.stopPropagation()}
                 className={`p-1.5 rounded touch-target transition-colors ${task.note ? 'text-amber-500 hover:text-amber-600 hover:bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-gray-100'}`}
                 title="Ghi chú"
@@ -43,38 +56,83 @@ const NoteButton = ({ task, onOpenNote, formatDateTime }: {
                 <MessageSquare size={14} />
             </button>
 
-            {/* Tooltip popup khi hover */}
-            {showTooltip && task.note && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
-                    <div className="bg-gray-900 text-white text-xs rounded-lg py-2 px-3 max-w-xs shadow-lg">
-                        <div className="font-medium mb-1 text-amber-300">📝 Ghi chú:</div>
-                        <p className="whitespace-pre-wrap break-words">{task.note.length > 150 ? task.note.substring(0, 150) + '...' : task.note}</p>
+            {tooltipPos && task.note && createPortal(
+                <div
+                    className="fixed z-[99999] pointer-events-none transform -translate-x-1/2 -translate-y-full pb-2 animate-in fade-in zoom-in-95 duration-200"
+                    style={{ left: tooltipPos.x, top: tooltipPos.y }}
+                >
+                    <div className="bg-gray-900/95 backdrop-blur text-white text-xs rounded-lg py-2.5 px-3 max-w-xs shadow-2xl border border-gray-700/50">
+                        <div className="font-bold mb-1.5 text-amber-400 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                            <StickyNote size={12} />
+                            Ghi chú cá nhân
+                        </div>
+                        <p className="whitespace-pre-wrap break-words leading-relaxed text-gray-100 font-medium">
+                            {task.note.length > 300 ? task.note.substring(0, 300) + '...' : task.note}
+                        </p>
                         {task.lastNoteAt && (
-                            <p className="text-gray-400 text-[10px] mt-1 border-t border-gray-700 pt-1">
-                                Cập nhật: {formatDateTime(task.lastNoteAt)}
-                            </p>
+                            <div className="text-gray-400 text-[10px] mt-2 border-t border-gray-700/50 pt-1.5 flex items-center gap-1.5">
+                                <Clock size={10} />
+                                <span>Cập nhật: {formatDateTime(task.lastNoteAt)}</span>
+                            </div>
                         )}
                         {/* Arrow */}
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px">
-                            <div className="border-8 border-transparent border-t-gray-900"></div>
+                        <div className="absolute top-full left-1/2 -translate-x-1/2">
+                            <div className="border-[6px] border-transparent border-t-gray-900/95"></div>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
+        </>
+    );
+};
+
+const TaskCard = ({ task, onEdit, onDelete, onOpenNote, formatDateTime, formatDateTimeSimple }: any) => {
+    if (!task) return null;
+
+    return (
+        <div className="bg-white dark:bg-gray-800 p-2.5 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 group relative cursor-grab">
+            <h4 className="font-medium text-gray-900 dark:text-white text-sm pr-16 truncate">{task.title}</h4>
+            <div className="flex items-center gap-1.5 mt-1">
+                <span className={`text-[10px] px-1 py-0.5 rounded ${task.type === 'PERSONAL' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                    {task.type === 'PERSONAL' ? 'Cá nhân' : 'Giao'}
+                </span>
+                {task.reminderAt && (
+                    <span className="text-[10px] text-purple-500 flex items-center gap-0.5">
+                        <Clock size={8} />
+                        {formatDateTimeSimple(task.reminderAt)}
+                    </span>
+                )}
+            </div>
+            {/* Action buttons */}
+            <div className="absolute top-1.5 right-1.5 flex gap-0.5">
+                <NoteButton task={task} onOpenNote={onOpenNote} formatDateTime={formatDateTime} />
+                {task.type === 'PERSONAL' && (
+                    <>
+                        <button onClick={(e) => { e.stopPropagation(); onEdit(task); }} className="p-1 text-gray-400 hover:text-blue-600 rounded" onPointerDown={(e) => e.stopPropagation()}>
+                            <Pencil size={12} />
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="p-1 text-gray-400 hover:text-red-600 rounded" onPointerDown={(e) => e.stopPropagation()}>
+                            <Trash2 size={12} />
+                        </button>
+                    </>
+                )}
+            </div>
         </div>
     );
 };
 
 const DraggableTask = ({ task, children }: { task: Task, children: React.ReactNode }) => {
-    const { attributes, listeners, setNodeRef, transform } = useDraggable({
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: task.id.toString(),
     });
     const style = {
         transform: CSS.Translate.toString(transform),
+        opacity: isDragging ? 0.3 : 1,
     };
 
     return (
-        <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+        <div ref={setNodeRef} style={style} className="relative touch-none" {...listeners} {...attributes}>
             {children}
         </div>
     );
@@ -86,14 +144,23 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
     });
 
     const columnConfig = {
-        'TODO': { bg: 'bg-gradient-to-b from-blue-50 to-slate-50', border: 'border-blue-200/50' },
-        'IN_PROGRESS': { bg: 'bg-gradient-to-b from-amber-50 to-orange-50/50', border: 'border-amber-200/50' },
-        'COMPLETED': { bg: 'bg-gradient-to-b from-emerald-50 to-green-50/50', border: 'border-emerald-200/50' }
+        'TODO': {
+            bg: 'bg-blue-50/80 dark:bg-blue-900/20',
+            border: 'border-blue-200/50 dark:border-blue-700/50'
+        },
+        'IN_PROGRESS': {
+            bg: 'bg-amber-50/80 dark:bg-amber-900/20',
+            border: 'border-amber-200/50 dark:border-amber-700/50'
+        },
+        'COMPLETED': {
+            bg: 'bg-emerald-50/80 dark:bg-emerald-900/20',
+            border: 'border-emerald-200/50 dark:border-emerald-700/50'
+        }
     };
     const config = columnConfig[id as keyof typeof columnConfig] || columnConfig['TODO'];
 
     return (
-        <div ref={setNodeRef} className={`${config.bg} p-4 rounded-2xl flex flex-col gap-3 h-full min-h-[200px] border ${config.border}`}>
+        <div ref={setNodeRef} className={`${config.bg} ${config.border} p-2.5 sm:p-3 rounded-xl flex flex-col border`}>
             {children}
         </div>
     );
@@ -101,12 +168,14 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
 
 const MyTasks = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [view, setView] = useState<'list' | 'kanban' | 'gantt'>('list');
+    const [activeId, setActiveId] = useState<string | null>(null);
+    const [view, setView] = useState<'list' | 'kanban' | 'gantt'>('kanban'); // Default to kanban for mobile
     const [showModal, setShowModal] = useState(false);
     const [showNoteModal, setShowNoteModal] = useState(false);
     const [selectedTaskForNote, setSelectedTaskForNote] = useState<Task | null>(null);
     const [noteContent, setNoteContent] = useState('');
     const [editingTask, setEditingTask] = useState<Task | null>(null);
+    const [timeFilter, setTimeFilter] = useState<'all' | 'week' | 'month'>('all'); // Time filter
     const { token } = useAuth();
     const { showConfirm } = useDialog();
     const [formData, setFormData] = useState({
@@ -133,6 +202,36 @@ const MyTasks = () => {
     useEffect(() => {
         if (token) fetchTasks();
     }, [token, fetchTasks]);
+
+    // Filter tasks by time
+    const getFilteredTasks = useCallback(() => {
+        if (timeFilter === 'all') return tasks;
+
+        const now = new Date();
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay() + 1); // Monday
+        startOfWeek.setHours(0, 0, 0, 0);
+
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        endOfWeek.setHours(23, 59, 59, 999);
+
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        return tasks.filter(task => {
+            const taskDate = task.reminderAt ? new Date(task.reminderAt) : new Date(task.createdAt);
+
+            if (timeFilter === 'week') {
+                return taskDate >= startOfWeek && taskDate <= endOfWeek;
+            } else if (timeFilter === 'month') {
+                return taskDate >= startOfMonth && taskDate <= endOfMonth;
+            }
+            return true;
+        });
+    }, [tasks, timeFilter]);
+
+    const filteredTasks = getFilteredTasks();
 
     const resetForm = () => {
         setFormData({ title: '', description: '', startDate: '', endDate: '', reminderAt: '', type: 'PERSONAL' });
@@ -303,6 +402,10 @@ const MyTasks = () => {
         }
     };
 
+    const handleDragStart = (event: DragStartEvent) => {
+        setActiveId(event.active.id as string);
+    };
+
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
 
@@ -310,7 +413,7 @@ const MyTasks = () => {
             const taskId = Number(active.id);
             const newStatus = over.id as string;
 
-            const task = tasks.find(t => t.id === taskId);
+            const task = filteredTasks.find(t => t.id === taskId);
             if (task && task.status !== newStatus) {
                 updateStatus(taskId, newStatus);
             }
@@ -318,61 +421,73 @@ const MyTasks = () => {
     };
 
     const stats = {
-        todo: tasks.filter(t => t.status === 'TODO').length,
-        inProgress: tasks.filter(t => t.status === 'IN_PROGRESS').length,
-        completed: tasks.filter(t => t.status === 'COMPLETED').length,
+        todo: filteredTasks.filter(t => t.status === 'TODO').length,
+        inProgress: filteredTasks.filter(t => t.status === 'IN_PROGRESS').length,
+        completed: filteredTasks.filter(t => t.status === 'COMPLETED').length,
     };
 
     return (
         <div className="space-y-4 sm:space-y-6">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                 <div>
-                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900">Công việc của tôi</h2>
-                    <p className="text-gray-500 mt-0.5 sm:mt-1 text-sm sm:text-base">Quản lý và theo dõi các nhiệm vụ</p>
+                    <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">Công việc của tôi</h2>
+                    <p className="text-gray-500 dark:text-gray-400 mt-0.5 sm:mt-1 text-sm sm:text-base">Quản lý và theo dõi các nhiệm vụ</p>
                 </div>
-                <div className="flex gap-2">
+
+                {/* Controls - Right side */}
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Time Filter - Compact */}
+                    <select
+                        value={timeFilter}
+                        onChange={(e) => setTimeFilter(e.target.value as 'all' | 'week' | 'month')}
+                        className="text-xs px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        <option value="all">Tất cả</option>
+                        <option value="week">Tuần này</option>
+                        <option value="month">Tháng này</option>
+                    </select>
+
                     {/* View Toggle */}
-                    <div className="flex bg-white rounded-lg sm:rounded-xl border border-gray-200 p-0.5 sm:p-1 shadow-lg shadow-gray-200/50">
+                    <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-0.5">
                         <button
                             onClick={() => setView('list')}
-                            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium transition-all ${view === 'list'
-                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
-                                : 'text-gray-600 hover:bg-gray-100'
+                            className={`p-1.5 rounded-md transition-all ${view === 'list'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
                                 }`}
-                            title="Xem dạng danh sách"
+                            title="Danh sách"
                         >
-                            <List size={16} className="sm:w-[18px] sm:h-[18px]" />
-                            <span className="hidden sm:inline">List</span>
+                            <List size={16} />
                         </button>
                         <button
                             onClick={() => setView('kanban')}
-                            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium transition-all ${view === 'kanban'
-                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
-                                : 'text-gray-600 hover:bg-gray-100'
+                            className={`p-1.5 rounded-md transition-all ${view === 'kanban'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
                                 }`}
-                            title="Xem dạng Kanban"
+                            title="Kanban"
                         >
-                            <Layout size={16} className="sm:w-[18px] sm:h-[18px]" />
-                            <span className="hidden sm:inline">Kanban</span>
+                            <Layout size={16} />
                         </button>
                         <button
                             onClick={() => setView('gantt')}
-                            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-md sm:rounded-lg text-xs sm:text-sm font-medium transition-all ${view === 'gantt'
-                                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
-                                : 'text-gray-600 hover:bg-gray-100'
+                            className={`p-1.5 rounded-md transition-all ${view === 'gantt'
+                                ? 'bg-blue-600 text-white'
+                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
                                 }`}
-                            title="Xem dạng Gantt"
+                            title="Gantt"
                         >
-                            <Calendar size={16} className="sm:w-[18px] sm:h-[18px]" />
-                            <span className="hidden sm:inline">Gantt</span>
+                            <Calendar size={16} />
                         </button>
                     </div>
+
+                    {/* Add Button */}
                     <button
                         onClick={() => { resetForm(); setShowModal(true); }}
-                        className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg sm:rounded-xl hover:from-blue-700 hover:to-indigo-700 text-xs sm:text-sm font-medium shadow-lg shadow-blue-500/25 transition-all active:scale-95"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium transition-all active:scale-95"
                     >
-                        <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                        <Plus size={14} />
                         <span>Thêm</span>
                     </button>
                 </div>
@@ -380,32 +495,32 @@ const MyTasks = () => {
 
             {/* Stats Grid */}
             <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
-                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
+                <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none group">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
                         <div className="p-2 sm:p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-blue-500/30 w-fit">
                             <CheckSquare size={16} className="sm:w-5 sm:h-5" />
                         </div>
-                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-2 sm:mt-0">{stats.todo}</span>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-0">{stats.todo}</span>
                     </div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500">Cần làm</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Cần làm</p>
                 </div>
-                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
+                <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none group">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
                         <div className="p-2 sm:p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-orange-500/30 w-fit">
                             <Clock size={16} className="sm:w-5 sm:h-5" />
                         </div>
-                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-2 sm:mt-0">{stats.inProgress}</span>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-0">{stats.inProgress}</span>
                     </div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500">Đang làm</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Đang làm</p>
                 </div>
-                <div className="bg-white p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 group">
+                <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none group">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
                         <div className="p-2 sm:p-2.5 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-green-500/30 w-fit">
                             <AlertCircle size={16} className="sm:w-5 sm:h-5" />
                         </div>
-                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mt-2 sm:mt-0">{stats.completed}</span>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-0">{stats.completed}</span>
                     </div>
-                    <p className="text-xs sm:text-sm font-medium text-gray-500">Xong</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Xong</p>
                 </div>
             </div>
 
@@ -492,71 +607,54 @@ const MyTasks = () => {
             )}
 
             {view === 'kanban' && (
-                <DndContext onDragEnd={handleDragEnd}>
-                    {/* Mobile: Vertical stack, Desktop: 3 columns */}
-                    <div className="flex flex-col lg:grid lg:grid-cols-3 gap-4 lg:gap-6 lg:h-[500px]">
+                <DndContext onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
+                    {/* Vertical columns layout */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                         {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
                             <DroppableColumn key={status} id={status}>
                                 <div className="flex items-center justify-between mb-2">
-                                    <h3 className="font-bold text-gray-700">
+                                    <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-200">
                                         {status === 'TODO' ? '📋 Cần làm' : status === 'IN_PROGRESS' ? '🔄 Đang làm' : '✅ Hoàn thành'}
                                     </h3>
-                                    <span className="text-sm font-medium text-gray-500 bg-white px-2 py-0.5 rounded-full">
-                                        {tasks.filter(t => t.status === status).length}
+                                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
+                                        {filteredTasks.filter(t => t.status === status).length}
                                     </span>
                                 </div>
-                                {tasks.filter(t => t.status === status).map(task => (
-                                    <DraggableTask key={task.id} task={task}>
-                                        <div className="bg-white p-3 lg:p-4 rounded-lg shadow-sm border border-gray-200 group relative cursor-move hover:shadow-md transition-shadow">
-                                            <h4 className="font-medium text-gray-900 text-sm lg:text-base pr-12 lg:pr-16">{task.title}</h4>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <p className="text-xs text-gray-500">{task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}</p>
-                                                {task.reminderAt && (
-                                                    <div className="text-xs text-purple-600 flex items-center gap-1 bg-purple-50 px-1 rounded">
-                                                        <Clock size={10} />
-                                                        <span className="truncate max-w-[80px]">{formatDateTimeSimple(task.reminderAt)}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Note indicator */}
-                                            {task.note && (
-                                                <div className="mt-2 text-xs text-amber-600 flex items-center gap-1">
-                                                    <StickyNote size={12} />
-                                                    <span className="truncate">Có ghi chú</span>
-                                                </div>
-                                            )}
-
-                                            {/* Action buttons */}
-                                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
-                                                {task.type === 'PERSONAL' && (
-                                                    <>
-                                                        <button onClick={(e) => { e.stopPropagation(); openEditModal(task); }} className="p-1 text-gray-400 hover:text-blue-600" onPointerDown={(e) => e.stopPropagation()} title="Chỉnh sửa">
-                                                            <Pencil size={14} />
-                                                        </button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-600" onPointerDown={(e) => e.stopPropagation()} title="Xóa">
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-
-                                            <div className="mt-3 flex justify-between items-center">
-                                                <span className="text-xs text-gray-400">{formatDateTime(task.createdAt).split(' ')[0]}</span>
-                                                <span className={`text-xs px-2 py-1 rounded-full ${task.status === 'TODO' ? 'bg-gray-100 text-gray-600' :
-                                                    task.status === 'IN_PROGRESS' ? 'bg-orange-100 text-orange-600' :
-                                                        'bg-green-100 text-green-600'
-                                                    }`}>
-                                                    {task.status === 'TODO' ? 'Todo' : task.status === 'IN_PROGRESS' ? 'Đang làm' : 'Xong'}
-                                                </span>
-                                            </div>
+                                <div className="space-y-2 max-h-48 sm:max-h-[400px] overflow-y-auto">
+                                    {filteredTasks.filter(t => t.status === status).length === 0 ? (
+                                        <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-xs">
+                                            Không có công việc
                                         </div>
-                                    </DraggableTask>
-                                ))}
+                                    ) : (
+                                        filteredTasks.filter(t => t.status === status).map(task => (
+                                            <DraggableTask key={task.id} task={task}>
+                                                <TaskCard
+                                                    task={task}
+                                                    onEdit={openEditModal}
+                                                    onDelete={handleDeleteTask}
+                                                    onOpenNote={openNoteModal}
+                                                    formatDateTime={formatDateTime}
+                                                    formatDateTimeSimple={formatDateTimeSimple}
+                                                />
+                                            </DraggableTask>
+                                        ))
+                                    )}
+                                </div>
                             </DroppableColumn>
                         ))}
                     </div>
+                    <DragOverlay>
+                        {activeId ? (
+                            <TaskCard
+                                task={filteredTasks.find(t => t.id.toString() === activeId)}
+                                onEdit={openEditModal}
+                                onDelete={handleDeleteTask}
+                                onOpenNote={openNoteModal}
+                                formatDateTime={formatDateTime}
+                                formatDateTimeSimple={formatDateTimeSimple}
+                            />
+                        ) : null}
+                    </DragOverlay>
                 </DndContext>
             )}
 

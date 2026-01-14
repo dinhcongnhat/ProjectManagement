@@ -58,7 +58,15 @@ const CreateProject = () => {
         cooperatorIds: [] as string[],  // Phối hợp thực hiện
         description: '',
         parentId: parentIdParam || '',
-        priority: 'NORMAL'
+        priority: 'NORMAL',
+        // New fields for sub-project
+        documentNumber: '',
+        documentDate: '',
+        implementingUnit: '',
+        appraisalUnit: '',
+        approver: '',
+        productType: '',
+        status: 'IN_PROGRESS' // Default status for sub-project
     });
 
     const CODE_PREFIX = 'DA2026';  // Tiền tố cố định
@@ -219,15 +227,25 @@ const CreateProject = () => {
                 investor: parentProject ? '' : formData.investor,
                 startDate: formData.startDate,
                 endDate: formData.endDate,
-                duration: parentProject ? '' : formData.duration,
+                duration: parentProject ? formData.duration : formData.duration,
                 group: parentProject ? '' : formData.group,
-                value: parentProject ? '' : formData.value,
+                value: parentProject ? formData.value : formData.value,
                 managerId: formData.managerId,
                 description: formData.description,
                 parentId: formData.parentId,
                 implementerIds: JSON.stringify(formData.implementerIds),
                 cooperatorIds: JSON.stringify(formData.cooperatorIds),
-                priority: formData.priority // Add priority
+                priority: formData.priority,
+                // Sub-project specific fields
+                ...(parentProject && {
+                    documentNumber: formData.documentNumber,
+                    documentDate: formData.documentDate || null,
+                    implementingUnit: formData.implementingUnit,
+                    appraisalUnit: formData.appraisalUnit,
+                    approver: formData.approver,
+                    productType: formData.productType,
+                    status: formData.status
+                })
             };
 
             // Create project first
@@ -337,14 +355,14 @@ const CreateProject = () => {
 
         return (
             <div className="space-y-2" ref={dropdownRef}>
-                <label className="block text-sm font-medium text-gray-700">{label}</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">{label}</label>
                 <div className="relative">
                     <div
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg cursor-pointer bg-white flex justify-between items-center min-h-[42px]"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-white dark:bg-gray-800 flex justify-between items-center min-h-[42px]"
                         onClick={() => setIsOpen(!isOpen)}
                     >
                         <div className="flex flex-wrap gap-1">
-                            {selectedIds.length === 0 && <span className="text-gray-400">-- Chọn {label.toLowerCase()} --</span>}
+                            {selectedIds.length === 0 && <span className="text-gray-400 dark:text-gray-500">-- Chọn {label.toLowerCase()} --</span>}
                             {selectedIds.map(id => {
                                 const user = users.find(u => String(u.id) === id);
                                 return user ? (
@@ -368,16 +386,16 @@ const CreateProject = () => {
                     </div>
 
                     {isOpen && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                             {users.map(user => {
                                 const isSelected = selectedIds.includes(String(user.id));
                                 return (
                                     <div
                                         key={user.id}
-                                        className={`px-3 py-2 cursor-pointer hover:bg-gray-50 flex items-center justify-between ${isSelected ? 'bg-blue-50' : ''}`}
+                                        className={`px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between ${isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
                                         onClick={() => handleMultiSelectChange(name, String(user.id))}
                                     >
-                                        <span className="text-sm text-gray-700">{user.name} ({user.role})</span>
+                                        <span className="text-sm text-gray-700 dark:text-gray-200">{user.name} ({user.role})</span>
                                         {isSelected && <Check size={16} className="text-blue-600" />}
                                     </div>
                                 );
@@ -508,7 +526,7 @@ const CreateProject = () => {
 
         return (
             <div className="space-y-3">
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                     Đính kèm
                 </label>
 
@@ -517,58 +535,58 @@ const CreateProject = () => {
                     <button
                         type="button"
                         onClick={() => setShowDropdown(!showDropdown)}
-                        className="w-full flex items-center justify-between px-4 py-3 border-2 border-dashed border-blue-200 rounded-lg bg-blue-50/30 hover:bg-blue-50/50 transition-colors"
+                        className="w-full flex items-center justify-between px-4 py-3 border-2 border-dashed border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50/30 dark:bg-blue-900/10 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors"
                     >
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-500">
                                 <CloudUpload size={20} />
                             </div>
-                            <span className="text-gray-600">Chọn phương thức đính kèm</span>
+                            <span className="text-gray-600 dark:text-gray-400">Chọn phương thức đính kèm</span>
                         </div>
                         <ChevronDown size={20} className={`text-gray-400 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
                     </button>
 
                     {showDropdown && (
-                        <div className="absolute z-[100] w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden bottom-full mb-1">
+                        <div className="absolute z-[100] w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden bottom-full mb-1">
                             <button
                                 type="button"
                                 onClick={() => {
                                     setShowDropdown(false);
                                     fileInputRef.current?.click();
                                 }}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
                             >
                                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
                                     <CloudUpload size={20} />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Tải lên từ thiết bị của bạn</p>
+                                    <p className="font-medium text-gray-800 dark:text-gray-200">Tải lên từ thiết bị của bạn</p>
                                     <p className="text-sm text-gray-500">Chọn tệp từ thiết bị của bạn</p>
                                 </div>
                             </button>
                             <button
                                 type="button"
                                 onClick={handleOpenFolderPicker}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left border-t dark:border-gray-700"
                             >
                                 <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center text-green-600">
                                     <FolderTree size={20} />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Chọn từ thư mục</p>
+                                    <p className="font-medium text-gray-800 dark:text-gray-200">Chọn từ thư mục</p>
                                     <p className="text-sm text-gray-500">Chọn tệp từ thư mục cá nhân của bạn</p>
                                 </div>
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setShowDriveBrowser(true)}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-t"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left border-t dark:border-gray-700"
                             >
                                 <div className="w-10 h-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center">
                                     <GoogleDriveIcon />
                                 </div>
                                 <div>
-                                    <p className="font-medium text-gray-800">Google Drive</p>
+                                    <p className="font-medium text-gray-800 dark:text-gray-200">Google Drive</p>
                                     <p className="text-sm text-gray-500">Chọn tệp từ Google Drive</p>
                                 </div>
                             </button>
@@ -590,7 +608,7 @@ const CreateProject = () => {
                     <div className="mt-3 space-y-2">
                         <div className="text-xs text-gray-500">{selectedFiles.length} tệp đã chọn</div>
                         {selectedFiles.map((file, index) => (
-                            <div key={index} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
+                            <div key={index} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 rounded-lg">
                                 <span className="flex-1 truncate">{file.name}</span>
                                 <span className="text-gray-400 text-xs shrink-0">{formatFileSize(file.size)}</span>
                                 <button
@@ -617,7 +635,7 @@ const CreateProject = () => {
                     <div className="mt-3 space-y-2">
                         <div className="text-xs text-gray-500">{selectedLinks.length} liên kết đã chọn</div>
                         {selectedLinks.map((link, index) => (
-                            <div key={`link-${index}`} className="flex items-center gap-2 text-sm text-gray-700 bg-white border border-gray-200 px-3 py-2 rounded-lg">
+                            <div key={`link-${index}`} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 rounded-lg">
                                 <span className="flex-1 truncate text-blue-600">{link.name}</span>
                                 <span className="text-gray-400 text-xs shrink-0">Link</span>
                                 <button
@@ -782,7 +800,7 @@ const CreateProject = () => {
 
             {/* Parent Project Info Banner */}
             {parentProject && (
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 lg:p-5 flex items-center gap-4">
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 lg:p-5 flex items-center gap-4">
                     <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-xl shadow-lg shadow-blue-500/30 shrink-0">
                         <FolderTree size={22} />
                     </div>
@@ -794,11 +812,11 @@ const CreateProject = () => {
             )}
 
             {/* Form */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 p-5 lg:p-8">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-gray-900/50 p-5 lg:p-8">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
                     {/* Basic Info */}
                     <div className="space-y-5">
-                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 pb-3 border-b border-gray-100">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 pb-3 border-b border-gray-100 dark:border-gray-700">
                             <span className="w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-full"></span>
                             {parentProject ? 'Thông tin công việc' : 'Thông tin chung'}
                         </h3>
@@ -806,9 +824,9 @@ const CreateProject = () => {
                         {/* Mã dự án - Chỉ hiển thị khi tạo dự án mới (không có parentProject) */}
                         {!parentProject && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Mã dự án <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Mã dự án <span className="text-red-500">*</span></label>
                                 <div className="flex">
-                                    <span className="inline-flex items-center px-3 py-2.5 border border-r-0 border-gray-300 bg-gray-100 text-gray-600 rounded-l-lg font-medium text-base">
+                                    <span className="inline-flex items-center px-3 py-2.5 border border-r-0 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-l-lg font-medium text-base">
                                         {CODE_PREFIX} -
                                     </span>
                                     <input
@@ -816,7 +834,7 @@ const CreateProject = () => {
                                         name="codeNumber"
                                         value={formData.codeNumber}
                                         onChange={handleChange}
-                                        className="flex-1 px-3 py-2.5 border border-gray-300 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                        className="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-r-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                         placeholder="01, 02, 03..."
                                         pattern="[0-9]*"
                                     />
@@ -826,7 +844,7 @@ const CreateProject = () => {
                         )}
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 {parentProject ? 'Tên công việc' : 'Tên dự án'} <span className="text-red-500">*</span>
                             </label>
                             <input
@@ -834,7 +852,7 @@ const CreateProject = () => {
                                 name="name"
                                 value={formData.name}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                 placeholder={parentProject ? 'Nhập tên công việc' : 'Nhập tên dự án'}
                             />
                         </div>
@@ -842,13 +860,13 @@ const CreateProject = () => {
                         {/* Chủ đầu tư - Chỉ hiển thị khi tạo dự án mới */}
                         {!parentProject && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Chủ đầu tư</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Chủ đầu tư</label>
                                 <input
                                     type="text"
                                     name="investor"
                                     value={formData.investor}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                     placeholder="Nhập tên chủ đầu tư"
                                 />
                             </div>
@@ -856,7 +874,7 @@ const CreateProject = () => {
 
                         <div className="grid grid-cols-2 gap-3 lg:gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày bắt đầu</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ngày bắt đầu</label>
                                 <div className="relative">
                                     <input
                                         type="date"
@@ -864,13 +882,13 @@ const CreateProject = () => {
                                         title="Chọn ngày bắt đầu"
                                         value={formData.startDate}
                                         onChange={handleChange}
-                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                     />
                                     <Calendar className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={16} />
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày kết thúc dự kiến</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ngày kết thúc dự kiến</label>
                                 <div className="relative">
                                     <input
                                         type="date"
@@ -878,7 +896,7 @@ const CreateProject = () => {
                                         title="Chọn ngày kết thúc dự kiến"
                                         value={formData.endDate}
                                         onChange={handleChange}
-                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                     />
                                     <Calendar className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={16} />
                                 </div>
@@ -888,7 +906,7 @@ const CreateProject = () => {
                         {/* Thời hạn - Chỉ hiển thị khi tạo dự án mới */}
                         {!parentProject && (
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Thời hạn (ngày)</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Thời hạn (ngày)</label>
                                 <input
                                     type="number"
                                     name="duration"
@@ -896,35 +914,138 @@ const CreateProject = () => {
                                     placeholder="Nhập số ngày"
                                     value={formData.duration}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                    className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                 />
                             </div>
                         )}
 
-                        {/* Mức độ ưu tiên - Chỉ hiển thị khi tạo dự án con */}
+                        {/* Các trường bổ sung cho dự án con */}
                         {parentProject && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Mức độ ưu tiên</label>
-                                <div className="relative">
-                                    <select
-                                        name="priority"
-                                        value={formData.priority}
-                                        onChange={handleChange}
-                                        className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base appearance-none ${formData.priority === 'HIGH' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-700 bg-white'
-                                            }`}
-                                    >
-                                        <option value="NORMAL" className="text-gray-700 bg-white">Công việc thường</option>
-                                        <option value="HIGH" className="text-red-600 bg-red-50">Công việc ưu tiên</option>
-                                    </select>
-                                    <ChevronDown className={`absolute right-3 top-3.5 pointer-events-none ${formData.priority === 'HIGH' ? 'text-red-400' : 'text-gray-400'}`} size={16} />
+                            <>
+                                <div className="grid grid-cols-2 gap-3 lg:gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Số hiệu văn bản</label>
+                                        <input
+                                            type="text"
+                                            name="documentNumber"
+                                            value={formData.documentNumber}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                            placeholder="VD: VB-2026-001"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Ngày văn bản</label>
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                name="documentDate"
+                                                value={formData.documentDate}
+                                                onChange={handleChange}
+                                                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                            />
+                                            <Calendar className="absolute right-3 top-3 text-gray-400 pointer-events-none" size={16} />
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Đơn vị thực hiện</label>
+                                    <input
+                                        type="text"
+                                        name="implementingUnit"
+                                        value={formData.implementingUnit}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                        placeholder="Nhập đơn vị thực hiện"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Đơn vị thẩm định</label>
+                                    <input
+                                        type="text"
+                                        name="appraisalUnit"
+                                        value={formData.appraisalUnit}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                        placeholder="Nhập đơn vị thẩm định"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Người phê duyệt</label>
+                                    <input
+                                        type="text"
+                                        name="approver"
+                                        value={formData.approver}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                        placeholder="Nhập người phê duyệt"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Thời hạn (ngày)</label>
+                                    <input
+                                        type="number"
+                                        name="duration"
+                                        value={formData.duration}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50"
+                                        readOnly
+                                        placeholder="Tự động tính"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3 lg:gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Loại sản phẩm</label>
+                                        <input
+                                            type="text"
+                                            name="productType"
+                                            value={formData.productType}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                            placeholder="VD: Báo cáo, Bản vẽ..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Giá trị (VNĐ)</label>
+                                        <input
+                                            type="text"
+                                            name="value"
+                                            value={formData.value}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Mức độ ưu tiên</label>
+                                    <div className="relative">
+                                        <select
+                                            name="priority"
+                                            value={formData.priority}
+                                            onChange={handleChange}
+                                            className={`w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base appearance-none ${formData.priority === 'HIGH' ? 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800'
+                                                }`}
+                                        >
+                                            <option value="NORMAL" className="text-gray-700 bg-white">Bình thường</option>
+                                            <option value="HIGH" className="text-red-600 bg-red-50">Ưu tiên cao</option>
+                                        </select>
+                                        <ChevronDown className={`absolute right-3 top-3.5 pointer-events-none ${formData.priority === 'HIGH' ? 'text-red-400' : 'text-gray-400'}`} size={16} />
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
 
                     {/* Additional Info */}
                     <div className="space-y-4">
-                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 border-b pb-2">
+                        <h3 className="text-base lg:text-lg font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-2">
                             {parentProject ? 'Phân quyền' : 'Chi tiết & Phân quyền'}
                         </h3>
 
@@ -932,33 +1053,33 @@ const CreateProject = () => {
                         {!parentProject && (
                             <>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Nhóm dự án</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Nhóm dự án</label>
                                     <input
                                         type="text"
                                         name="group"
                                         value={formData.group}
                                         onChange={handleChange}
                                         placeholder="Nhập nhóm dự án"
-                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Giá trị hợp đồng</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Giá trị hợp đồng</label>
                                     <input
                                         type="text"
                                         name="value"
                                         value={formData.value}
                                         onChange={handleChange}
                                         placeholder="Nhập giá trị hợp đồng"
-                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
+                                        className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                                     />
                                 </div>
                             </>
                         )}
 
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 {parentProject ? 'Quản trị công việc' : 'Quản trị dự án'} <span className="text-red-500">*</span>
                             </label>
                             <select
@@ -966,7 +1087,7 @@ const CreateProject = () => {
                                 title="Chọn quản trị"
                                 value={formData.managerId}
                                 onChange={handleChange}
-                                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white"
+                                className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-white dark:bg-gray-800 dark:text-white"
                             >
                                 <option value="">-- Chọn quản trị --</option>
                                 {users.map(user => (
@@ -990,7 +1111,7 @@ const CreateProject = () => {
                             onChange={handleChange}
                             rows={4}
                             placeholder={parentProject ? 'Nhập mô tả công việc' : 'Nhập mô tả dự án'}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base resize-none"
+                            className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-base resize-none bg-white dark:bg-gray-800 dark:text-white"
                         ></textarea>
                     </div>
 
@@ -999,11 +1120,11 @@ const CreateProject = () => {
                     </div>
                 </div>
 
-                <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-gray-200">
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-gray-200 dark:border-gray-700">
                     <button
                         onClick={() => navigate('/admin/projects')}
                         disabled={isCreating}
-                        className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 active:bg-gray-100 transition-colors touch-target disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors touch-target disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Hủy bỏ
                     </button>

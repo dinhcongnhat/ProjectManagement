@@ -37,12 +37,20 @@ const MainLayout = () => {
     };
 
     return (
-        <div className="flex min-h-screen bg-gray-50">
+        <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
             <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
 
             {/* Main Content */}
-            <div className="flex-1 lg:ml-60 flex flex-col min-h-screen overflow-x-hidden">
-                <Header onMenuClick={toggleSidebar} />
+            <div
+                className="flex-1 lg:ml-60 flex flex-col h-screen overflow-hidden"
+                style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+            >
+                {/* Fixed Header */}
+                <div className="shrink-0">
+                    <Header onMenuClick={toggleSidebar} />
+                </div>
+
+                {/* Scrollable Content */}
                 <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-auto pwa-safe-bottom max-w-full">
                     <AnimatePresence mode="wait">
                         <motion.div

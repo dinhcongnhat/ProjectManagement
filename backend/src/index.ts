@@ -106,8 +106,8 @@ app.use((req, res, next) => {
 });
 
 // Body parsing middleware - must be before routes
-app.use(express.json({ limit: '500mb' }));
-app.use(express.urlencoded({ extended: true, limit: '500mb' }));
+app.use(express.json({ limit: '1gb' }));
+app.use(express.urlencoded({ extended: true, limit: '1gb' }));
 
 // Ensure body is always an object for JSON requests
 app.use((req, res, next) => {

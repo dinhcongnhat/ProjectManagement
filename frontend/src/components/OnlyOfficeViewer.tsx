@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../config/api';
 
@@ -175,7 +176,7 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
         initEditor();
     }, [scriptLoaded, attachmentId, token]);
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
             {/* Close button - floating on top right */}
             <button
@@ -219,7 +220,8 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
                     style={{ display: loading || error ? 'none' : 'block', minHeight: '100vh' }}
                 />
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

@@ -27,7 +27,20 @@ import {
 } from '../controllers/chatController.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            cb(null, 'uploads/');
+        },
+        filename: (req, file, cb) => {
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            cb(null, file.fieldname + '-' + uniqueSuffix);
+        }
+    }),
+    limits: {
+        fileSize: 5 * 1024 * 1024 * 1024 // 5GB max file size
+    }
+});
 
 // Debug route to check if routing is working
 router.get('/test', (req, res) => {

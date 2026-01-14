@@ -14,59 +14,65 @@ import ProjectDetails from './pages/ProjectDetails';
 import UserWorkflow from './pages/UserWorkflow';
 import UserProfile from './pages/UserProfile';
 import UserFolders from './pages/UserFolders';
+import Activities from './pages/Activities';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import GoogleCallback from './pages/GoogleCallback';
 import { AuthProvider } from './context/AuthContext';
 import { DialogProvider } from './components/ui/Dialog';
 import { PushNotificationProvider } from './context/PushNotificationContext';
+import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
-    <AuthProvider>
-      <DialogProvider>
-        <PushNotificationProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/google-callback" element={<GoogleCallback />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <DialogProvider>
+          <PushNotificationProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/google-callback" element={<GoogleCallback />} />
 
-              {/* Admin Routes */}
-              <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
-                <Route path="/admin" element={<AdminLayout />}>
-                  <Route index element={<Dashboard />} />
-                  <Route path="projects" element={<ProjectTasks />} />
-                  <Route path="projects/:id" element={<ProjectDetailsAdmin />} />
-                  <Route path="users" element={<Users />} />
-                  <Route path="folders" element={<UserFolders />} />
-                  <Route path="workflow" element={<Workflow />} />
-                  <Route path="create-project" element={<CreateProject />} />
-                  <Route path="my-tasks" element={<MyTasks />} />
-                  <Route path="profile" element={<UserProfile />} />
-                  <Route path="settings" element={<Settings />} />
+                {/* Admin Routes */}
+                <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
+                  <Route path="/admin" element={<AdminLayout />}>
+                    <Route index element={<Dashboard />} />
+                    <Route path="projects" element={<ProjectTasks />} />
+                    <Route path="projects/:id" element={<ProjectDetailsAdmin />} />
+                    <Route path="users" element={<Users />} />
+                    <Route path="folders" element={<UserFolders />} />
+                    <Route path="workflow" element={<Workflow />} />
+                    <Route path="create-project" element={<CreateProject />} />
+                    <Route path="my-tasks" element={<MyTasks />} />
+                    <Route path="profile" element={<UserProfile />} />
+                    <Route path="settings" element={<Settings />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              {/* User Routes */}
-              <Route element={<ProtectedRoute allowedRoles={['USER', 'ADMIN']} />}>
-                <Route path="/" element={<MainLayout />}>
-                  <Route index element={<UserDashboard />} />
-                  <Route path="projects" element={<UserProjects />} />
-                  <Route path="projects/:id" element={<ProjectDetails />} />
-                  <Route path="my-tasks" element={<MyTasks />} />
-                  <Route path="folders" element={<UserFolders />} />
-                  <Route path="workflow" element={<UserWorkflow />} />
-                  <Route path="profile" element={<UserProfile />} />
-                  <Route path="settings" element={<Settings />} />
+                {/* User Routes */}
+                <Route element={<ProtectedRoute allowedRoles={['USER', 'ADMIN']} />}>
+                  <Route path="/" element={<MainLayout />}>
+                    <Route index element={<UserDashboard />} />
+                    <Route path="projects" element={<UserProjects />} />
+                    <Route path="projects/:id" element={<ProjectDetails />} />
+                    <Route path="my-tasks" element={<MyTasks />} />
+                    <Route path="folders" element={<UserFolders />} />
+                    <Route path="workflow" element={<UserWorkflow />} />
+                    <Route path="activities" element={<Activities />} />
+                    <Route path="profile" element={<UserProfile />} />
+                    <Route path="settings" element={<Settings />} />
+                  </Route>
                 </Route>
-              </Route>
-            </Routes>
-          </BrowserRouter>
-        </PushNotificationProvider>
-      </DialogProvider>
-    </AuthProvider>
+              </Routes>
+            </BrowserRouter>
+          </PushNotificationProvider>
+        </DialogProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
 export default App;
+

@@ -167,6 +167,23 @@ const createApi = () => {
             }
         },
 
+        patch: async (path: string, data?: any) => {
+            try {
+                const res = await fetchWithTimeout(`${API_URL}${path}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...getAuthHeaders()
+                    } as HeadersInit,
+                    body: JSON.stringify(data)
+                });
+                return handleResponse(res);
+            } catch (error: any) {
+                if (error.name === 'AbortError') throw { response: { status: 408, data: { message: 'Request timeout' } } };
+                throw error;
+            }
+        },
+
         delete: async (path: string) => {
             try {
                 const res = await fetchWithTimeout(`${API_URL}${path}`, {

@@ -16,14 +16,14 @@ interface Project {
 }
 
 const StatCard = ({ icon: Icon, label, value, gradient, shadowColor }: any) => (
-    <div className="bg-white p-3 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 hover:shadow-xl transition-all duration-300 group">
+    <div className="bg-white dark:bg-gray-800 p-3 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-gray-900/50 hover:shadow-xl transition-all duration-300 group">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-4">
             <div className={`p-2 sm:p-3 ${gradient} rounded-lg sm:rounded-xl text-white shadow-lg ${shadowColor} group-hover:scale-110 transition-transform w-fit`}>
                 <Icon size={18} className="sm:w-[22px] sm:h-[22px]" />
             </div>
-            <span className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mt-2 sm:mt-0">{value}</span>
+            <span className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-0">{value}</span>
         </div>
-        <h3 className="text-xs sm:text-sm font-medium text-gray-500">{label}</h3>
+        <h3 className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">{label}</h3>
     </div>
 );
 
@@ -33,7 +33,7 @@ const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?:
 
     return (
         <div className={`transition-all duration-300 ${isChild ? 'ml-0' : ''}`}>
-            <div className={`relative p-3 sm:p-4 bg-gray-50 rounded-lg sm:rounded-xl hover:bg-gray-100 transition-colors active:bg-gray-200 group border border-transparent ${isChild ? 'bg-white border-gray-100' : ''}`}>
+            <div className={`relative p-3 sm:p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg sm:rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:bg-gray-200 dark:active:bg-gray-600 group border border-transparent ${isChild ? 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700' : ''}`}>
                 <div className="flex justify-between items-center mb-2 sm:mb-3">
                     <div className="flex items-center gap-2 min-w-0 flex-1 mr-3">
                         {isChild && <CornerDownRight size={16} className="text-gray-400 shrink-0" />}
@@ -44,7 +44,7 @@ const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?:
                                     e.preventDefault();
                                     setIsExpanded(!isExpanded);
                                 }}
-                                className="p-1 hover:bg-gray-200 rounded text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0"
                             >
                                 {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                             </button>
@@ -52,8 +52,8 @@ const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?:
                         {!hasChildren && !isChild && <div className="w-6.5"></div>}
 
                         <Link to={`/admin/projects/${project.id}`} className="flex-1 min-w-0 group-hover:text-indigo-700 transition-colors">
-                            <span className="font-medium text-gray-800 text-sm sm:text-base truncate block">{project.name}</span>
-                            {project.code && <span className="text-xs text-gray-400 block truncate">{project.code}</span>}
+                            <span className="font-medium text-gray-800 dark:text-gray-200 text-sm sm:text-base truncate block">{project.name}</span>
+                            {project.code && <span className="text-xs text-gray-400 dark:text-gray-500 block truncate">{project.code}</span>}
                         </Link>
                     </div>
 
@@ -66,7 +66,7 @@ const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?:
                 </div>
 
                 {/* Progress Bar */}
-                <Link to={`/admin/projects/${project.id}`} className="block h-2 sm:h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                <Link to={`/admin/projects/${project.id}`} className="block h-2 sm:h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                     <div
                         className={`h-full rounded-full transition-all duration-500 ${project.status === 'COMPLETED' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
                             project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
@@ -79,7 +79,7 @@ const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?:
 
             {/* Sub Projects */}
             {hasChildren && isExpanded && (
-                <div className="mt-2 space-y-2 pl-4 border-l-2 border-gray-100 ml-3">
+                <div className="mt-2 space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700 ml-3">
                     {project.children?.map(child => (
                         <ProjectItem key={child.id} project={child} isChild={true} />
                     ))}
@@ -179,15 +179,15 @@ const Dashboard = () => {
             </div>
 
             {/* Project Progress */}
-            <div className="bg-white p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50">
+            <div className="bg-white dark:bg-gray-800 p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-gray-900/50">
                 <div className="flex items-center justify-between mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <FolderKanban size={18} className="text-indigo-600 sm:w-5 sm:h-5" />
+                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        <FolderKanban size={18} className="text-indigo-600 dark:text-indigo-400 sm:w-5 sm:h-5" />
                         Tiến độ dự án
                     </h3>
                     <Link
                         to="/admin/projects"
-                        className="text-xs sm:text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1 group"
+                        className="text-xs sm:text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium flex items-center gap-1 group"
                     >
                         <span className="hidden sm:inline">Xem tất cả</span>
                         <span className="sm:hidden">Xem</span>
@@ -196,11 +196,11 @@ const Dashboard = () => {
                 </div>
 
                 {projects.length === 0 ? (
-                    <div className="text-center py-8 sm:py-12 bg-gray-50 rounded-lg sm:rounded-xl">
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
+                    <div className="text-center py-8 sm:py-12 bg-gray-50 dark:bg-gray-700/30 rounded-lg sm:rounded-xl">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
                             <FolderKanban size={24} className="text-gray-400 sm:w-8 sm:h-8" />
                         </div>
-                        <p className="text-gray-500 text-sm">Chưa có dự án nào</p>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">Chưa có dự án nào</p>
                     </div>
                 ) : (
                     <div className="space-y-2 sm:space-y-3">

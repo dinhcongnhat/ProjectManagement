@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { googleDriveService } from '../../services/googleDriveService';
-import { Folder, ChevronRight, Search, Check, Loader2, LogOut, X, List, LayoutGrid } from 'lucide-react';
+import { Folder, ChevronRight, Search, Check, Loader2, LogOut, X, List, LayoutGrid, Star, Users } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { GoogleDriveViewer } from './GoogleDriveViewer'; // Import the new viewer
 import { GoogleDriveIcon } from '../ui/AttachmentPicker'; // Import shared icon
@@ -24,6 +24,7 @@ interface DriveFile {
     webViewLink: string;
     hasThumbnail: boolean;
     thumbnailLink?: string;
+    starred?: boolean;
 }
 
 // Helper to check if file is supported by OnlyOffice
@@ -74,6 +75,27 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
 
     const [viewingImage, setViewingImage] = useState<{ id: string, name: string, url?: string } | null>(null);
     const [imageLoading, setImageLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<'my-drive' | 'starred' | 'shared-with-me'>('my-drive');
+
+    // Handle Star Toggle
+    const handleToggleStar = async (e: React.MouseEvent, file: DriveFile) => {
+        e.stopPropagation();
+        const newStatus = !file.starred;
+
+        // Optimistic update
+        setFiles(files.map(f => f.id === file.id ? { ...f, starred: newStatus } : f));
+
+        try {
+            await googleDriveService.toggleStar(file.id, newStatus);
+            // If we are in Starred tab and user unstars, should we remove it?
+            // For now, let's keep it visible until refresh or navigation to avoid UI jumping
+        } catch (err) {
+            console.error('Failed to toggle star', err);
+            toast.error('Failed to update star status');
+            // Revert
+            setFiles(files.map(f => f.id === file.id ? { ...f, starred: !newStatus } : f));
+        }
+    };
 
     // Helper to check if file is an image
     const isImageFile = (mimeType: string, name: string): boolean => {
@@ -104,7 +126,19 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
     const loadFiles = async (folderId: string, query?: string) => {
         setLoading(true);
         try {
-            const data = await googleDriveService.listFiles(folderId !== 'root' ? folderId : undefined, query);
+            const isStarred = activeTab === 'starred';
+            const isShared = activeTab === 'shared-with-me';
+
+            // For Shared tab, we only filter by sharedWithMe when at root. 
+            // Once we navigate into a folder, we list that folder's content normally.
+            const shouldFilterShared = isShared && folderId === 'root';
+
+            const data = await googleDriveService.listFiles(
+                isStarred ? undefined : (folderId !== 'root' ? folderId : undefined),
+                query,
+                isStarred,
+                shouldFilterShared
+            );
 
             // Sort: Folders first, then alphabetically
             const sortedFiles = data.files.sort((a: DriveFile, b: DriveFile) => {
@@ -133,12 +167,12 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
         }
     };
 
-    // Load files when auth is confirmed or folder changes
+    // Load files when auth is confirmed or folder changes or tab changes
     useEffect(() => {
         if (isAuthenticated === true) {
             loadFiles(currentFolderId, searchQuery);
         }
-    }, [currentFolderId, isAuthenticated, searchQuery]);
+    }, [currentFolderId, isAuthenticated, searchQuery, activeTab]);
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
@@ -359,6 +393,33 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
                 </div>
             </div>
 
+            {/* Navigation Tabs */}
+            <div className="px-6 pt-2 pb-0 flex gap-6 border-b border-gray-100 bg-white">
+                <button
+                    onClick={() => { setActiveTab('my-drive'); setCurrentFolderId('root'); setBreadcrumbs([{ id: 'root', name: 'My Drive' }]); }}
+                    className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'my-drive' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
+                >
+                    Files
+                    {activeTab === 'my-drive' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
+                </button>
+                <button
+                    onClick={() => { setActiveTab('starred'); setSearchQuery(''); }}
+                    className={`pb-3 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${activeTab === 'starred' ? 'text-amber-500' : 'text-gray-500 hover:text-amber-500'}`}
+                >
+                    <Star size={14} className={activeTab === 'starred' ? "fill-current" : ""} />
+                    Starred
+                    {activeTab === 'starred' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 rounded-t-full"></div>}
+                </button>
+                <button
+                    onClick={() => { setActiveTab('shared-with-me'); setCurrentFolderId('root'); setBreadcrumbs([{ id: 'root', name: 'Shared with me' }]); }}
+                    className={`pb-3 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${activeTab === 'shared-with-me' ? 'text-green-600' : 'text-gray-500 hover:text-green-600'}`}
+                >
+                    <Users size={14} />
+                    Shared with me
+                    {activeTab === 'shared-with-me' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-green-600 rounded-t-full"></div>}
+                </button>
+            </div>
+
             {/* Toolbar */}
             <div className="px-6 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center gap-4 flex-wrap justify-between">
                 {/* Custom Breadcrumbs */}
@@ -381,14 +442,18 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
 
                 {/* Search */}
                 <form onSubmit={handleSearch} className="relative w-full sm:w-64 group">
-                    <input
-                        type="text"
-                        placeholder="Search files..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 group-focus-within:border-blue-500 group-focus-within:ring-2 group-focus-within:ring-blue-100 rounded-xl text-sm transition-all shadow-sm"
-                    />
-                    <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+                    <div className="relative w-full p-[1.5px] rounded-xl bg-gray-200 group-focus-within:bg-gradient-to-r group-focus-within:from-blue-500 group-focus-within:via-purple-500 group-focus-within:to-pink-500 transition-all duration-500">
+                        <div className="relative w-full bg-white rounded-[10.5px] flex items-center h-full">
+                            <Search size={16} className="absolute left-3.5 text-gray-400 group-focus-within:text-blue-500 transition-colors z-10" />
+                            <input
+                                type="text"
+                                placeholder="Search files..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 bg-transparent border-none focus:ring-0 text-sm outline-none rounded-[10.5px]"
+                            />
+                        </div>
+                    </div>
                 </form>
             </div>
 
@@ -455,11 +520,11 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
                                                 }
                                             }}
                                             className={`
-                                                group relative aspect-[4/5] p-4 rounded-xl border cursor-pointer transition-all duration-200
+                                                group relative aspect-[3/4] p-4 rounded-2xl border-2 cursor-pointer transition-all duration-300
                                                 flex flex-col items-center justify-between
                                                 ${isSelected
-                                                    ? 'border-blue-500 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
-                                                    : 'border-gray-200 bg-white shadow-sm hover:shadow-lg hover:-translate-y-1 hover:border-blue-300'
+                                                    ? 'border-blue-500 bg-blue-50 shadow-md transform scale-[1.02]'
+                                                    : 'border-transparent bg-white shadow-sm hover:shadow-xl hover:border-blue-200 hover:-translate-y-1'
                                                 }
                                             `}
                                         >
@@ -479,21 +544,39 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
                                                 </div>
                                             )}
 
+                                            {/* Star Button (Grid) */}
+                                            {mode === 'browse' && (
+                                                <button
+                                                    onClick={(e) => handleToggleStar(e, file)}
+                                                    className={`absolute top-3 right-3 p-1.5 rounded-full bg-white/90 backdrop-blur shadow-sm transition-all z-10
+                                                        ${file.starred
+                                                            ? 'text-amber-400 opacity-100'
+                                                            : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-amber-400 hover:bg-white'
+                                                        }`}
+                                                >
+                                                    <Star size={14} className={file.starred ? "fill-current" : ""} />
+                                                </button>
+                                            )}
+
                                             <div className="flex-1 w-full flex items-center justify-center p-2 relative">
                                                 {isFolder && <div className="absolute inset-0 bg-yellow-50/50 rounded-full blur-xl scale-75 opacity-0 group-hover:opacity-100 transition-opacity"></div>}
                                                 {file.thumbnailLink && !isFolder ? (
                                                     <img src={file.thumbnailLink} alt="" className="w-full h-full object-contain rounded drop-shadow-sm group-hover:scale-105 transition-transform duration-300" />
+                                                ) : isFolder ? (
+                                                    <div className="w-24 h-24 group-hover:scale-110 transition-transform flex items-center justify-center">
+                                                        <Folder size={80} className="text-yellow-400 fill-yellow-400/20 drop-shadow-md" strokeWidth={1.5} />
+                                                    </div>
                                                 ) : (
                                                     <img
-                                                        src={file.iconLink || (isFolder ? "https://fonts.gstatic.com/s/i/materialicons/folder/v6/24px.svg" : "https://fonts.gstatic.com/s/i/materialicons/insert_drive_file/v6/24px.svg")}
+                                                        src={file.iconLink || "https://fonts.gstatic.com/s/i/materialicons/insert_drive_file/v6/24px.svg"}
                                                         alt=""
-                                                        className={`object-contain drop-shadow-sm transition-transform duration-300 ${isFolder ? 'w-16 h-16 group-hover:scale-110' : 'w-12 h-12 group-hover:rotate-3'}`}
+                                                        className={`object-contain drop-shadow-md transition-transform duration-300 w-16 h-16 group-hover:rotate-3`}
                                                     />
                                                 )}
                                             </div>
 
                                             <div className="w-full mt-3 text-center">
-                                                <p className="text-xs font-semibold text-gray-700 line-clamp-2 break-words leading-relaxed group-hover:text-blue-700 transition-colors">
+                                                <p className="text-sm font-bold text-gray-700 line-clamp-2 break-words leading-tight group-hover:text-blue-700 transition-colors px-1">
                                                     {file.name}
                                                 </p>
                                                 {/* <p className="text-[10px] text-gray-400 mt-1 uppercase tracking-wider font-semibold">
@@ -581,9 +664,19 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
                                                         className="w-6 h-6 object-contain flex-shrink-0"
                                                     />
                                                     <span className={`text-sm font-medium truncate ${isSelected ? 'text-blue-700' : 'text-gray-700 group-hover:text-gray-900'}`}>{file.name}</span>
+
+                                                    {file.starred && <Star size={12} className="text-amber-400 fill-current ml-2 flex-shrink-0" />}
                                                 </div>
 
-                                                <div className="col-span-3 text-xs text-gray-500 truncate">
+                                                <div className="col-span-3 text-xs text-gray-500 truncate flex items-center gap-2">
+                                                    {mode === 'browse' && (
+                                                        <button
+                                                            onClick={(e) => handleToggleStar(e, file)}
+                                                            className={`p-1 rounded-full hover:bg-gray-100 ${file.starred ? 'text-amber-400' : 'text-gray-300 hover:text-amber-400 opacity-0 group-hover:opacity-100'} transition-all`}
+                                                        >
+                                                            <Star size={14} className={file.starred ? "fill-current" : ""} />
+                                                        </button>
+                                                    )}
                                                     {isFolder ? 'Folder' : file.mimeType.split('/').pop()}
                                                 </div>
 

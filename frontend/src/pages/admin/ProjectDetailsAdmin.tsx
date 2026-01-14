@@ -1,17 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import {
     CheckCircle2, AlertCircle, FileText, X, MessageSquare, History, FolderTree,
-    Plus, ChevronRight, Briefcase, Target, TrendingUp, Flag, Loader2,
-    ArrowLeft, Calendar, Users, Clock
+    Plus, ChevronRight, ChevronLeft, Briefcase, Target, TrendingUp, Flag, Loader2,
+    ArrowLeft, Calendar, Users, Clock, FileSpreadsheet, Download, Edit3
 } from 'lucide-react';
 import { DiscussionPanel } from '../../components/DiscussionPanel';
 import { ActivityHistoryPanel } from '../../components/ActivityHistoryPanel';
 import { ProjectAttachments } from '../../components/ProjectAttachments';
 import { ProjectWorkflow } from '../../components/ProjectWorkflow';
 import { useDialog } from '../../components/ui/Dialog';
+import { ImportSubProjectsModal } from '../../components/ImportSubProjectsModal';
+import { ExportSubProjectsModal } from '../../components/ExportSubProjectsModal';
+import { EditSubProjectModal } from '../../components/EditSubProjectModal';
 
 interface WorkflowData {
     id: number;
@@ -78,6 +81,13 @@ interface Project {
     parent?: { id: number, name: string, code: string };
     children?: SubProject[];
     workflow?: WorkflowData;
+    // Sub-project specific fields
+    documentNumber?: string;
+    documentDate?: string;
+    implementingUnit?: string;
+    appraisalUnit?: string;
+    approver?: string;
+    productType?: string;
 }
 
 const ProjectDetailsAdmin = () => {
@@ -88,9 +98,16 @@ const ProjectDetailsAdmin = () => {
     const [approving, setApproving] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'info' | 'workflow' | 'discussion' | 'activity'>('info');
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingSubProject, setEditingSubProject] = useState<any>(null);
+    const [users, setUsers] = useState<{ id: number; name: string; role: string }[]>([]);
+    const [currentChildPage, setCurrentChildPage] = useState(1);
+    const CHILDREN_PER_PAGE = 10;
     const { showConfirm, showSuccess, showError } = useDialog();
 
-    const fetchProject = async () => {
+    const fetchProject = useCallback(async () => {
         try {
             const response = await fetch(`${API_URL}/projects/${id}`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -104,11 +121,65 @@ const ProjectDetailsAdmin = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [id, token]);
 
     useEffect(() => {
         if (token && id) fetchProject();
-    }, [token, id]);
+    }, [token, id, fetchProject]);
+
+    // Fetch users for import modal
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                const response = await fetch(`${API_URL}/users`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setUsers(data);
+                }
+            } catch (error) {
+                console.error('Error fetching users:', error);
+            }
+        };
+        if (token) fetchUsers();
+    }, [token]);
+
+    // Auto-confirm "Đã nhận thông tin" khi admin là người thực hiện xem dự án
+    useEffect(() => {
+        const autoConfirmReceived = async () => {
+            if (!project || !token || !user) return;
+
+            // Chỉ confirm nếu:
+            // 1. Người xem là implementer hoặc cooperator
+            // 2. Workflow chưa được confirm received
+            const isImplementer = project.implementers?.some(imp => imp.id === user.id) || false;
+            const isCooperator = project.cooperators?.some(coop => coop.id === user.id) || false;
+            const workflow = project.workflow;
+
+            if ((isImplementer || isCooperator) && workflow && !workflow.receivedConfirmedAt) {
+                try {
+                    const response = await fetch(`${API_URL}/projects/${project.id}/workflow/confirm-received`, {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        console.log('[ProjectDetailsAdmin] Auto-confirmed "Đã nhận thông tin" for implementer');
+                        // Refresh project to get updated workflow
+                        fetchProject();
+                    }
+                } catch (error) {
+                    console.error('Error auto-confirming received:', error);
+                }
+            }
+        };
+
+        autoConfirmReceived();
+    }, [project?.id, project?.workflow?.receivedConfirmedAt, user?.id, token, fetchProject]);
 
     const handleApprove = async () => {
         if (!project) return;
@@ -204,9 +275,12 @@ const ProjectDetailsAdmin = () => {
     }
 
     const isManager = project.manager?.id === user?.id;
+    const isImplementer = project.implementers?.some(imp => imp.id === user?.id) || false;
+    const isCooperator = project.cooperators?.some(coop => coop.id === user?.id) || false;
+    const canEditSubProject = user?.role === 'ADMIN' || isManager || isImplementer || isCooperator;
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
             {/* Header with solid color */}
             <div className="bg-blue-600 text-white shadow-md">
                 <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
@@ -262,7 +336,7 @@ const ProjectDetailsAdmin = () => {
 
             <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
                 {/* Modern Tabs */}
-                <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-2">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl shadow-gray-200/50 dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-700 p-2">
                     <div className="flex gap-2">
                         {[
                             { id: 'info', label: 'Thông tin', icon: FileText },
@@ -278,7 +352,7 @@ const ProjectDetailsAdmin = () => {
                                     onClick={() => setActiveTab(tab.id as any)}
                                     className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium transition-all ${isActive
                                         ? 'bg-blue-600 text-white shadow-md'
-                                        : 'text-gray-600 hover:bg-gray-100'
+                                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                                         }`}
                                 >
                                     <Icon size={18} />
@@ -296,25 +370,25 @@ const ProjectDetailsAdmin = () => {
                         <div className="lg:col-span-2 space-y-6">
                             {/* Quick Stats */}
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 group hover:shadow-md transition-shadow">
                                     <div className="p-3 bg-blue-50 rounded-xl w-fit mb-3">
                                         <Calendar size={20} className="text-blue-600" />
                                     </div>
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày bắt đầu</p>
-                                    <p className="font-bold text-gray-900">
+                                    <p className="font-bold text-gray-900 dark:text-gray-100">
                                         {project.startDate ? new Date(project.startDate).toLocaleDateString('vi-VN') : 'N/A'}
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow">
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 group hover:shadow-md transition-shadow">
                                     <div className="p-3 bg-orange-50 rounded-xl w-fit mb-3">
                                         <Clock size={20} className="text-orange-600" />
                                     </div>
                                     <p className="text-xs text-gray-500 font-medium mb-0.5">Ngày kết thúc dự kiến</p>
-                                    <p className="font-bold text-gray-900">
+                                    <p className="font-bold text-gray-900 dark:text-gray-100">
                                         {project.endDate ? new Date(project.endDate).toLocaleDateString('vi-VN') : 'N/A'}
                                     </p>
                                 </div>
-                                <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 group hover:shadow-md transition-shadow col-span-2 md:col-span-1">
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 group hover:shadow-md transition-shadow col-span-2 md:col-span-1">
                                     <div className={`p-3 rounded-xl w-fit mb-3 ${project.priority === 'HIGH' ? 'bg-red-50' : 'bg-gray-50'}`}>
                                         <Flag size={20} className={project.priority === 'HIGH' ? 'text-red-500' : 'text-gray-500'} />
                                     </div>
@@ -325,14 +399,14 @@ const ProjectDetailsAdmin = () => {
                                 </div>
                             </div>
 
-                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                                 <div className="flex items-center gap-3 mb-4">
                                     <div className="p-2.5 bg-blue-600 rounded-xl text-white">
                                         <FileText size={20} />
                                     </div>
-                                    <h2 className="text-lg font-bold text-gray-900">Mô tả dự án</h2>
+                                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">Mô tả dự án</h2>
                                 </div>
-                                <div className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                <div className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                                     {project.description || (
                                         <span className="text-gray-400 italic">Chưa có mô tả cho dự án này.</span>
                                     )}
@@ -340,6 +414,56 @@ const ProjectDetailsAdmin = () => {
                             </div>
 
                             {/* Details Grid */}
+
+                            {/* Sub-project Specific Info - Only show for sub-projects */}
+                            {project.parentId && (project.documentNumber || project.documentDate || project.implementingUnit || project.appraisalUnit || project.approver || project.productType) && (
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="p-2.5 bg-cyan-600 rounded-xl text-white">
+                                            <FileText size={20} />
+                                        </div>
+                                        <h2 className="text-lg font-bold text-gray-900">Thông tin văn bản</h2>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {project.documentNumber && (
+                                            <div className="p-4 bg-gradient-to-br from-cyan-50 to-blue-50 dark:from-cyan-900/20 dark:to-blue-900/20 rounded-xl border border-cyan-100 dark:border-cyan-800/30">
+                                                <p className="text-xs text-cyan-600 font-semibold mb-1 uppercase tracking-wide">Số hiệu văn bản</p>
+                                                <p className="font-bold text-gray-900 dark:text-gray-100">{project.documentNumber}</p>
+                                            </div>
+                                        )}
+                                        {project.documentDate && (
+                                            <div className="p-4 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl border border-amber-100 dark:border-amber-800/30">
+                                                <p className="text-xs text-amber-600 font-semibold mb-1 uppercase tracking-wide">Ngày văn bản</p>
+                                                <p className="font-bold text-gray-900 dark:text-gray-100">{new Date(project.documentDate).toLocaleDateString('vi-VN')}</p>
+                                            </div>
+                                        )}
+                                        {project.implementingUnit && (
+                                            <div className="p-4 bg-gradient-to-br from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 rounded-xl border border-violet-100 dark:border-violet-800/30">
+                                                <p className="text-xs text-violet-600 font-semibold mb-1 uppercase tracking-wide">Đơn vị thực hiện</p>
+                                                <p className="font-bold text-gray-900 dark:text-gray-100">{project.implementingUnit}</p>
+                                            </div>
+                                        )}
+                                        {project.appraisalUnit && (
+                                            <div className="p-4 bg-gradient-to-br from-pink-50 to-rose-50 dark:from-pink-900/20 dark:to-rose-900/20 rounded-xl border border-pink-100 dark:border-pink-800/30">
+                                                <p className="text-xs text-pink-600 font-semibold mb-1 uppercase tracking-wide">Đơn vị thẩm định</p>
+                                                <p className="font-bold text-gray-900 dark:text-gray-100">{project.appraisalUnit}</p>
+                                            </div>
+                                        )}
+                                        {project.approver && (
+                                            <div className="p-4 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-teal-900/20 dark:to-emerald-900/20 rounded-xl border border-teal-100 dark:border-teal-800/30">
+                                                <p className="text-xs text-teal-600 font-semibold mb-1 uppercase tracking-wide">Người phê duyệt</p>
+                                                <p className="font-bold text-gray-900 dark:text-gray-100">{project.approver}</p>
+                                            </div>
+                                        )}
+                                        {project.productType && (
+                                            <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
+                                                <p className="text-xs text-indigo-600 font-semibold mb-1 uppercase tracking-wide">Loại sản phẩm</p>
+                                                <p className="font-bold text-gray-900 dark:text-gray-100">{project.productType}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
 
                             {/* Project Attachments */}
@@ -349,6 +473,7 @@ const ProjectDetailsAdmin = () => {
                                 projectStatus={project.status}
                                 canUpload={true}
                                 isImplementer={false}
+                                isCooperator={isCooperator}
                                 isAdmin={true}
                                 isManager={isManager}
                                 attachments={project.attachments}
@@ -359,23 +484,23 @@ const ProjectDetailsAdmin = () => {
                         {/* Sidebar */}
                         <div className="space-y-6">
                             {/* Team Members Card */}
-                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
                                 <div className="flex items-center gap-3 mb-5">
                                     <div className="p-2.5 bg-violet-600 rounded-xl text-white">
                                         <Users size={20} />
                                     </div>
-                                    <h2 className="text-lg font-bold text-gray-900">Thành viên dự án</h2>
+                                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">Thành viên dự án</h2>
                                 </div>
 
                                 {/* Manager */}
                                 {project.manager?.name && (
                                     <div className="mb-5">
                                         <p className="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wide">Quản trị dự án</p>
-                                        <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-xl">
+                                        <div className="flex items-center gap-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-xl">
                                             <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold">
                                                 {project.manager.name.charAt(0)}
                                             </div>
-                                            <span className="font-semibold text-gray-900">{project.manager.name}</span>
+                                            <span className="font-semibold text-gray-900 dark:text-white">{project.manager.name}</span>
                                         </div>
                                     </div>
                                 )}
@@ -391,7 +516,7 @@ const ProjectDetailsAdmin = () => {
                                             {project.implementers.map(user => (
                                                 <span
                                                     key={user.id}
-                                                    className="px-3 py-1.5 bg-blue-100 text-blue-700 text-sm font-medium rounded-full"
+                                                    className="px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-full"
                                                 >
                                                     {user.name}
                                                 </span>
@@ -411,7 +536,7 @@ const ProjectDetailsAdmin = () => {
                                             {project.cooperators.map(user => (
                                                 <span
                                                     key={user.id}
-                                                    className="px-3 py-1.5 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-700 text-sm font-medium rounded-full"
+                                                    className="px-3 py-1.5 bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 text-amber-700 dark:text-amber-300 text-sm font-medium rounded-full"
                                                 >
                                                     {user.name}
                                                 </span>
@@ -423,22 +548,22 @@ const ProjectDetailsAdmin = () => {
 
                             {/* Parent Project */}
                             {project.parent && (
-                                <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
+                                <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg shadow-gray-100 dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-700">
                                     <div className="flex items-center gap-3 mb-4">
                                         <div className="p-2.5 bg-indigo-600 rounded-xl text-white">
                                             <FolderTree size={20} />
                                         </div>
-                                        <h2 className="text-lg font-bold text-gray-900">Dự án cha</h2>
+                                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Dự án cha</h2>
                                     </div>
                                     <Link
                                         to={`/admin/projects/${project.parent.id}`}
-                                        className="flex items-center gap-3 p-4 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors group"
+                                        className="flex items-center gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors group"
                                     >
                                         <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
                                             <FolderTree size={18} />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-semibold text-gray-900 truncate group-hover:text-indigo-600">
+                                            <p className="font-semibold text-gray-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
                                                 {project.parent.name}
                                             </p>
                                             <p className="text-xs text-gray-500">Mã: {project.parent.code}</p>
@@ -449,70 +574,140 @@ const ProjectDetailsAdmin = () => {
                             )}
 
                             {/* Sub Projects */}
-                            <div className="bg-white rounded-2xl p-6 shadow-lg shadow-gray-100 border border-gray-100">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2.5 bg-cyan-600 rounded-xl text-white">
-                                            <FolderTree size={20} />
-                                        </div>
-                                        <h2 className="text-lg font-bold text-gray-900">
-                                            Dự án con ({project.children?.length || 0})
-                                        </h2>
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-lg shadow-gray-100 dark:shadow-gray-900/50 border border-gray-100 dark:border-gray-700">
+                                {/* Header */}
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-2.5 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl text-white">
+                                        <FolderTree size={20} />
                                     </div>
-                                    {(user?.role === 'ADMIN' || isManager) && (
-                                        <Link
-                                            to={`/admin/create-project?parentId=${project.id}`}
-                                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-all shadow-md"
-                                        >
-                                            <Plus size={16} />
-                                            Thêm
-                                        </Link>
-                                    )}
+                                    <div>
+                                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Dự án con</h2>
+                                        <p className="text-sm text-gray-500">{project.children?.length || 0} dự án</p>
+                                    </div>
                                 </div>
 
-                                {project.children && project.children.length > 0 ? (
-                                    <div className="space-y-3">
-                                        {project.children.map(child => (
-                                            <Link
-                                                key={child.id}
-                                                to={`/admin/projects/${child.id}`}
-                                                className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl hover:bg-blue-50 transition-colors group border border-transparent hover:border-blue-200"
+                                {/* Action Buttons */}
+                                {(user?.role === 'ADMIN' || isManager) && (
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        {project.children && project.children.length > 0 && (
+                                            <button
+                                                onClick={() => setShowExportModal(true)}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-all"
+                                                title="Xuất ra Excel"
                                             >
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white ${child.status === 'COMPLETED' ? 'bg-green-600' :
-                                                    child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
-                                                        'bg-blue-600'
-                                                    }`}>
-                                                    <FolderTree size={16} />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-semibold text-gray-900 truncate group-hover:text-blue-600">
-                                                        {child.name}
-                                                    </p>
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <span className="text-xs text-gray-500">{child.code}</span>
-                                                        <span className="text-xs text-gray-400">•</span>
-                                                        <span className={`text-xs font-semibold ${child.status === 'COMPLETED' ? 'text-green-600' :
-                                                            child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
-                                                            }`}>
-                                                            {child.progress}%
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <div className="flex flex-col items-end gap-1.5">
-                                                    <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                                        <div
-                                                            className={`h-full rounded-full transition-all ${child.status === 'COMPLETED' ? 'bg-green-500' :
-                                                                child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' :
-                                                                    'bg-blue-500'
-                                                                }`}
-                                                            style={{ width: `${child.progress}%` }}
-                                                        />
-                                                    </div>
-                                                    <ChevronRight size={16} className="text-gray-400 group-hover:text-blue-600" />
-                                                </div>
-                                            </Link>
-                                        ))}
+                                                <Download size={14} />
+                                                Export
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => setShowImportModal(true)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-lg transition-all"
+                                            title="Import từ Excel"
+                                        >
+                                            <FileSpreadsheet size={14} />
+                                            Import
+                                        </button>
+                                        <Link
+                                            to={`/admin/create-project?parentId=${project.id}`}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium rounded-lg transition-all"
+                                        >
+                                            <Plus size={14} />
+                                            Thêm
+                                        </Link>
                                     </div>
+                                )}
+
+                                {/* Sub Projects List with Pagination */}
+                                {project.children && project.children.length > 0 ? (
+                                    <>
+                                        <div className="space-y-2">
+                                            {project.children
+                                                .slice((currentChildPage - 1) * CHILDREN_PER_PAGE, currentChildPage * CHILDREN_PER_PAGE)
+                                                .map(child => (
+                                                    <div
+                                                        key={child.id}
+                                                        className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors group border border-transparent hover:border-blue-200 dark:hover:border-blue-800"
+                                                    >
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white flex-shrink-0 ${child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                            child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
+                                                            }`}>
+                                                            <FolderTree size={14} />
+                                                        </div>
+                                                        <Link to={`/admin/projects/${child.id}`} className="flex-1 min-w-0">
+                                                            <p className="font-medium text-sm text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                                                                {child.name}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 mt-0.5">
+                                                                <span className="text-xs text-gray-500">{child.code}</span>
+                                                                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${child.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                                                                    child.status === 'PENDING_APPROVAL' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                                                                    }`}>
+                                                                    {child.progress}%
+                                                                </span>
+                                                            </div>
+                                                        </Link>
+                                                        {/* Edit Button */}
+                                                        {canEditSubProject && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    setEditingSubProject(child);
+                                                                    setShowEditModal(true);
+                                                                }}
+                                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                                title="Chỉnh sửa"
+                                                            >
+                                                                <Edit3 size={14} />
+                                                            </button>
+                                                        )}
+                                                        <Link
+                                                            to={`/admin/projects/${child.id}`}
+                                                            className="flex-shrink-0"
+                                                        >
+                                                            <ChevronRight size={16} className="text-gray-400 group-hover:text-blue-500" />
+                                                        </Link>
+                                                    </div>
+                                                ))}
+                                        </div>
+
+                                        {/* Pagination */}
+                                        {project.children.length > CHILDREN_PER_PAGE && (
+                                            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                                                <span className="text-xs text-gray-500">
+                                                    {(currentChildPage - 1) * CHILDREN_PER_PAGE + 1} - {Math.min(currentChildPage * CHILDREN_PER_PAGE, project.children.length)} / {project.children.length} dự án con
+                                                </span>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => setCurrentChildPage(p => Math.max(1, p - 1))}
+                                                        disabled={currentChildPage === 1}
+                                                        className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    >
+                                                        <ChevronLeft size={14} />
+                                                    </button>
+                                                    {Array.from({ length: Math.ceil(project.children.length / CHILDREN_PER_PAGE) }, (_, i) => i + 1).map(page => (
+                                                        <button
+                                                            key={page}
+                                                            onClick={() => setCurrentChildPage(page)}
+                                                            className={`w-7 h-7 text-xs font-medium rounded-lg transition-colors ${currentChildPage === page
+                                                                ? 'bg-blue-600 text-white'
+                                                                : 'border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300'
+                                                                }`}
+                                                        >
+                                                            {page}
+                                                        </button>
+                                                    ))}
+                                                    <button
+                                                        onClick={() => setCurrentChildPage(p => Math.min(Math.ceil(project.children!.length / CHILDREN_PER_PAGE), p + 1))}
+                                                        disabled={currentChildPage >= Math.ceil(project.children.length / CHILDREN_PER_PAGE)}
+                                                        className="p-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                    >
+                                                        <ChevronRight size={14} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
                                 ) : (
                                     <div className="text-center py-8">
                                         <FolderTree size={40} className="text-gray-300 mx-auto mb-2" />
@@ -537,13 +732,13 @@ const ProjectDetailsAdmin = () => {
                 )}
 
                 {activeTab === 'discussion' && (
-                    <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 sticky top-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700 sticky top-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
                         <DiscussionPanel projectId={project.id} />
                     </div>
                 )}
 
                 {activeTab === 'activity' && (
-                    <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100 sticky top-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700 sticky top-4">
                         <ActivityHistoryPanel projectId={project.id} />
                     </div>
                 )}
@@ -573,6 +768,39 @@ const ProjectDetailsAdmin = () => {
                     </div>
                 </div>
             )}
+
+            {/* Import Sub Projects Modal */}
+            <ImportSubProjectsModal
+                isOpen={showImportModal}
+                onClose={() => setShowImportModal(false)}
+                parentProjectId={project.id}
+                parentProjectCode={project.code}
+                onImportSuccess={() => {
+                    fetchProject();
+                }}
+                users={users}
+            />
+
+            {/* Export Sub Projects Modal */}
+            <ExportSubProjectsModal
+                isOpen={showExportModal}
+                onClose={() => setShowExportModal(false)}
+                parentProjectCode={project.code}
+                parentProjectName={project.name}
+                subProjects={project.children || []}
+            />
+
+            {/* Edit Sub Project Modal */}
+            <EditSubProjectModal
+                isOpen={showEditModal}
+                onClose={() => {
+                    setShowEditModal(false);
+                    setEditingSubProject(null);
+                }}
+                onSuccess={fetchProject}
+                subProject={editingSubProject}
+                users={users}
+            />
 
             {/* Add shimmer animation */}
             <style>{`

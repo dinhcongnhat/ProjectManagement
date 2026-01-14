@@ -49,6 +49,7 @@ interface ProjectAttachmentsProps {
     projectStatus: string;
     canUpload: boolean;
     isImplementer: boolean;
+    isCooperator: boolean;
     isAdmin: boolean;
     isManager: boolean;
     attachments?: Attachment[];
@@ -109,6 +110,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     projectStatus: _projectStatus,
     canUpload: _canUpload,
     isImplementer,
+    isCooperator,
     isAdmin,
     isManager,
     attachments: initialAttachments = [],
@@ -341,6 +343,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     // Group attachments by category
     const adminAttachments = attachments.filter(a => a.category === 'TaiLieuDinhKem');
     const employeeAttachments = attachments.filter(a => a.category === 'NhanVienDinhKem');
+    const cooperatorAttachments = attachments.filter(a => a.category === 'PhoiHopDinhKem');
 
     // Handle files selected from folder picker
     const handleFolderFilesSelected = async (files: SelectedFile[]) => {
@@ -667,11 +670,20 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
 
             {/* Render Implementer Results (Employee Attachments) */}
             {renderSection(
-                'Báo cáo kết quả',
+                'Báo cáo kết quả (Người thực hiện)',
                 'NhanVienDinhKem',
                 'text-green-500',
                 employeeAttachments,
                 isImplementer || isAdmin || isManager
+            )}
+
+            {/* Render Cooperator Attachments */}
+            {renderSection(
+                'Báo cáo kết quả (Phối hợp thực hiện)',
+                'PhoiHopDinhKem',
+                'text-purple-500',
+                cooperatorAttachments,
+                isCooperator || isAdmin || isManager
             )}
 
             {/* OnlyOffice Viewer / Image Viewer */}

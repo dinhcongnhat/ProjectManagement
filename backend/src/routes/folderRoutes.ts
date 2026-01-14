@@ -25,18 +25,33 @@ import {
     getFileShares,
     unshareFolder,
     unshareFile,
-    ensureFolderStructure
+    ensureFolderStructure,
+    searchFoldersAndFiles,
+    moveFolder,
+    moveFile
 } from '../controllers/folderController.js';
 
 const router = Router();
 
 // Configure multer for file uploads (500MB limit for large files)
 const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 900 * 1024 * 1024 } // 900MB
+    storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+            cb(null, 'uploads/');
+        },
+        filename: (req, file, cb) => {
+            // Keep original extension if possible, but safer to use random name
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            cb(null, file.fieldname + '-' + uniqueSuffix);
+        }
+    }),
+    limits: { fileSize: 5 * 1024 * 1024 * 1024 } // 5GB limit
 });
 
 // Protected routes (require authentication)
+
+// Search folders and files (deep search)
+router.get('/search', authenticateToken, searchFoldersAndFiles);
 
 // Get folders and files list
 router.get('/', authenticateToken, getFoldersAndFiles);
@@ -58,6 +73,12 @@ router.put('/files/:id/rename', authenticateToken, renameFile);
 
 // Delete file
 router.delete('/files/:id', authenticateToken, deleteFile);
+
+// Move folder
+router.put('/folders/:id/move', authenticateToken, moveFolder);
+
+// Move file
+router.put('/files/:id/move', authenticateToken, moveFile);
 
 // Get file download URL
 router.get('/files/:id/url', authenticateToken, getFileUrl);

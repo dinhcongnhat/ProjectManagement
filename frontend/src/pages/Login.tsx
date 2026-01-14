@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Lock, User as UserIcon, Loader2, ArrowRight, Cpu, Globe, Shield, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { API_URL } from '../config/api';
 
 const Login = () => {
@@ -12,6 +13,8 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
+    const { resolvedTheme } = useTheme();
+    const isDark = resolvedTheme === 'dark';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -49,13 +52,16 @@ const Login = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50 flex items-center justify-center p-4 relative overflow-hidden">
+        <div className={`min-h-screen flex items-center justify-center p-4 relative overflow-hidden ${isDark
+            ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900'
+            : 'bg-gradient-to-br from-blue-50 via-white to-cyan-50'
+            }`}>
             {/* Animated Tech Background - Hidden on mobile for performance */}
             <div className="absolute inset-0 overflow-hidden hidden sm:block">
                 {/* Grid Pattern */}
                 <div className="absolute inset-0 opacity-[0.03]"
                     style={{
-                        backgroundImage: `linear-gradient(rgba(59, 130, 246, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(59, 130, 246, 0.5) 1px, transparent 1px)`,
+                        backgroundImage: `linear-gradient(${isDark ? 'rgba(96, 165, 250, 0.3)' : 'rgba(59, 130, 246, 0.5)'} 1px, transparent 1px), linear-gradient(90deg, ${isDark ? 'rgba(96, 165, 250, 0.3)' : 'rgba(59, 130, 246, 0.5)'} 1px, transparent 1px)`,
                         backgroundSize: '50px 50px'
                     }}
                 />
@@ -153,14 +159,20 @@ const Login = () => {
                     ease: 'easeOut'
                 }}
             >
-                <div className="relative bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl shadow-blue-500/20 overflow-hidden">
+                <div className={`relative backdrop-blur-xl rounded-2xl shadow-2xl overflow-hidden ${isDark
+                    ? 'bg-gray-800/90 shadow-gray-900/50'
+                    : 'bg-white/90 shadow-blue-500/20'
+                    }`}>
                     <div className="p-6 lg:p-8">
                         <div className="text-center mb-6 lg:mb-8">
                             <div className="flex justify-center mb-4">
                                 <img src="/Logo.png" alt="Logo" className="h-16 lg:h-20 w-auto" />
                             </div>
-                            <h2 className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-2 tracking-tight">PROJECT MANAGEMENT</h2>
-                            <p className="text-gray-500 text-sm lg:text-base">Đăng nhập để truy cập hệ thống quản lý dự án</p>
+                            <h2 className={`text-2xl lg:text-3xl font-bold bg-clip-text text-transparent mb-2 tracking-tight ${isDark
+                                ? 'bg-gradient-to-r from-orange-400 to-pink-500'
+                                : 'bg-gradient-to-r from-blue-600 to-cyan-600'
+                                }`}>PROJECT MANAGEMENT</h2>
+                            <p className={isDark ? 'text-gray-400 text-sm lg:text-base' : 'text-gray-500 text-sm lg:text-base'}>Đăng nhập để truy cập hệ thống quản lý dự án</p>
                         </div>
 
                         {error && (
@@ -172,16 +184,19 @@ const Login = () => {
 
                         <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-5">
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-gray-700 ml-1">Tên đăng nhập</label>
+                                <label className={`text-sm font-medium ml-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Tên đăng nhập</label>
                                 <div className="relative group">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                                    <div className={`absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none group-focus-within:text-blue-500 transition-colors ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                         <UserIcon className="w-5 h-5" />
                                     </div>
                                     <input
                                         type="text"
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value)}
-                                        className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
+                                        className={`w-full pl-11 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all duration-200 text-base ${isDark
+                                            ? 'bg-gray-700/50 border-gray-600 text-gray-100 placeholder-gray-500 focus:bg-gray-700'
+                                            : 'bg-gray-50/50 border-gray-200 text-gray-900 placeholder-gray-400 focus:bg-white'
+                                            } border`}
                                         placeholder="Nhập tên đăng nhập"
                                         required
                                         autoComplete="username"
@@ -190,16 +205,19 @@ const Login = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-gray-700 ml-1">Mật khẩu</label>
+                                <label className={`text-sm font-medium ml-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Mật khẩu</label>
                                 <div className="relative group">
-                                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                                    <div className={`absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none group-focus-within:text-blue-500 transition-colors ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                         <Lock className="w-5 h-5" />
                                     </div>
                                     <input
                                         type="password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        className="w-full pl-11 pr-4 py-3.5 bg-gray-50/50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition-all duration-200 text-base"
+                                        className={`w-full pl-11 pr-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all duration-200 text-base ${isDark
+                                            ? 'bg-gray-700/50 border-gray-600 text-gray-100 placeholder-gray-500 focus:bg-gray-700'
+                                            : 'bg-gray-50/50 border-gray-200 text-gray-900 placeholder-gray-400 focus:bg-white'
+                                            } border`}
                                         placeholder="••••••••"
                                         required
                                         autoComplete="current-password"
@@ -224,9 +242,12 @@ const Login = () => {
                         </form>
                     </div>
 
-                    <div className="px-6 lg:px-8 py-3 lg:py-4 bg-gradient-to-r from-blue-50/50 to-cyan-50/50 border-t border-gray-100 text-center">
-                        <p className="text-xs text-gray-500 flex items-center justify-center gap-2">
-                            <Shield className="w-3.5 h-3.5 text-blue-500" />
+                    <div className={`px-6 lg:px-8 py-3 lg:py-4 border-t text-center ${isDark
+                        ? 'bg-gradient-to-r from-gray-700/50 to-gray-700/30 border-gray-700'
+                        : 'bg-gradient-to-r from-blue-50/50 to-cyan-50/50 border-gray-100'
+                        }`}>
+                        <p className={`text-xs flex items-center justify-center gap-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                            <Shield className={`w-3.5 h-3.5 ${isDark ? 'text-blue-400' : 'text-blue-500'}`} />
                             Được bảo vệ bởi hệ thống bảo mật cấp doanh nghiệp
                         </p>
                     </div>

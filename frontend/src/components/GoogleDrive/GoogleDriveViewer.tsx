@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../../config/api';
 import { GoogleDriveSaveAsDialog } from './GoogleDriveSaveAsDialog';
@@ -191,7 +192,7 @@ export const GoogleDriveViewer = ({ fileId, fileName, onClose, token }: GoogleDr
         initEditor();
     }, [scriptLoaded, fileId, token]);
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[10000] bg-black flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
@@ -260,6 +261,7 @@ export const GoogleDriveViewer = ({ fileId, fileName, onClose, token }: GoogleDr
                     }}
                 />
             )}
-        </div>
+        </div>,
+        document.body
     );
 };

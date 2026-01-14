@@ -32,6 +32,7 @@ const itemVariants = {
 const UserDashboard = () => {
     const { user, token } = useAuth();
     const navigate = useNavigate();
+    const [activities, setActivities] = useState<any[]>([]);
     const [stats, setStats] = useState({ todo: 0, inProgress: 0, completed: 0 });
 
     useEffect(() => {
@@ -63,6 +64,147 @@ const UserDashboard = () => {
 
     const totalTasks = stats.todo + stats.inProgress + stats.completed;
     const completionRate = totalTasks > 0 ? Math.round((stats.completed / totalTasks) * 100) : 0;
+
+    useEffect(() => {
+        const fetchActivities = async () => {
+            try {
+                const response = await fetch(`${API_URL}/activities?limit=5`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setActivities(data.activities);
+                }
+            } catch (error) {
+                console.error('Error fetching activities:', error);
+            }
+        };
+
+        if (token) fetchActivities();
+    }, [token]);
+
+    const formatTimeAgo = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+        if (seconds < 60) return 'Vừa xong';
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes} phút trước`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} giờ trước`;
+        const days = Math.floor(hours / 24);
+        if (days < 30) return `${days} ngày trước`;
+        return date.toLocaleDateString('vi-VN');
+    };
+
+    const getActivityIcon = (activity: any) => {
+        const action = activity.action;
+        const activityType = activity.activityType;
+
+        // Message activities
+        if (activityType === 'MESSAGE' || action.includes('MESSAGE') || action.includes('SEND')) {
+            if (activity.messageType === 'IMAGE') return <Sparkles size={16} className="text-pink-600" />;
+            if (activity.messageType === 'VIDEO') return <Sparkles size={16} className="text-purple-600" />;
+            return <Sparkles size={16} className="text-indigo-600" />;
+        }
+
+        // Task activities
+        if (activityType === 'TASK' || action.includes('TASK')) {
+            return <ListTodo size={16} className="text-cyan-600" />;
+        }
+
+        if (action.includes('CREATE')) return <Sparkles size={16} className="text-green-600" />;
+        if (action.includes('UPDATE')) return <Briefcase size={16} className="text-blue-600" />;
+        if (action.includes('DELETE')) return <AlertCircle size={16} className="text-red-600" />;
+        if (action.includes('ASSIGN')) return <ListTodo size={16} className="text-purple-600" />;
+        return <Clock size={16} className="text-gray-600" />;
+    };
+
+    const getActivityText = (activity: any) => {
+        // Handle different activity types
+        const activityType = activity.activityType;
+
+        // Message activities
+        if (activityType === 'MESSAGE') {
+            const messageTypeText: Record<string, string> = {
+                'TEXT': 'đã gửi tin nhắn trong',
+                'IMAGE': 'đã gửi hình ảnh trong',
+                'VIDEO': 'đã gửi video trong',
+                'FILE': 'đã gửi tệp đính kèm trong',
+                'VOICE': 'đã gửi tin nhắn thoại trong',
+                'TEXT_WITH_FILE': 'đã gửi tin nhắn có tệp trong'
+            };
+            const actionText = messageTypeText[activity.messageType] || 'đã gửi tin nhắn trong';
+
+            return (
+                <span>
+                    <span className="font-semibold text-gray-900">{activity.user?.name || 'Ai đó'}</span>{' '}
+                    <span className="text-gray-600">{actionText}</span>{' '}
+                    <Link to={`/projects/${activity.project?.id}`} className="font-medium text-blue-600 hover:underline">
+                        {activity.project?.name || 'dự án'}
+                    </Link>
+                </span>
+            );
+        }
+
+        // Task activities
+        if (activityType === 'TASK') {
+            const isNew = activity.action === 'CREATE_TASK';
+            const statusText: Record<string, string> = {
+                'TODO': 'cần làm',
+                'IN_PROGRESS': 'đang làm',
+                'COMPLETED': 'đã hoàn thành'
+            };
+            const status = activity.taskStatus ? ` (${statusText[activity.taskStatus] || activity.taskStatus})` : '';
+
+            return (
+                <span>
+                    <span className="font-semibold text-gray-900">{activity.user?.name || 'Ai đó'}</span>{' '}
+                    <span className="text-gray-600">{isNew ? 'được giao công việc' : 'cập nhật công việc'}</span>{' '}
+                    <span className="font-medium text-gray-800">"{activity.newValue}"</span>
+                    <span className="text-gray-500">{status}</span>
+                    {activity.project && (
+                        <>
+                            {' trong '}
+                            <Link to={`/projects/${activity.project.id}`} className="font-medium text-blue-600 hover:underline">
+                                {activity.project.name}
+                            </Link>
+                        </>
+                    )}
+                </span>
+            );
+        }
+
+        // Project activities (default)
+        const actionMap: Record<string, string> = {
+            'CREATE_PROJECT': 'đã tạo dự án',
+            'UPDATE_PROJECT': 'đã cập nhật dự án',
+            'DELETE_PROJECT': 'đã xóa dự án',
+            'UPDATE_STATUS': 'đã cập nhật trạng thái',
+            'ASSIGN_MANAGER': 'đã gán quản lý',
+            'ASSIGN_IMPLEMENTER': 'đã gán người thực hiện',
+            'ASSIGN_COOPERATOR': 'đã gán người phối hợp',
+            'UPLOAD_ATTACHMENT': 'đã tải lên tệp đính kèm',
+            'CREATE_SUBPROJECT': 'đã tạo dự án con',
+            'SEND_IMAGE': 'đã gửi hình ảnh trong',
+            'SEND_VIDEO': 'đã gửi video trong',
+            'SEND_VOICE': 'đã gửi tin nhắn thoại trong',
+            'SEND_ATTACHMENT': 'đã gửi tệp đính kèm trong'
+        };
+
+        let actionText = actionMap[activity.action] || activity.action;
+
+        return (
+            <span>
+                <span className="font-semibold text-gray-900">{activity.user?.name || 'Ai đó'}</span>{' '}
+                <span className="text-gray-600">{actionText}</span>{' '}
+                <Link to={`/projects/${activity.project?.id}`} className="font-medium text-blue-600 hover:underline">
+                    {activity.project?.name || 'dự án'}
+                </Link>
+            </span>
+        );
+    };
 
     return (
         <motion.div
@@ -225,16 +367,48 @@ const UserDashboard = () => {
                 className="bg-white p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50"
                 variants={itemVariants}
             >
-                <h2 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
-                    <Clock size={18} className="text-indigo-600 sm:w-5 sm:h-5" />
-                    Hoạt động gần đây
-                </h2>
-                <div className="text-center py-8 sm:py-12 bg-gray-50 rounded-lg sm:rounded-xl">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3">
-                        <Clock size={20} className="text-gray-400 sm:w-6 sm:h-6" />
-                    </div>
-                    <p className="text-gray-500 text-sm">Chưa có hoạt động nào gần đây.</p>
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-base sm:text-lg font-bold text-gray-900 flex items-center gap-2">
+                        <Clock size={18} className="text-indigo-600 sm:w-5 sm:h-5" />
+                        Hoạt động gần đây
+                    </h2>
+                    <Link to="/activities" className="text-xs sm:text-sm text-blue-600 hover:text-blue-700 font-medium">
+                        Xem tất cả
+                    </Link>
                 </div>
+
+                {activities.length > 0 ? (
+                    <div className="space-y-4">
+                        {activities.map((activity, index) => (
+                            <motion.div
+                                key={activity.id}
+                                className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors"
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: index * 0.1 }}
+                            >
+                                <div className="p-2 bg-gray-100 rounded-lg shrink-0">
+                                    {getActivityIcon(activity)}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm text-gray-700 leading-relaxed">
+                                        {getActivityText(activity)}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        {formatTimeAgo(activity.createdAt)}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-center py-8 sm:py-12 bg-gray-50 rounded-lg sm:rounded-xl">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3">
+                            <Clock size={20} className="text-gray-400 sm:w-6 sm:h-6" />
+                        </div>
+                        <p className="text-gray-500 text-sm">Chưa có hoạt động nào gần đây.</p>
+                    </div>
+                )}
             </motion.div>
         </motion.div>
     );

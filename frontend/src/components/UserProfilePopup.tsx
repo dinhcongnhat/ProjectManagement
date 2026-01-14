@@ -69,16 +69,16 @@ export default function UserProfilePopup() {
             {/* User Avatar Button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                className="flex items-center gap-2 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
                 {profile?.avatar ? (
                     <img
                         src={resolveAvatarUrl(`/api/users/${profile.id}/avatar`) || ''}
                         alt={profile.name}
-                        className="w-9 h-9 rounded-full object-cover border-2 border-gray-200"
+                        className="w-9 h-9 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600"
                     />
                 ) : (
-                    <div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold text-sm border-2 border-gray-200">
+                    <div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold text-sm border-2 border-gray-200 dark:border-gray-600">
                         {profile?.name ? getInitials(profile.name) : <User size={18} />}
                     </div>
                 )}
@@ -86,9 +86,9 @@ export default function UserProfilePopup() {
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden z-50">
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50">
                     {/* User Info */}
-                    <div className="p-4 border-b bg-gray-50">
+                    <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                         <div className="flex items-center gap-3">
                             {profile?.avatar ? (
                                 <img
@@ -102,10 +102,10 @@ export default function UserProfilePopup() {
                                 </div>
                             )}
                             <div className="flex-1 min-w-0">
-                                <h4 className="font-semibold text-gray-900 truncate">
+                                <h4 className="font-semibold text-gray-900 dark:text-gray-100 truncate">
                                     {profile?.name || user?.name || 'User'}
                                 </h4>
-                                <p className="text-sm text-gray-500 truncate">
+                                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                                     {profile?.position || profile?.role || ''}
                                 </p>
                             </div>
@@ -116,9 +116,9 @@ export default function UserProfilePopup() {
                     <div className="py-2">
                         <button
                             onClick={handleProfileClick}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                         >
-                            <User size={20} className="text-gray-500" />
+                            <User size={20} className="text-gray-500 dark:text-gray-400" />
                             <span>Hồ sơ cá nhân</span>
                         </button>
 
@@ -128,18 +128,18 @@ export default function UserProfilePopup() {
                                 const path = user?.role === 'ADMIN' ? '/admin/settings' : '/settings';
                                 navigate(path);
                             }}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-gray-50 transition-colors"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                         >
-                            <Settings size={20} className="text-gray-500" />
+                            <Settings size={20} className="text-gray-500 dark:text-gray-400" />
                             <span>Cài đặt</span>
                         </button>
                     </div>
 
                     {/* Logout */}
-                    <div className="border-t py-2">
+                    <div className="border-t dark:border-gray-700 py-2">
                         <button
                             onClick={handleLogout}
-                            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 transition-colors"
+                            className="w-full flex items-center gap-3 px-4 py-3 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                         >
                             <LogOut size={20} />
                             <span>Đăng xuất</span>

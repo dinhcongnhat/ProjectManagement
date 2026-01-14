@@ -113,6 +113,12 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                 return <Briefcase size={18} className="text-blue-500" />;
             case 'DEADLINE':
                 return <Clock size={18} className="text-orange-500" />;
+            case 'RESULT_REPORT_UPLOAD':
+                return <span className="text-lg">📊</span>;
+            case 'FILE_UPLOAD':
+                return <span className="text-lg">📎</span>;
+            case 'PROJECT_SUBMITTED':
+                return <span className="text-lg">✅</span>;
             default:
                 return <Bell size={18} className="text-gray-500" />;
         }
@@ -138,7 +144,7 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
     };
 
     return (
-        <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden max-h-[80vh] md:max-h-[500px] flex flex-col">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden max-h-[80vh] md:max-h-[500px] flex flex-col">
             {/* Header */}
             <div className="p-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
                 <div className="flex items-center justify-between">
@@ -162,18 +168,18 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
 
             {/* Actions */}
             {notifications.length > 0 && (
-                <div className="px-4 py-2 border-b flex items-center justify-between bg-gray-50">
+                <div className="px-4 py-2 border-b dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900">
                     <button
                         onClick={handleMarkAllAsRead}
                         disabled={unreadCount === 0}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                         <CheckCheck size={16} />
                         <span>Đọc tất cả</span>
                     </button>
                     <button
                         onClick={handleDeleteAllRead}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
                     >
                         <Trash2 size={16} />
                         <span>Xóa đã đọc</span>
@@ -188,25 +194,25 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                         <Loader2 size={24} className="animate-spin text-blue-500" />
                     </div>
                 ) : notifications.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-gray-500">
                         <BellOff size={48} className="mb-3" />
                         <p className="font-medium">Không có thông báo</p>
                         <p className="text-sm">Bạn sẽ thấy thông báo ở đây</p>
                     </div>
                 ) : (
-                    <div className="divide-y">
+                    <div className="divide-y dark:divide-gray-700">
                         {notifications.map((notification) => (
                             <div
                                 key={notification.id}
                                 onClick={() => handleNotificationClick(notification)}
-                                className={`relative px-4 py-3 cursor-pointer transition-all hover:bg-gray-50 group ${!notification.isRead ? 'bg-blue-50/50' : ''
+                                className={`relative px-4 py-3 cursor-pointer transition-all hover:bg-gray-50 dark:hover:bg-gray-700 group ${!notification.isRead ? 'bg-blue-50/50 dark:bg-blue-900/20' : ''
                                     }`}
                             >
                                 <div className="flex gap-3">
                                     {/* Icon */}
                                     <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${!notification.isRead
-                                        ? 'bg-blue-100'
-                                        : 'bg-gray-100'
+                                        ? 'bg-blue-100 dark:bg-blue-900/50'
+                                        : 'bg-gray-100 dark:bg-gray-700'
                                         }`}>
                                         {getNotificationIcon(notification.type)}
                                     </div>
@@ -214,7 +220,7 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                                     {/* Content */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-2">
-                                            <p className={`text-sm font-medium truncate ${!notification.isRead ? 'text-gray-900' : 'text-gray-600'
+                                            <p className={`text-sm font-medium truncate ${!notification.isRead ? 'text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'
                                                 }`}>
                                                 {notification.title}
                                             </p>
@@ -222,16 +228,16 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                                                 <span className="flex-shrink-0 w-2 h-2 bg-blue-500 rounded-full mt-1.5" />
                                             )}
                                         </div>
-                                        <p className="text-sm text-gray-500 line-clamp-2 mt-0.5">
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-0.5">
                                             {notification.message}
                                         </p>
                                         <div className="flex items-center gap-2 mt-1">
                                             {notification.project && (
-                                                <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                                                <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 rounded-full">
                                                     {notification.project.code}
                                                 </span>
                                             )}
-                                            <span className="text-xs text-gray-400">
+                                            <span className="text-xs text-gray-400 dark:text-gray-500">
                                                 {formatTime(notification.createdAt)}
                                             </span>
                                         </div>
@@ -245,7 +251,7 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                                                     e.stopPropagation();
                                                     handleMarkAsRead(notification.id);
                                                 }}
-                                                className="p-1.5 hover:bg-blue-100 rounded-lg text-blue-600"
+                                                className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-blue-600 dark:text-blue-400"
                                                 title="Đánh dấu đã đọc"
                                             >
                                                 <Check size={16} />
@@ -254,7 +260,7 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                                         <button
                                             onClick={(e) => handleDelete(notification.id, e)}
                                             disabled={deleting === notification.id}
-                                            className="p-1.5 hover:bg-red-100 rounded-lg text-red-500"
+                                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg text-red-500 dark:text-red-400"
                                             title="Xóa"
                                         >
                                             {deleting === notification.id ? (

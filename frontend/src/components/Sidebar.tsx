@@ -92,7 +92,7 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
                         animate="visible"
                         exit="exit"
                         transition={{ duration: 0.2 }}
-                        className="lg:hidden fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
+                        className="lg:hidden fixed inset-0 bg-black/30 backdrop-blur-sm z-[55]"
                         onClick={onClose}
                     />
                 )}
@@ -101,7 +101,7 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
             {/* Sidebar - Desktop always visible */}
             <aside
                 className={clsx(
-                    'hidden lg:flex bg-white border-r border-gray-200 flex-col h-screen fixed left-0 top-0 z-50 shadow-sm',
+                    'hidden lg:flex bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col h-screen fixed left-0 top-0 z-50 shadow-sm',
                     'w-60'
                 )}
             >
@@ -122,7 +122,7 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
                         initial="hidden"
                         animate="visible"
                         exit="exit"
-                        className="lg:hidden bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0 z-50 shadow-lg w-60"
+                        className="lg:hidden bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col h-screen fixed left-0 top-0 z-[60] shadow-lg w-60"
                     >
                         <SidebarContent
                             navItems={navItems}
@@ -159,14 +159,14 @@ const SidebarContent = ({
     <>
         {/* Header */}
         <div
-            className="p-3 lg:p-4 flex flex-col items-center gap-2 border-b border-gray-100 bg-gradient-to-br from-white to-blue-50/30"
-            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 0.75rem)' }}
+            className="p-3 lg:p-4 flex flex-col items-center gap-2 border-b border-gray-100 dark:border-gray-700 bg-white dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)' }}
         >
             <div className="flex items-center justify-center w-full">
                 <motion.img
                     src="/Logo.png"
                     alt="Logo"
-                    className="h-16 lg:h-16 w-auto object-contain"
+                    className="h-14 lg:h-16 w-auto object-contain"
                     initial={animate ? { scale: 0.8, opacity: 0 } : false}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.1 }}
@@ -180,10 +180,10 @@ const SidebarContent = ({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
             >
-                <p className="text-xs font-semibold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto]">
+                <p className="text-xs font-semibold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 dark:from-orange-400 dark:via-pink-500 dark:to-orange-400 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto]">
                     Lắng nghe từ tâm
                 </p>
-                <p className="text-xs font-semibold bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] animation-delay-200">
+                <p className="text-xs font-semibold bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 dark:from-pink-500 dark:via-orange-400 dark:to-pink-500 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] animation-delay-200">
                     Kiến tạo vươn tầm
                 </p>
             </motion.div>
@@ -191,11 +191,11 @@ const SidebarContent = ({
             {showCloseButton && (
                 <motion.button
                     onClick={onClose}
-                    className="p-2 rounded-xl bg-white/80 backdrop-blur-sm hover:bg-white transition-colors absolute right-3 top-3 shadow-sm"
+                    className="p-2 rounded-xl bg-white/80 dark:bg-gray-700/80 backdrop-blur-sm hover:bg-white dark:hover:bg-gray-600 transition-colors absolute right-3 top-3 shadow-sm"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                 >
-                    <X size={20} className="text-gray-600" />
+                    <X size={20} className="text-gray-600 dark:text-gray-300" />
                 </motion.button>
             )}
         </div>
@@ -207,7 +207,7 @@ const SidebarContent = ({
             initial={animate ? "hidden" : false}
             animate="visible"
         >
-            <p className="px-3 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Menu</p>
+            <p className="px-3 py-2 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Menu</p>
             {navItems.map((item, index) => (
                 <motion.div
                     key={item.path}
@@ -221,8 +221,8 @@ const SidebarContent = ({
                             clsx(
                                 'flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group',
                                 isActive
-                                    ? 'bg-blue-50 text-blue-700 border border-blue-100 shadow-sm'
-                                    : 'text-gray-600 border border-transparent hover:bg-white hover:border-gray-200 hover:shadow-sm hover:text-blue-600'
+                                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-800 shadow-sm'
+                                    : 'text-gray-600 dark:text-gray-300 border border-transparent hover:bg-white dark:hover:bg-gray-700 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm hover:text-blue-600 dark:hover:text-blue-400'
                             )
                         }
                     >
@@ -233,7 +233,7 @@ const SidebarContent = ({
                                         'p-2 rounded-lg transition-all duration-200',
                                         isActive
                                             ? 'bg-blue-600 text-white'
-                                            : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-gray-700'
+                                            : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 group-hover:bg-gray-200 dark:group-hover:bg-gray-600 group-hover:text-gray-700 dark:group-hover:text-gray-200'
                                     )}
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.95 }}
@@ -249,15 +249,15 @@ const SidebarContent = ({
         </motion.nav>
 
         {/* Footer */}
-        <div className="p-3 border-t border-gray-100 pb-safe">
+        <div className="p-3 border-t border-gray-100 dark:border-gray-700 pb-safe">
             <motion.button
                 onClick={handleLogout}
-                className="flex items-center gap-3 px-3 py-3 w-full text-left text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all duration-200 group"
+                className="flex items-center gap-3 px-3 py-3 w-full text-left text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-all duration-200 group"
                 whileHover={{ x: 4 }}
                 whileTap={{ scale: 0.98 }}
             >
-                <div className="p-2 bg-gray-100 rounded-lg group-hover:bg-red-100 transition-colors">
-                    <LogOut size={18} className="text-gray-500 group-hover:text-red-500" />
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg group-hover:bg-red-100 dark:group-hover:bg-red-900/50 transition-colors">
+                    <LogOut size={18} className="text-gray-500 dark:text-gray-400 group-hover:text-red-500 dark:group-hover:text-red-400" />
                 </div>
                 <span className="text-sm font-medium">Đăng xuất</span>
             </motion.button>

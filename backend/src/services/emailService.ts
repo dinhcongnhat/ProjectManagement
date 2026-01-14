@@ -18,7 +18,7 @@ const getProjectAssignmentEmailHtml = (
     userName: string,
     projectName: string,
     projectCode: string,
-    role: 'manager' | 'implementer' | 'follower',
+    role: 'manager' | 'implementer' | 'follower' | 'cooperator',
     assignerName: string,
     startDate: string | null,
     endDate: string | null,
@@ -28,19 +28,22 @@ const getProjectAssignmentEmailHtml = (
     const roleText = {
         manager: 'Quản lý dự án',
         implementer: 'Người thực hiện',
-        follower: 'Người theo dõi'
+        follower: 'Người theo dõi',
+        cooperator: 'Người phối hợp'
     };
 
     const roleColor = {
         manager: '#e74c3c',
         implementer: '#3498db',
-        follower: '#27ae60'
+        follower: '#27ae60',
+        cooperator: '#f59e0b'
     };
 
     const roleDescription = {
         manager: 'Với vai trò Quản lý dự án, bạn sẽ chịu trách nhiệm giám sát tiến độ, phân công công việc và đảm bảo dự án hoàn thành đúng hạn.',
         implementer: 'Với vai trò Người thực hiện, bạn sẽ trực tiếp tham gia triển khai các công việc được giao trong dự án này.',
-        follower: 'Với vai trò Người theo dõi, bạn sẽ được cập nhật thông tin và có thể theo dõi tiến độ của dự án.'
+        follower: 'Với vai trò Người theo dõi, bạn sẽ được cập nhật thông tin và có thể theo dõi tiến độ của dự án.',
+        cooperator: 'Với vai trò Người phối hợp, bạn sẽ hỗ trợ và phối hợp với nhóm thực hiện trong dự án này.'
     };
 
     return `
@@ -291,7 +294,7 @@ export const sendProjectAssignmentEmail = async (
     projectId: number,
     projectName: string,
     projectCode: string,
-    role: 'manager' | 'implementer' | 'follower',
+    role: 'manager' | 'implementer' | 'follower' | 'cooperator',
     assignerName: string,
     startDate: Date | null,
     endDate: Date | null,
@@ -309,7 +312,8 @@ export const sendProjectAssignmentEmail = async (
         const roleText = {
             manager: 'Quản lý',
             implementer: 'Thực hiện',
-            follower: 'Theo dõi'
+            follower: 'Theo dõi',
+            cooperator: 'Phối hợp'
         };
 
         const { data, error } = await resend.emails.send({

@@ -63,7 +63,15 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
         cooperatorIds: [] as string[],
         description: '',
         parentId: parentId || '',
-        priority: 'NORMAL' // Default priority
+        priority: 'NORMAL', // Default priority
+        // New fields for sub-project
+        documentNumber: '',
+        documentDate: '',
+        implementingUnit: '',
+        appraisalUnit: '',
+        approver: '',
+        productType: '',
+        status: 'PENDING' // Default status: PENDING, IN_PROGRESS, COMPLETED
     });
 
     const CODE_PREFIX = 'DA2026';
@@ -221,18 +229,31 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                 investor: parentProject ? '' : formData.investor,
                 startDate: formData.startDate,
                 endDate: formData.endDate,
-                duration: parentProject ? '' : formData.duration,
+                duration: formData.duration,
                 group: parentProject ? '' : formData.group,
-                value: parentProject ? '' : formData.value,
+                value: formData.value,
                 managerId: formData.managerId,
                 description: formData.description,
                 parentId: formData.parentId || parentId,
                 implementerIds: JSON.stringify(formData.implementerIds),
                 cooperatorIds: JSON.stringify(formData.cooperatorIds),
                 priority: formData.priority,
+                // New fields for sub-project
+                ...(parentProject && {
+                    documentNumber: formData.documentNumber,
+                    documentDate: formData.documentDate || null,
+                    implementingUnit: formData.implementingUnit,
+                    appraisalUnit: formData.appraisalUnit,
+                    approver: formData.approver,
+                    productType: formData.productType,
+                    status: formData.status,
+                }),
             };
 
-            const createResponse = await fetch(`${API_URL}/projects`, {
+            // Use different endpoint for sub-project (allows Manager to create)
+            const endpoint = parentProject ? `${API_URL}/projects/sub-project` : `${API_URL}/projects`;
+
+            const createResponse = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -619,48 +640,173 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                     )}
 
                     {parentProject ? (
-                        // Simplified Form for Child Project
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                                    Tên công việc <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    name="name"
-                                    value={formData.name}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    placeholder="Nhập tên công việc"
-                                />
-                            </div>
+                        // Form for Child Project with full fields
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Left Column - Basic Info */}
+                            <div className="space-y-4">
+                                <h3 className="text-base font-semibold text-gray-900 border-b pb-2">Thông tin công việc</h3>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1.5">Mô tả công việc</label>
-                                <textarea
-                                    name="description"
-                                    value={formData.description}
-                                    onChange={handleChange}
-                                    rows={3}
-                                    placeholder="Nhập mô tả chi tiết..."
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
-                                ></textarea>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày kết thúc dự kiến</label>
-                                    <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                        Tên công việc <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        value={formData.name}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        placeholder="Nhập tên công việc"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Số hiệu văn bản</label>
                                         <input
-                                            type="date"
-                                            name="endDate"
-                                            value={formData.endDate}
+                                            type="text"
+                                            name="documentNumber"
+                                            value={formData.documentNumber}
                                             onChange={handleChange}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            placeholder="VD: VB-2026-001"
                                         />
-                                        <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày văn bản</label>
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                name="documentDate"
+                                                value={formData.documentDate}
+                                                onChange={handleChange}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            />
+                                            <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                        </div>
                                     </div>
                                 </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Đơn vị thực hiện</label>
+                                    <input
+                                        type="text"
+                                        name="implementingUnit"
+                                        value={formData.implementingUnit}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        placeholder="Nhập đơn vị thực hiện"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Đơn vị thẩm định</label>
+                                    <input
+                                        type="text"
+                                        name="appraisalUnit"
+                                        value={formData.appraisalUnit}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        placeholder="Nhập đơn vị thẩm định"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Người phê duyệt</label>
+                                    <input
+                                        type="text"
+                                        name="approver"
+                                        value={formData.approver}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                        placeholder="Nhập người phê duyệt"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày bắt đầu</label>
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                name="startDate"
+                                                value={formData.startDate}
+                                                onChange={handleChange}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            />
+                                            <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Ngày kết thúc</label>
+                                        <div className="relative">
+                                            <input
+                                                type="date"
+                                                name="endDate"
+                                                value={formData.endDate}
+                                                onChange={handleChange}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            />
+                                            <Calendar className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Thời hạn (ngày)</label>
+                                    <input
+                                        type="number"
+                                        name="duration"
+                                        value={formData.duration}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-gray-50"
+                                        readOnly
+                                        placeholder="Tự động tính"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Loại sản phẩm</label>
+                                        <input
+                                            type="text"
+                                            name="productType"
+                                            value={formData.productType}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            placeholder="VD: Báo cáo, Bản vẽ..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Giá trị (VNĐ)</label>
+                                        <input
+                                            type="text"
+                                            name="value"
+                                            value={formData.value}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Mô tả</label>
+                                    <textarea
+                                        name="description"
+                                        value={formData.description}
+                                        onChange={handleChange}
+                                        rows={3}
+                                        placeholder="Nhập mô tả chi tiết..."
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+                                    ></textarea>
+                                </div>
+                            </div>
+
+                            {/* Right Column - Priority & Permissions */}
+                            <div className="space-y-4">
+                                <h3 className="text-base font-semibold text-gray-900 border-b pb-2">Phân quyền</h3>
+
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Mức độ ưu tiên</label>
                                     <div className="relative">
@@ -671,15 +817,40 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                                             className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none text-sm font-medium ${formData.priority === 'HIGH' ? 'text-red-600 bg-red-50 border-red-200' : 'text-gray-700 bg-white'
                                                 }`}
                                         >
-                                            <option value="NORMAL" className="text-gray-700 bg-white">Công việc thường</option>
-                                            <option value="HIGH" className="text-red-600 bg-red-50">Công việc ưu tiên</option>
+                                            <option value="NORMAL" className="text-gray-700 bg-white">Bình thường</option>
+                                            <option value="HIGH" className="text-red-600 bg-red-50">Ưu tiên cao</option>
                                         </select>
                                         <ChevronDown className={`absolute right-3 top-2.5 pointer-events-none ${formData.priority === 'HIGH' ? 'text-red-400' : 'text-gray-400'}`} size={16} />
                                     </div>
                                 </div>
-                            </div>
 
-                            <FileAttachment />
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                        Người quản lý <span className="text-red-500">*</span>
+                                    </label>
+                                    <div className="relative">
+                                        <select
+                                            name="managerId"
+                                            value={formData.managerId}
+                                            onChange={handleChange}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white text-sm"
+                                        >
+                                            <option value="">-- Chọn người quản lý --</option>
+                                            {users.map(u => (
+                                                <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                    </div>
+                                </div>
+
+                                <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={formData.implementerIds} />
+                                <UserMultiSelect label="Người phối hợp" name="cooperatorIds" selectedIds={formData.cooperatorIds} />
+
+                                <div className="mt-4">
+                                    <FileAttachment />
+                                </div>
+                            </div>
                         </div>
                     ) : (
                         // Full Form for Main Project (Existing Layout)

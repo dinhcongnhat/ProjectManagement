@@ -36,12 +36,20 @@ const AdminLayout = () => {
     };
 
     return (
-        <div className="flex min-h-screen bg-slate-50">
+        <div className="flex h-screen bg-slate-50 dark:bg-gray-900 overflow-hidden">
             <AdminSidebar isOpen={sidebarOpen} onClose={closeSidebar} />
 
             {/* Main Content */}
-            <div className="flex-1 lg:ml-60 flex flex-col transition-all duration-300 min-h-screen overflow-x-hidden">
-                <Header onMenuClick={toggleSidebar} />
+            <div
+                className="flex-1 lg:ml-60 flex flex-col h-screen overflow-hidden transition-all duration-300"
+                style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+            >
+                {/* Fixed Header */}
+                <div className="shrink-0">
+                    <Header onMenuClick={toggleSidebar} />
+                </div>
+
+                {/* Scrollable Content */}
                 <main className="flex-1 p-4 lg:p-8 overflow-auto pb-safe">
                     <AnimatePresence mode="wait">
                         <motion.div

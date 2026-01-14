@@ -1,4 +1,5 @@
 import type { Response } from 'express';
+import * as fs from 'fs';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { minioClient, bucketName } from '../config/minio.js';
@@ -295,7 +296,13 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
         const minioPath = `${basePath}/${originalName}`;
 
         // Upload to MinIO
-        const fileStream = Readable.from(req.file.buffer);
+        let fileStream;
+        if (req.file.path) {
+            fileStream = fs.createReadStream(req.file.path);
+        } else {
+            fileStream = Readable.from(req.file.buffer);
+        }
+
         await minioClient.putObject(
             bucketName,
             minioPath,
@@ -306,6 +313,13 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
                 'X-Amz-Meta-Original-Filename': encodeURIComponent(originalName)
             }
         );
+
+        // Cleanup temp file if disk storage used
+        if (req.file.path) {
+            fs.unlink(req.file.path, (err) => {
+                if (err) console.error('Error deleting temp file:', err);
+            });
+        }
 
         // Check if file already exists in database
         const existingFile = await prisma.userFile.findFirst({
@@ -343,6 +357,12 @@ export const uploadFile = async (req: AuthRequest, res: Response) => {
 
         res.status(201).json(file);
     } catch (error) {
+        // Cleanup temp file on error
+        if (req.file && req.file.path) {
+            fs.unlink(req.file.path, (err) => {
+                if (err && err.code !== 'ENOENT') console.error('Error deleting temp file on error:', err);
+            });
+        }
         console.error('Error uploading file:', error);
         res.status(500).json({ message: 'Lỗi khi upload file' });
     }
@@ -553,11 +573,42 @@ export const streamFile = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: 'Bạn không có quyền truy cập file này' });
         }
 
-        // Get file from MinIO
+        // Handle Range Request (Video Streaming)
+        const fileSize = Number(file.fileSize);
+        const range = req.headers.range;
+
+        if (range && fileSize > 0) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0] || '0', 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
+
+            // Validate range
+            if (start >= fileSize || end >= fileSize) {
+                res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+                return res.end();
+            }
+
+            const stream = await minioClient.getPartialObject(bucketName, file.minioPath, start, chunksize);
+
+            res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': file.fileType,
+                'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`
+            });
+            stream.pipe(res);
+            return;
+        }
+
+        // Get file from MinIO (Full content)
         const stream = await minioClient.getObject(bucketName, file.minioPath);
 
         // Set headers
         res.setHeader('Content-Type', file.fileType);
+        res.setHeader('Content-Length', fileSize);
+        res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.name)}`);
 
         stream.pipe(res);
@@ -1512,5 +1563,319 @@ export const ensureFolderStructure = async (req: AuthRequest, res: Response) => 
     } catch (error) {
         console.error('Error ensuring folder structure:', error);
         res.status(500).json({ message: 'Lỗi khi tạo cấu trúc thư mục' });
+    }
+};
+
+// Move folder to different parent
+export const moveFolder = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const folderId = parseInt(req.params.id || '0');
+        const { targetFolderId } = req.body; // null for root
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        // Get source folder
+        const folder = await prisma.userFolder.findUnique({
+            where: { id: folderId }
+        });
+
+        if (!folder) {
+            return res.status(404).json({ message: 'Thư mục không tồn tại' });
+        }
+
+        // Check ownership
+        if (folder.userId !== userId) {
+            return res.status(403).json({ message: 'Bạn không có quyền di chuyển thư mục này' });
+        }
+
+        // Prevent moving to self or own descendants
+        if (targetFolderId !== null) {
+            // Check if target is the folder itself
+            if (targetFolderId === folderId) {
+                return res.status(400).json({ message: 'Không thể di chuyển thư mục vào chính nó' });
+            }
+
+            // Check if target is a descendant of the folder
+            let checkId: number | null = targetFolderId;
+            while (checkId !== null) {
+                if (checkId === folderId) {
+                    return res.status(400).json({ message: 'Không thể di chuyển thư mục vào thư mục con của nó' });
+                }
+                const parentFolder = await prisma.userFolder.findUnique({
+                    where: { id: checkId },
+                    select: { parentId: true }
+                });
+                checkId = parentFolder?.parentId || null;
+            }
+
+            // Check if target folder exists and user has access
+            const targetFolder = await prisma.userFolder.findUnique({
+                where: { id: targetFolderId }
+            });
+            if (!targetFolder) {
+                return res.status(404).json({ message: 'Thư mục đích không tồn tại' });
+            }
+            if (targetFolder.userId !== userId) {
+                return res.status(403).json({ message: 'Bạn không có quyền di chuyển vào thư mục này' });
+            }
+        }
+
+        // Check for name conflict in target folder
+        const existing = await prisma.userFolder.findFirst({
+            where: {
+                userId,
+                parentId: targetFolderId,
+                name: folder.name,
+                id: { not: folderId }
+            }
+        });
+
+        if (existing) {
+            return res.status(400).json({ message: 'Thư mục đích đã có thư mục cùng tên' });
+        }
+
+        // Update folder
+        const updatedFolder = await prisma.userFolder.update({
+            where: { id: folderId },
+            data: { parentId: targetFolderId }
+        });
+
+        res.json({ message: 'Đã di chuyển thư mục thành công', folder: updatedFolder });
+    } catch (error) {
+        console.error('Error moving folder:', error);
+        res.status(500).json({ message: 'Lỗi khi di chuyển thư mục' });
+    }
+};
+
+// Move file to different folder
+export const moveFile = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const fileId = parseInt(req.params.id || '0');
+        const { targetFolderId } = req.body; // null for root
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        // Get source file
+        const file = await prisma.userFile.findUnique({
+            where: { id: fileId }
+        });
+
+        if (!file) {
+            return res.status(404).json({ message: 'File không tồn tại' });
+        }
+
+        // Check ownership
+        if (file.userId !== userId) {
+            return res.status(403).json({ message: 'Bạn không có quyền di chuyển file này' });
+        }
+
+        // Check target folder exists and user has access
+        if (targetFolderId !== null) {
+            const targetFolder = await prisma.userFolder.findUnique({
+                where: { id: targetFolderId }
+            });
+            if (!targetFolder) {
+                return res.status(404).json({ message: 'Thư mục đích không tồn tại' });
+            }
+            if (targetFolder.userId !== userId) {
+                return res.status(403).json({ message: 'Bạn không có quyền di chuyển vào thư mục này' });
+            }
+        }
+
+        // Check for name conflict in target folder
+        const existing = await prisma.userFile.findFirst({
+            where: {
+                userId,
+                folderId: targetFolderId,
+                name: file.name,
+                id: { not: fileId }
+            }
+        });
+
+        if (existing) {
+            return res.status(400).json({ message: 'Thư mục đích đã có file cùng tên' });
+        }
+
+        // Update file
+        const updatedFile = await prisma.userFile.update({
+            where: { id: fileId },
+            data: { folderId: targetFolderId }
+        });
+
+        res.json({ message: 'Đã di chuyển file thành công', file: updatedFile });
+    } catch (error) {
+        console.error('Error moving file:', error);
+        res.status(500).json({ message: 'Lỗi khi di chuyển file' });
+    }
+};
+
+// Search folders and files recursively (including shared)
+export const searchFoldersAndFiles = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const query = (req.query.q as string || '').trim();
+        const parentId = req.query.parentId ? parseInt(req.query.parentId as string) : null;
+
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        if (!query || query.length < 2) {
+            return res.json({ folders: [], files: [] });
+        }
+
+        // Get all shared folder IDs for this user
+        const sharedFolderAccess = await prisma.userFolderShare.findMany({
+            where: { userId },
+            select: { folderId: true }
+        });
+        const sharedFolderIds = sharedFolderAccess.map(s => s.folderId);
+
+        // Helper function to get all descendant folder IDs (for both owned and shared)
+        const getAllDescendantFolderIds = async (folderIds: (number | null)[], includeOwned: boolean = true): Promise<number[]> => {
+            const allIds: number[] = [];
+            const visited = new Set<number>();
+
+            const getDescendants = async (parentFolderId: number | null) => {
+                const whereClause: any = { parentId: parentFolderId };
+                if (includeOwned && parentFolderId === null) {
+                    whereClause.userId = userId;
+                }
+
+                const children = await prisma.userFolder.findMany({
+                    where: whereClause,
+                    select: { id: true }
+                });
+
+                for (const child of children) {
+                    if (!visited.has(child.id)) {
+                        visited.add(child.id);
+                        allIds.push(child.id);
+                        await getDescendants(child.id);
+                    }
+                }
+            };
+
+            for (const folderId of folderIds) {
+                if (folderId !== null && !visited.has(folderId)) {
+                    visited.add(folderId);
+                    allIds.push(folderId);
+                }
+                await getDescendants(folderId);
+            }
+
+            return allIds;
+        };
+
+        // Get all folder IDs to search in (owned + shared + their descendants)
+        let searchFolderIds: number[] = [];
+
+        if (parentId === null) {
+            // Search in all owned folders
+            const ownedFolderIds = await getAllDescendantFolderIds([null], true);
+            // Search in all shared folders and their descendants
+            const sharedDescendants = await getAllDescendantFolderIds(sharedFolderIds, false);
+            searchFolderIds = [...ownedFolderIds, ...sharedFolderIds, ...sharedDescendants];
+        } else {
+            // Search in specific folder + all descendants
+            const descendantIds = await getAllDescendantFolderIds([parentId], false);
+            searchFolderIds = [parentId, ...descendantIds];
+        }
+
+        // Remove duplicates
+        searchFolderIds = [...new Set(searchFolderIds)];
+
+        // Search folders (owned)
+        const ownedFolders = await prisma.userFolder.findMany({
+            where: {
+                OR: [
+                    { userId, name: { contains: query, mode: 'insensitive' } },
+                    { id: { in: searchFolderIds }, name: { contains: query, mode: 'insensitive' } }
+                ]
+            },
+            include: {
+                parent: { select: { id: true, name: true } },
+                user: { select: { name: true } }
+            },
+            orderBy: { name: 'asc' },
+            take: 50
+        });
+
+        // Search files (owned + in accessible folders)
+        const files = await prisma.userFile.findMany({
+            where: {
+                OR: [
+                    { userId, name: { contains: query, mode: 'insensitive' } },
+                    { folderId: { in: searchFolderIds }, name: { contains: query, mode: 'insensitive' } }
+                ]
+            },
+            include: {
+                folder: { select: { id: true, name: true } },
+                user: { select: { name: true } }
+            },
+            orderBy: { name: 'asc' },
+            take: 50
+        });
+
+        // Build breadcrumb path for each result
+        const buildPath = async (folderId: number | null): Promise<string> => {
+            if (!folderId) return 'Thư mục gốc';
+
+            const pathParts: string[] = [];
+            let currentId: number | null = folderId;
+
+            while (currentId) {
+                const currentFolder: { name: string; parentId: number | null } | null = await prisma.userFolder.findUnique({
+                    where: { id: currentId },
+                    select: { name: true, parentId: true }
+                });
+                if (currentFolder) {
+                    pathParts.unshift(currentFolder.name);
+                    currentId = currentFolder.parentId;
+                } else {
+                    break;
+                }
+            }
+
+            return pathParts.join(' / ') || 'Thư mục gốc';
+        };
+
+        // Check if folder is shared (not owned by user)
+        const isShared = (itemUserId: number) => itemUserId !== userId;
+
+        // Add path info and shared flag to results
+        const foldersWithPath = await Promise.all(
+            ownedFolders.map(async (folder) => ({
+                ...folder,
+                path: await buildPath(folder.parentId),
+                isShared: isShared(folder.userId),
+                ownerName: isShared(folder.userId) ? folder.user?.name : undefined
+            }))
+        );
+
+        const filesWithPath = await Promise.all(
+            files.map(async (file) => ({
+                ...file,
+                path: await buildPath(file.folderId),
+                isShared: isShared(file.userId),
+                ownerName: isShared(file.userId) ? file.user?.name : undefined
+            }))
+        );
+
+        res.json({
+            folders: foldersWithPath,
+            files: filesWithPath,
+            totalFolders: foldersWithPath.length,
+            totalFiles: filesWithPath.length
+        });
+    } catch (error) {
+        console.error('Error searching folders and files:', error);
+        res.status(500).json({ message: 'Lỗi khi tìm kiếm' });
     }
 };

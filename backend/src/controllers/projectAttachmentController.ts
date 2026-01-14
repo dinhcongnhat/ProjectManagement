@@ -65,21 +65,20 @@ export const uploadProjectAttachment = async (req: AuthRequest, res: Response) =
             return res.status(404).json({ message: 'Dự án không tồn tại' });
         }
 
-        // Check permissions
+        // Check permissions - include cooperators
         const isAdmin = userRole === 'ADMIN';
         const isManager = project.manager.id === userId;
         const isImplementer = project.implementers.some(impl => impl.id === userId);
+        const isCooperator = project.cooperators.some(coop => coop.id === userId);
         const isCreator = project.createdBy?.id === userId;
 
-        if (!isAdmin && !isManager && !isImplementer && !isCreator) {
+        if (!isAdmin && !isManager && !isImplementer && !isCooperator && !isCreator) {
             return res.status(403).json({ message: 'Bạn không có quyền đính kèm tệp cho dự án này' });
         }
 
         // Determine category based on request or user role
         let category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem' = 'TaiLieuDinhKem';
         const requestedCategory = req.body.category;
-
-        const isCooperator = project.cooperators.some(coop => coop.id === userId);
 
         if (requestedCategory === 'NhanVienDinhKem') {
             if (isImplementer && !isAdmin && !isManager && !isCreator) {
@@ -180,33 +179,101 @@ export const uploadProjectAttachment = async (req: AuthRequest, res: Response) =
             }
         }
 
-        // Send notification to Manager and Admins
+        // Send notifications based on who uploaded
         try {
-            const adminUsers = await prisma.user.findMany({
-                where: { role: 'ADMIN', id: { not: userId } },
-                select: { id: true }
-            });
-
             const currentUser = await prisma.user.findUnique({
                 where: { id: userId },
                 select: { name: true }
             });
+            const uploaderName = currentUser?.name || 'Một thành viên';
 
-            const recipientIds = new Set<number>(adminUsers.map(u => u.id));
-            if (project.manager && project.manager.id !== userId) {
-                recipientIds.add(project.manager.id);
-            }
+            const { createNotificationsForUsers } = await import('./notificationController.js');
+            const { sendPushToUsers } = await import('../services/pushNotificationService.js');
 
-            if (recipientIds.size > 0) {
-                const { createNotificationsForUsers } = await import('./notificationController.js');
-                const uploaderName = currentUser?.name || 'Một thành viên';
-                await createNotificationsForUsers(
-                    Array.from(recipientIds),
-                    'FILE_UPLOAD',
-                    'Tệp đính kèm mới',
-                    `${uploaderName} đã tải lên ${uploadedAttachments.length} tệp cho dự án "${project.name}"`,
-                    project.id
-                );
+            // Different notification for result reports vs project documents
+            const isResultReport = category === 'NhanVienDinhKem';
+
+            if (isAdmin || isManager) {
+                // Manager/Admin uploads project documents → notify Implementers and Cooperators
+                const recipientIds = new Set<number>();
+
+                // Add all implementers
+                project.implementers.forEach(impl => {
+                    if (impl.id !== userId) recipientIds.add(impl.id);
+                });
+
+                // Add all cooperators
+                project.cooperators.forEach(coop => {
+                    if (coop.id !== userId) recipientIds.add(coop.id);
+                });
+
+                if (recipientIds.size > 0) {
+                    const notificationTitle = '📁 Tài liệu dự án mới';
+                    const notificationMessage = `${uploaderName} đã thêm ${uploadedAttachments.length} tài liệu vào dự án "${project.name}". Vui lòng kiểm tra!`;
+
+                    await createNotificationsForUsers(
+                        Array.from(recipientIds),
+                        'FILE_UPLOAD',
+                        notificationTitle,
+                        notificationMessage,
+                        project.id
+                    );
+
+                    // Also send push notification
+                    await sendPushToUsers(Array.from(recipientIds), {
+                        title: notificationTitle,
+                        body: notificationMessage,
+                        icon: '/Logo.png',
+                        badge: '/badge.png',
+                        tag: `project-doc-${project.id}`,
+                        data: {
+                            type: 'project',
+                            url: `/projects/${project.id}`,
+                            projectId: project.id
+                        }
+                    });
+                }
+            } else {
+                // Implementer/Cooperator uploads → notify Manager and Admins
+                const adminUsers = await prisma.user.findMany({
+                    where: { role: 'ADMIN', id: { not: userId } },
+                    select: { id: true }
+                });
+
+                const recipientIds = new Set<number>(adminUsers.map(u => u.id));
+                if (project.manager && project.manager.id !== userId) {
+                    recipientIds.add(project.manager.id);
+                }
+
+                if (recipientIds.size > 0) {
+                    const notificationType = isResultReport ? 'RESULT_REPORT_UPLOAD' : 'FILE_UPLOAD';
+                    const notificationTitle = isResultReport ? '📊 Báo cáo kết quả mới' : 'Tệp đính kèm mới';
+                    const notificationMessage = isResultReport
+                        ? `${uploaderName} đã nộp ${uploadedAttachments.length} báo cáo kết quả cho dự án "${project.name}". Vui lòng kiểm tra!`
+                        : `${uploaderName} đã tải lên ${uploadedAttachments.length} tệp cho dự án "${project.name}"`;
+
+                    await createNotificationsForUsers(
+                        Array.from(recipientIds),
+                        notificationType,
+                        notificationTitle,
+                        notificationMessage,
+                        project.id
+                    );
+
+                    // Also send push notification
+                    await sendPushToUsers(Array.from(recipientIds), {
+                        title: notificationTitle,
+                        body: notificationMessage,
+                        icon: '/Logo.png',
+                        badge: '/badge.png',
+                        tag: `project-upload-${project.id}`,
+                        data: {
+                            type: 'project',
+                            url: `/projects/${project.id}`,
+                            projectId: project.id
+                        }
+                    });
+                }
             }
         } catch (notifError) {
             console.error('Error sending notification:', notifError);
@@ -253,18 +320,19 @@ export const uploadAttachmentFromFolder = async (req: AuthRequest, res: Response
             return res.status(404).json({ message: 'Dự án không tồn tại' });
         }
 
-        // Check permissions
+        // Check permissions - include cooperators
         const isAdmin = userRole === 'ADMIN';
         const isManager = project.manager.id === userId;
         const isImplementer = project.implementers.some(impl => impl.id === userId);
+        const isCooperator = project.cooperators.some(coop => coop.id === userId);
         const isCreator = project.createdBy?.id === userId;
 
-        if (!isAdmin && !isManager && !isImplementer && !isCreator) {
+        if (!isAdmin && !isManager && !isImplementer && !isCooperator && !isCreator) {
             return res.status(403).json({ message: 'Bạn không có quyền đính kèm tệp cho dự án này' });
         }
 
         // Determine category based on request or user role
-        let category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' = 'TaiLieuDinhKem';
+        let category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem' = 'TaiLieuDinhKem';
         const requestedCategory = req.body.category;
 
         if (requestedCategory === 'NhanVienDinhKem') {
@@ -276,14 +344,21 @@ export const uploadAttachmentFromFolder = async (req: AuthRequest, res: Response
                 }
             }
             category = 'NhanVienDinhKem';
+        } else if (requestedCategory === 'PhoiHopDinhKem') {
+            if (!isCooperator && !isAdmin && !isManager && !isCreator) {
+                return res.status(403).json({ message: 'Bạn không thuộc nhóm phối hợp thực hiện' });
+            }
+            category = 'PhoiHopDinhKem';
         } else if (requestedCategory === 'TaiLieuDinhKem') {
             if (!isAdmin && !isManager && !isCreator) {
                 return res.status(403).json({ message: 'Bạn không có quyền đính kèm tài liệu dự án' });
             }
             category = 'TaiLieuDinhKem';
         } else {
-            // Default logic
-            if (!isAdmin && !isManager && !isCreator && isImplementer) {
+            // Default logic: auto-detect based on user role
+            if (isCooperator && !isAdmin && !isManager && !isCreator) {
+                category = 'PhoiHopDinhKem';
+            } else if (!isAdmin && !isManager && !isCreator && isImplementer) {
                 if (project.status !== 'PENDING_APPROVAL' && project.status !== 'COMPLETED') {
                     return res.status(403).json({
                         message: 'Nhân viên chỉ có thể đính kèm tệp khi dự án đã hoàn thành (100%)'
@@ -345,33 +420,101 @@ export const uploadAttachmentFromFolder = async (req: AuthRequest, res: Response
             uploadedAttachments.push(attachment);
         }
 
-        // Send notification to Manager and Admins
+        // Send notifications based on who uploaded
         try {
-            const adminUsers = await prisma.user.findMany({
-                where: { role: 'ADMIN', id: { not: userId } },
-                select: { id: true }
-            });
-
             const currentUser = await prisma.user.findUnique({
                 where: { id: userId },
                 select: { name: true }
             });
+            const uploaderName = currentUser?.name || 'Một thành viên';
 
-            const recipientIds = new Set<number>(adminUsers.map(u => u.id));
-            if (project.manager && project.manager.id !== userId) {
-                recipientIds.add(project.manager.id);
-            }
+            const { createNotificationsForUsers } = await import('./notificationController.js');
+            const { sendPushToUsers } = await import('../services/pushNotificationService.js');
 
-            if (recipientIds.size > 0) {
-                const { createNotificationsForUsers } = await import('./notificationController.js');
-                const uploaderName = currentUser?.name || 'Một thành viên';
-                await createNotificationsForUsers(
-                    Array.from(recipientIds),
-                    'FILE_UPLOAD',
-                    'Tệp đính kèm mới',
-                    `${uploaderName} đã tải lên ${uploadedAttachments.length} tệp cho dự án "${project.name}"`,
-                    project.id
-                );
+            // Different notification for result reports vs project documents
+            const isResultReport = category === 'NhanVienDinhKem';
+
+            if (isAdmin || isManager) {
+                // Manager/Admin uploads project documents → notify Implementers and Cooperators
+                const recipientIds = new Set<number>();
+
+                // Add all implementers
+                project.implementers.forEach(impl => {
+                    if (impl.id !== userId) recipientIds.add(impl.id);
+                });
+
+                // Add all cooperators
+                project.cooperators.forEach(coop => {
+                    if (coop.id !== userId) recipientIds.add(coop.id);
+                });
+
+                if (recipientIds.size > 0) {
+                    const notificationTitle = '📁 Tài liệu dự án mới';
+                    const notificationMessage = `${uploaderName} đã thêm ${uploadedAttachments.length} tài liệu vào dự án "${project.name}". Vui lòng kiểm tra!`;
+
+                    await createNotificationsForUsers(
+                        Array.from(recipientIds),
+                        'FILE_UPLOAD',
+                        notificationTitle,
+                        notificationMessage,
+                        project.id
+                    );
+
+                    // Also send push notification
+                    await sendPushToUsers(Array.from(recipientIds), {
+                        title: notificationTitle,
+                        body: notificationMessage,
+                        icon: '/Logo.png',
+                        badge: '/badge.png',
+                        tag: `project-doc-${project.id}`,
+                        data: {
+                            type: 'project',
+                            url: `/projects/${project.id}`,
+                            projectId: project.id
+                        }
+                    });
+                }
+            } else {
+                // Implementer/Cooperator uploads → notify Manager and Admins
+                const adminUsers = await prisma.user.findMany({
+                    where: { role: 'ADMIN', id: { not: userId } },
+                    select: { id: true }
+                });
+
+                const recipientIds = new Set<number>(adminUsers.map(u => u.id));
+                if (project.manager && project.manager.id !== userId) {
+                    recipientIds.add(project.manager.id);
+                }
+
+                if (recipientIds.size > 0) {
+                    const notificationType = isResultReport ? 'RESULT_REPORT_UPLOAD' : 'FILE_UPLOAD';
+                    const notificationTitle = isResultReport ? '📊 Báo cáo kết quả mới' : 'Tệp đính kèm mới';
+                    const notificationMessage = isResultReport
+                        ? `${uploaderName} đã nộp ${uploadedAttachments.length} báo cáo kết quả cho dự án "${project.name}". Vui lòng kiểm tra!`
+                        : `${uploaderName} đã tải lên ${uploadedAttachments.length} tệp cho dự án "${project.name}"`;
+
+                    await createNotificationsForUsers(
+                        Array.from(recipientIds),
+                        notificationType,
+                        notificationTitle,
+                        notificationMessage,
+                        project.id
+                    );
+
+                    // Also send push notification
+                    await sendPushToUsers(Array.from(recipientIds), {
+                        title: notificationTitle,
+                        body: notificationMessage,
+                        icon: '/Logo.png',
+                        badge: '/badge.png',
+                        tag: `project-upload-${project.id}`,
+                        data: {
+                            type: 'project',
+                            url: `/projects/${project.id}`,
+                            projectId: project.id
+                        }
+                    });
+                }
             }
         } catch (notifError) {
             console.error('Error sending notification:', notifError);

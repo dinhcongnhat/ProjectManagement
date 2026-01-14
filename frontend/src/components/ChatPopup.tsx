@@ -7,6 +7,7 @@ import {
     ZoomIn, ZoomOut, RotateCw, Info, Copy
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { useDialog } from './ui/Dialog';
 import { FileDownloadButton } from './ui/DownloadOptions';
 import { AttachmentPicker } from './ui/AttachmentPicker';
@@ -15,6 +16,7 @@ import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
 import ImageCropper from './ImageCropper';
 import { resolveAttachmentUrl } from '../utils/urlUtils';
+
 
 // ==================== ENCRYPTION UTILITIES ====================
 const ENCRYPTION_KEY = 'JTSC_CHAT_2025'; // Base key for encryption
@@ -205,6 +207,14 @@ const isOfficeFile = (filename: string | null): boolean => {
         'pdf', 'mht', 'html', 'htm'
     ];
     return officeExts.includes(ext);
+};
+
+// Check if file is a video
+const isVideoFile = (filename: string | null): boolean => {
+    if (!filename) return false;
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v', '3gp'];
+    return videoExts.includes(ext);
 };
 
 const extractFilename = (path: string): string => {
@@ -551,75 +561,6 @@ const ImageViewer: React.FC<{
     );
 };
 
-// Image compression utility - resize and compress images before upload
-const compressImage = (file: File, maxWidth: number = 1200, maxHeight: number = 1200, quality: number = 0.8): Promise<File> => {
-    return new Promise((resolve, reject) => {
-        // Skip compression for non-image files or GIFs (to preserve animation)
-        if (!file.type.startsWith('image/') || file.type === 'image/gif') {
-            resolve(file);
-            return;
-        }
-
-        const img = new Image();
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        img.onload = () => {
-            let { width, height } = img;
-
-            // Calculate new dimensions while maintaining aspect ratio
-            if (width > maxWidth || height > maxHeight) {
-                const ratio = Math.min(maxWidth / width, maxHeight / height);
-                width = Math.round(width * ratio);
-                height = Math.round(height * ratio);
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-
-            // Use better image smoothing for quality
-            if (ctx) {
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(img, 0, 0, width, height);
-            }
-
-            // Convert to blob with compression
-            canvas.toBlob(
-                (blob) => {
-                    if (blob) {
-                        // Create new file with same name but compressed
-                        const compressedFile = new File([blob], file.name, {
-                            type: 'image/jpeg',
-                            lastModified: Date.now(),
-                        });
-
-                        console.log(`Image compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB (${Math.round((1 - compressedFile.size / file.size) * 100)}% reduction)`);
-                        resolve(compressedFile);
-                    } else {
-                        resolve(file); // Fallback to original if compression fails
-                    }
-                },
-                'image/jpeg',
-                quality
-            );
-        };
-
-        img.onerror = () => {
-            console.error('Error loading image for compression');
-            resolve(file); // Fallback to original on error
-        };
-
-        // Load image from file
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            img.src = e.target?.result as string;
-        };
-        reader.onerror = () => reject(new Error('Error reading file'));
-        reader.readAsDataURL(file);
-    });
-};
-
 // Format last active time
 const formatLastActive = (lastActive: string | undefined, isOnline: boolean | undefined): string => {
     if (isOnline) return 'Đang hoạt động';
@@ -643,8 +584,13 @@ const formatLastActive = (lastActive: string | undefined, isOnline: boolean | un
 // ==================== MAIN COMPONENT ====================
 const ChatPopup: React.FC = () => {
     const { user, token } = useAuth();
+    const { resolvedTheme } = useTheme();
     const { socketRef, connected } = useWebSocket(token);
     const { showConfirm, showError, showWarning, showSuccess } = useDialog();
+
+    // Dark mode colors
+    const isDark = resolvedTheme === 'dark';
+    const bgColor = isDark ? 'rgb(31, 41, 55)' : 'white';
 
     // Panel state
     const [isOpen, setIsOpen] = useState(false);
@@ -701,6 +647,10 @@ const ChatPopup: React.FC = () => {
     const [selectedMembers, setSelectedMembers] = useState<User[]>([]);
     const [allUsers, setAllUsers] = useState<User[]>([]);
 
+    // Drag & Drop state
+    const [isDraggingOver, setIsDraggingOver] = useState<number | null>(null); // conversationId being dragged over
+    const dragCounterRef = useRef<Record<number, number>>({}); // To handle nested drag events
+
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -713,7 +663,7 @@ const ChatPopup: React.FC = () => {
     const [showMentionPopup, setShowMentionPopup] = useState<number | null>(null); // conversationId
     const [mentionQuery, setMentionQuery] = useState('');
     const [mentionStartPos, setMentionStartPos] = useState(0);
-    const inputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+    const inputRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
     // Chat Info State
     const [chatInfoData, setChatInfoData] = useState<Record<number, {
@@ -1761,6 +1711,28 @@ const ChatPopup: React.FC = () => {
         }
     };
 
+    // Handle paste event for images (Ctrl+V)
+    const handlePaste = async (e: React.ClipboardEvent, conversationId: number) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    // Create a file with a proper name
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    const extension = item.type.split('/')[1] || 'png';
+                    const namedFile = new File([file], `screenshot_${timestamp}.${extension}`, { type: file.type });
+                    await handleFileUpload(conversationId, namedFile);
+                }
+                return; // Handle only the first image
+            }
+        }
+    };
+
     // Insert mention into input
     const insertMention = (conversationId: number, userName: string) => {
         const currentInput = messageInputs[conversationId] || '';
@@ -1889,6 +1861,9 @@ const ChatPopup: React.FC = () => {
 
         // Clear input immediately
         setMessageInputs(prev => ({ ...prev, [conversationId]: '' }));
+        if (inputRefs.current[conversationId]) {
+            inputRefs.current[conversationId].style.height = 'auto';
+        }
 
         try {
             const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
@@ -2011,6 +1986,52 @@ const ChatPopup: React.FC = () => {
         }
     };
 
+    // ==================== DRAG & DROP HANDLERS ====================
+    const handleDragEnter = (e: React.DragEvent, conversationId: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (!dragCounterRef.current[conversationId]) {
+            dragCounterRef.current[conversationId] = 0;
+        }
+        dragCounterRef.current[conversationId]++;
+
+        if (e.dataTransfer.types.includes('Files')) {
+            setIsDraggingOver(conversationId);
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDragLeave = (e: React.DragEvent, conversationId: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        dragCounterRef.current[conversationId]--;
+        if (dragCounterRef.current[conversationId] === 0) {
+            setIsDraggingOver(null);
+        }
+    };
+
+    const handleDrop = async (e: React.DragEvent, conversationId: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        dragCounterRef.current[conversationId] = 0;
+        setIsDraggingOver(null);
+
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            // Upload each file
+            for (let i = 0; i < files.length; i++) {
+                await handleFileUpload(conversationId, files[i]);
+            }
+        }
+    };
+
     const handleFileUpload = async (conversationId: number, file: File) => {
         if (!file) return;
 
@@ -2022,22 +2043,23 @@ const ChatPopup: React.FC = () => {
         });
 
         const isImage = file.type.startsWith('image/');
+        const isVideo = file.type.startsWith('video/');
 
-        // Compress image before upload if it's an image
-        let fileToUpload = file;
-        if (isImage) {
-            try {
-                setUploadProgress(prev => ({ ...prev, [conversationId]: 0 }));
-                fileToUpload = await compressImage(file, 1200, 1200, 0.8);
-                console.log('[ChatPopup] Image compressed:', {
-                    originalSize: file.size,
-                    compressedSize: fileToUpload.size
-                });
-            } catch (error) {
-                console.error('Error compressing image:', error);
-                // Continue with original file if compression fails
-            }
+        // Check video file size limit (1024MB = 1GB)
+        if (isVideo && file.size > 1024 * 1024 * 1024) {
+            showError('Video quá lớn. Kích thước tối đa là 1GB.');
+            return;
         }
+
+        // Use original file without compression to preserve quality
+        // This ensures images and videos are sent with original quality
+        let fileToUpload = file;
+
+        // Note: Previously we compressed images, but now we keep original quality
+        // If you need to compress large images in the future, uncomment:
+        // if (isImage && file.size > 10 * 1024 * 1024) { // Only compress images > 10MB
+        //     fileToUpload = await compressImage(file, 4096, 4096, 0.95);
+        // }
 
         const formData = new FormData();
         formData.append('file', fileToUpload);
@@ -2291,6 +2313,55 @@ const ChatPopup: React.FC = () => {
         setAudioLevel(0);
     };
 
+    const handleDropExtended = async (e: React.DragEvent, conversationId: number) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(null);
+        if (dragCounterRef.current) dragCounterRef.current[conversationId] = 0;
+
+        const items = e.dataTransfer.items;
+        const filesToUpload: File[] = [];
+
+        const traverse = async (entry: any) => {
+            if (entry.isFile) {
+                const file = await new Promise<File | null>((resolve) => {
+                    entry.file((f: File) => resolve(f), () => resolve(null));
+                });
+                if (file) filesToUpload.push(file);
+            } else if (entry.isDirectory) {
+                const dirReader = entry.createReader();
+                const entries = await new Promise<any[]>((resolve) => {
+                    // readEntries only returns up to 100 entries, need loop for huge folders but keeping simple for now
+                    dirReader.readEntries((r: any[]) => resolve(r), () => resolve([]));
+                });
+                for (const sub of entries) await traverse(sub);
+            }
+        };
+
+        if (items) {
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const entry = item.webkitGetAsEntry?.() || ((item as any).getAsEntry ? (item as any).getAsEntry() : null);
+                if (entry) {
+                    await traverse(entry);
+                } else if (item.kind === 'file') {
+                    const file = item.getAsFile();
+                    if (file) filesToUpload.push(file);
+                }
+            }
+        } else {
+            Array.from(e.dataTransfer.files).forEach(f => filesToUpload.push(f));
+        }
+
+        if (filesToUpload.length > 0) {
+            // Upload sequentially
+            for (const file of filesToUpload) {
+                await handleFileUpload(conversationId, file);
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+    };
+
     // ==================== AUDIO PLAYBACK ====================
     const toggleAudioPlayback = (e: React.MouseEvent, messageId: number, audioUrl: string) => {
         e.preventDefault();
@@ -2381,6 +2452,24 @@ const ChatPopup: React.FC = () => {
                 const displayFilename = filename.length > 25
                     ? filename.substring(0, 20) + '...' + filename.substring(filename.lastIndexOf('.'))
                     : filename;
+
+                // Check if file is a video
+                if (isVideoFile(filename) && resolvedAttachmentUrl) {
+                    return (
+                        <div className="max-w-[300px]">
+                            {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>}
+                            <video
+                                controls
+                                className="rounded-lg max-w-full"
+                                style={{ maxHeight: '250px' }}
+                                preload="metadata"
+                            >
+                                <source src={resolvedAttachmentUrl} type={`video/${filename.split('.').pop()?.toLowerCase()}`} />
+                                Trình duyệt của bạn không hỗ trợ video.
+                            </video>
+                        </div>
+                    );
+                }
 
                 return (
                     <div className="max-w-[220px]">
@@ -2473,13 +2562,28 @@ const ChatPopup: React.FC = () => {
         const progress = uploadProgress[conversationId];
         const info = chatInfoData[conversationId] || { tab: 'search', results: [], loading: false, query: '' };
 
-        // Get other user's online status for private chat
+        // Get other user's online status for private chat or online member count for group
         const getOtherUserStatus = () => {
-            if (window.conversation.type !== 'PRIVATE') return { isOnline: false, lastActive: undefined };
+            if (window.conversation.type === 'GROUP') {
+                // For group chat, count online members
+                const onlineMembers = window.conversation.members.filter(m => m.user?.isOnline);
+                const totalMembers = window.conversation.members.length;
+                return {
+                    isGroup: true,
+                    onlineCount: onlineMembers.length,
+                    totalMembers: totalMembers,
+                    isOnline: onlineMembers.length > 0,
+                    lastActive: undefined
+                };
+            }
+            // For private chat
             const otherMember = window.conversation.members.find(m => m.userId !== user?.id);
             return {
+                isGroup: false,
                 isOnline: otherMember?.user?.isOnline || false,
-                lastActive: otherMember?.user?.lastActive
+                lastActive: otherMember?.user?.lastActive,
+                onlineCount: 0,
+                totalMembers: 0
             };
         };
         const otherStatus = getOtherUserStatus();
@@ -2533,7 +2637,12 @@ const ChatPopup: React.FC = () => {
                             <div className="flex items-center gap-1">
                                 {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
                                 <span className={`text-xs ${otherStatus.isOnline ? 'text-green-600' : 'text-gray-500'}`}>
-                                    {formatLastActive(otherStatus.lastActive, otherStatus.isOnline)}
+                                    {otherStatus.isGroup
+                                        ? (otherStatus.onlineCount > 0
+                                            ? `${otherStatus.onlineCount}/${otherStatus.totalMembers} đang hoạt động`
+                                            : `${otherStatus.totalMembers} thành viên`)
+                                        : formatLastActive(otherStatus.lastActive, otherStatus.isOnline)
+                                    }
                                 </span>
                             </div>
                         </div>
@@ -2579,7 +2688,22 @@ const ChatPopup: React.FC = () => {
                 {!window.isMinimized && (
                     <div className="flex flex-1 overflow-hidden">
                         {/* Messages & Input Container */}
-                        <div className="flex flex-col flex-1 min-w-0 bg-gray-50 relative">
+                        <div
+                            className={`flex flex-col flex-1 min-w-0 bg-gray-50 relative transition-colors ${isDraggingOver === conversationId ? 'bg-blue-50' : ''}`}
+                            onDragEnter={(e) => handleDragEnter(e, conversationId)}
+                            onDragOver={handleDragOver}
+                            onDragLeave={(e) => handleDragLeave(e, conversationId)}
+                            onDrop={(e) => handleDrop(e, conversationId)}
+                        >
+                            {/* Drag Overlay */}
+                            {isDraggingOver === conversationId && (
+                                <div className="absolute inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+                                    <div className="bg-white rounded-xl shadow-lg p-6 border-2 border-dashed border-blue-500">
+                                        <p className="text-blue-600 font-medium text-lg">Thả file để gửi</p>
+                                        <p className="text-blue-400 text-sm mt-1">Hỗ trợ nhiều file cùng lúc</p>
+                                    </div>
+                                </div>
+                            )}
                             {/* Messages */}
                             <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
                                 {window.messages.length === 0 ? (
@@ -2927,11 +3051,16 @@ const ChatPopup: React.FC = () => {
 
                                         {/* Text Input with Mention Popup */}
                                         <div className="relative flex-1 min-w-0">
-                                            <input
+                                            <textarea
                                                 ref={el => { inputRefs.current[conversationId] = el; }}
-                                                type="text"
                                                 value={messageInput}
-                                                onChange={(e) => handleInputChange(conversationId, e.target.value)}
+                                                onChange={(e) => {
+                                                    handleInputChange(conversationId, e.target.value);
+                                                    // Auto-resize
+                                                    e.target.style.height = 'auto';
+                                                    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                                                }}
+                                                onPaste={(e) => handlePaste(e, conversationId)}
                                                 onKeyDown={(e) => {
                                                     if (showMentionPopup === conversationId) {
                                                         const suggestions = getMentionSuggestions(conversationId);
@@ -2945,10 +3074,14 @@ const ChatPopup: React.FC = () => {
                                                     } else if (e.key === 'Enter' && !e.shiftKey) {
                                                         e.preventDefault();
                                                         sendMessage(conversationId, messageInput);
+                                                        // Reset height after send
+                                                        e.currentTarget.style.height = 'auto';
                                                     }
                                                 }}
                                                 placeholder="Aa"
-                                                className="w-full px-3 py-1.5 bg-gray-100 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                rows={1}
+                                                className="w-full px-3 py-1.5 bg-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
+                                                style={{ minHeight: '36px', maxHeight: '120px' }}
                                                 data-conversation-id={conversationId}
                                             />
 
@@ -3150,13 +3283,28 @@ const ChatPopup: React.FC = () => {
         const progress = uploadProgress[conversationId];
         const isTyping = typingUsers[conversationId] && typingUsers[conversationId].length > 0;
 
-        // Get other user's online status for private chat
+        // Get other user's online status for private chat or online member count for group
         const getOtherUserStatus = () => {
-            if (mobileActiveChat.conversation.type !== 'PRIVATE') return { isOnline: false, lastActive: undefined };
+            if (mobileActiveChat.conversation.type === 'GROUP') {
+                // For group chat, count online members
+                const onlineMembers = mobileActiveChat.conversation.members.filter(m => m.user?.isOnline);
+                const totalMembers = mobileActiveChat.conversation.members.length;
+                return {
+                    isGroup: true,
+                    onlineCount: onlineMembers.length,
+                    totalMembers: totalMembers,
+                    isOnline: onlineMembers.length > 0,
+                    lastActive: undefined
+                };
+            }
+            // For private chat
             const otherMember = mobileActiveChat.conversation.members.find(m => m.userId !== user?.id);
             return {
+                isGroup: false,
                 isOnline: otherMember?.user?.isOnline || false,
-                lastActive: otherMember?.user?.lastActive
+                lastActive: otherMember?.user?.lastActive,
+                onlineCount: 0,
+                totalMembers: 0
             };
         };
         const otherStatus = getOtherUserStatus();
@@ -3164,8 +3312,8 @@ const ChatPopup: React.FC = () => {
         return (
             <div className="fixed inset-0 z-50 bg-white flex flex-col">
                 {/* Header - Clean Design with safe area */}
-                <div className="bg-blue-600 shrink-0 shadow-sm" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 10px)' }}>
-                    <div className="flex items-center gap-3 px-3 py-3">
+                <div className="bg-blue-600 shrink-0 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+                    <div className="flex items-center gap-3 px-3 py-2.5">
                         <button
                             onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
                             className="w-10 h-10 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl transition-colors"
@@ -3198,7 +3346,12 @@ const ChatPopup: React.FC = () => {
                                     <>
                                         {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>}
                                         <span className={`text-xs ${otherStatus.isOnline ? 'text-green-300' : 'text-white/60'}`}>
-                                            {formatLastActive(otherStatus.lastActive, otherStatus.isOnline)}
+                                            {otherStatus.isGroup
+                                                ? (otherStatus.onlineCount > 0
+                                                    ? `${otherStatus.onlineCount}/${otherStatus.totalMembers} đang hoạt động`
+                                                    : `${otherStatus.totalMembers} thành viên`)
+                                                : formatLastActive(otherStatus.lastActive, otherStatus.isOnline)
+                                            }
                                         </span>
                                     </>
                                 )}
@@ -3231,7 +3384,21 @@ const ChatPopup: React.FC = () => {
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-3 space-y-0.5 bg-gray-50">
+                <div
+                    className={`flex-1 overflow-y-auto p-3 space-y-0.5 bg-gray-50 relative transition-colors ${isDraggingOver === conversationId ? 'bg-blue-50' : ''}`}
+                    onDragEnter={(e) => handleDragEnter(e, conversationId)}
+                    onDragOver={handleDragOver}
+                    onDragLeave={(e) => handleDragLeave(e, conversationId)}
+                    onDrop={(e) => handleDropExtended(e, conversationId)}
+                >
+                    {/* Drag Overlay */}
+                    {isDraggingOver === conversationId && (
+                        <div className="absolute inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+                            <div className="bg-white rounded-xl shadow-lg p-4 border-2 border-dashed border-blue-500">
+                                <p className="text-blue-600 font-medium">Thả file để gửi</p>
+                            </div>
+                        </div>
+                    )}
                     {mobileActiveChat.messages.map((msg, msgIndex) => {
                         const isOwn = msg.sender.id === user?.id;
                         const groupedReactions = msg.reactions?.reduce((acc, r) => {
@@ -3557,11 +3724,16 @@ const ChatPopup: React.FC = () => {
 
                             {/* Mobile Text Input with Mention Popup */}
                             <div className="relative flex-1 min-w-0">
-                                <input
+                                <textarea
                                     ref={el => { inputRefs.current[conversationId] = el; }}
-                                    type="text"
                                     value={messageInput}
-                                    onChange={(e) => handleInputChange(conversationId, e.target.value)}
+                                    onChange={(e) => {
+                                        handleInputChange(conversationId, e.target.value);
+                                        // Auto-resize
+                                        e.target.style.height = 'auto';
+                                        e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                                    }}
+                                    onPaste={(e) => handlePaste(e, conversationId)}
                                     onKeyDown={(e) => {
                                         if (showMentionPopup === conversationId) {
                                             const suggestions = getMentionSuggestions(conversationId);
@@ -3572,13 +3744,17 @@ const ChatPopup: React.FC = () => {
                                                 e.preventDefault();
                                                 insertMention(conversationId, suggestions[0].user.name);
                                             }
-                                        } else if (e.key === 'Enter') {
+                                        } else if (e.key === 'Enter' && !e.shiftKey) {
                                             e.preventDefault();
                                             sendMessage(conversationId, messageInput);
+                                            // Reset height after send
+                                            e.currentTarget.style.height = 'auto';
                                         }
                                     }}
                                     placeholder="Nhập tin nhắn..."
-                                    className="w-full px-4 py-2.5 bg-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-white focus:shadow-sm text-base transition-all border border-transparent focus:border-blue-200"
+                                    rows={1}
+                                    className="w-full px-4 py-2.5 bg-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-white focus:shadow-sm text-base transition-all border border-transparent focus:border-blue-200 resize-none overflow-hidden"
+                                    style={{ minHeight: '44px', maxHeight: '120px' }}
                                     data-mobile-conversation-id={conversationId}
                                 />
 
@@ -4032,7 +4208,7 @@ const ChatPopup: React.FC = () => {
                             style={{
                                 position: 'fixed',
                                 zIndex: 9999,
-                                backgroundColor: 'white',
+                                backgroundColor: bgColor,
                                 boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -4055,7 +4231,7 @@ const ChatPopup: React.FC = () => {
                             }}
                         >
                             {/* Panel Header - Gradient Design */}
-                            <div className="bg-blue-600 shrink-0" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' } : undefined}>
+                            <div className="bg-blue-600 shrink-0" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 24px)' } : undefined}>
                                 <div className="p-4 pb-3">
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-2">
@@ -4193,7 +4369,7 @@ const ChatPopup: React.FC = () => {
                                                             </svg>
                                                         </div>
                                                     )}
-                                                    <div className="flex-1 flex items-center gap-3" onClick={() => openConversation(conv)}>
+                                                    <div className="flex-1 flex items-center gap-3 min-w-0" onClick={() => openConversation(conv)}>
                                                         <div className="relative shrink-0">
                                                             <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg overflow-hidden ${conv.type === 'GROUP'
                                                                 ? 'bg-purple-600'
@@ -4247,7 +4423,7 @@ const ChatPopup: React.FC = () => {
                                                                     đang soạn...
                                                                 </p>
                                                             ) : conv.lastMessage ? (
-                                                                <p className={`text-sm truncate ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                                                                <p className={`text-sm truncate pr-2 ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
                                                                     {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
                                                                     {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
                                                                         conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :

@@ -199,6 +199,21 @@ export const getFileStream = async (fileName: string): Promise<Readable> => {
     }
 };
 
+// Get partial file stream for Range requests (video streaming)
+export const getPartialFileStream = async (fileName: string, start: number, end: number): Promise<Readable> => {
+    try {
+        await ensureBucketExists();
+        console.log(`[MinIO] Getting partial file stream for: ${fileName} (bytes ${start}-${end})`);
+        const length = end - start + 1;
+        const stream = await minioClient.getPartialObject(bucketName, fileName, start, length);
+        console.log(`[MinIO] Partial file stream obtained successfully for: ${fileName}`);
+        return stream;
+    } catch (error: any) {
+        console.error(`[MinIO] Error getting partial file stream for '${fileName}':`, error?.message || error);
+        throw error;
+    }
+};
+
 export const getFileStats = async (fileName: string): Promise<any> => {
     try {
         await ensureBucketExists();

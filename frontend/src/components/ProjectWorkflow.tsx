@@ -72,10 +72,22 @@ export const ProjectWorkflow = ({
         }
     };
 
+    // Calculate overall progress percentage
+    const calculateProgress = () => {
+        if (workflow?.sentToCustomerAt) return 100;
+        if (workflow?.completedApprovedAt) return 75;
+        if (workflow?.inProgressConfirmedAt) return 50;
+        if (workflow?.receivedConfirmedAt) return 25;
+        return 0;
+    };
+
+    const overallProgress = calculateProgress();
+
     const steps = [
         {
             id: 'received',
             title: 'Đã nhận thông tin',
+            percentage: 25,
             isCompleted: !!workflow?.receivedConfirmedAt,
             canToggle: !workflow?.receivedConfirmedAt, // Can only toggle if not done
             action: () => handleAction('received', 'confirm-received', 'Xác nhận chuyển sang Đang thực hiện?'),
@@ -85,6 +97,7 @@ export const ProjectWorkflow = ({
         {
             id: 'in_progress',
             title: 'Đang thực hiện',
+            percentage: 50,
             isCompleted: !!workflow?.inProgressConfirmedAt,
             // Can toggle if previous step is done AND this step is not done
             canToggle: !!workflow?.receivedConfirmedAt && !workflow?.inProgressConfirmedAt,
@@ -95,6 +108,7 @@ export const ProjectWorkflow = ({
         {
             id: 'completed_approval',
             title: 'Duyệt hoàn thành',
+            percentage: 75,
             isCompleted: !!workflow?.completedApprovedAt,
             // Special case: "Toggle" here means Approval.
             // Visible/Active if In Progress is done (worker confirmed) AND not yet approved.
@@ -110,6 +124,7 @@ export const ProjectWorkflow = ({
         {
             id: 'sent_customer',
             title: 'Đã gửi khách hàng',
+            percentage: 100,
             isCompleted: !!workflow?.sentToCustomerAt,
             // Can toggle if Approved AND not yet sent
             canToggle: !!workflow?.completedApprovedAt && !workflow?.sentToCustomerAt,
@@ -121,10 +136,37 @@ export const ProjectWorkflow = ({
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-                <AlertCircle size={20} className="text-blue-600" />
-                Tiến độ dự án
-            </h3>
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <AlertCircle size={20} className="text-blue-600" />
+                    Tiến độ dự án
+                </h3>
+                <div className="flex items-center gap-3">
+                    <span className={`text-2xl font-bold ${overallProgress === 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                        {overallProgress}%
+                    </span>
+                </div>
+            </div>
+
+            {/* Overall Progress Bar */}
+            <div className="mb-6">
+                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                        className={`h-full rounded-full transition-all duration-500 ${overallProgress === 100
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                                : 'bg-gradient-to-r from-blue-500 to-indigo-500'
+                            }`}
+                        style={{ width: `${overallProgress}%` }}
+                    />
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-gray-400">
+                    <span>0%</span>
+                    <span>25%</span>
+                    <span>50%</span>
+                    <span>75%</span>
+                    <span>100%</span>
+                </div>
+            </div>
 
             <div className="flex flex-col gap-0 relative">
                 {/* Vertical Line Connector */}
@@ -166,9 +208,17 @@ export const ProjectWorkflow = ({
                             {/* Content Area */}
                             <div className="flex-grow pt-2">
                                 <div className="flex items-center justify-between mb-1">
-                                    <h4 className={`text-base font-semibold ${isDone ? 'text-gray-900' : isActive ? 'text-blue-900' : 'text-gray-500'}`}>
-                                        {step.title}
-                                    </h4>
+                                    <div className="flex items-center gap-2">
+                                        <h4 className={`text-base font-semibold ${isDone ? 'text-gray-900' : isActive ? 'text-blue-900' : 'text-gray-500'}`}>
+                                            {step.title}
+                                        </h4>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isDone
+                                                ? 'bg-green-100 text-green-700'
+                                                : 'bg-gray-100 text-gray-500'
+                                            }`}>
+                                            {step.percentage}%
+                                        </span>
+                                    </div>
                                     {step.isApprovalStep && !isDone && !!workflow?.inProgressConfirmedAt && !canApprove && (
                                         <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
                                             Chờ duyệt

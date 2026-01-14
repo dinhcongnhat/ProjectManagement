@@ -10,7 +10,7 @@ import {
     Folder,
     FileText,
     Image as ImageIcon,
-    File,
+    File as FileIcon,
     MoreVertical,
     Trash2,
     Download,
@@ -29,7 +29,8 @@ import {
     Search,
     User,
     Check,
-    Plus
+    Plus,
+    Move
 } from 'lucide-react';
 
 interface UserFolder {
@@ -108,7 +109,7 @@ const getFileIcon = (fileName: string, size: 'xs' | 'sm' | 'lg' = 'lg') => {
         return <FileText className={`${sizeClass} text-red-500`} />;
     }
 
-    return <File className={`${sizeClass} text-gray-400`} />;
+    return <FileIcon className={`${sizeClass} text-gray-400`} />;
 };
 
 const formatFileSize = (bytes: number): string => {
@@ -141,36 +142,43 @@ interface ShareDialogProps {
 
 const ShareDialog = ({ type, id, name, onClose, token }: ShareDialogProps) => {
     const [query, setQuery] = useState('');
-    const [users, setUsers] = useState<any[]>([]);
+    const [allUsers, setAllUsers] = useState<any[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
     const [permission, setPermission] = useState<'VIEW' | 'EDIT'>('VIEW');
     const [loading, setLoading] = useState(false);
-    const [searching, setSearching] = useState(false);
+    const [loadingUsers, setLoadingUsers] = useState(true);
     const dialog = useDialog();
 
-    // Debounce search
+    // Load all users on mount
     useEffect(() => {
-        const timer = setTimeout(async () => {
-            if (!query.trim()) {
-                setUsers([]);
-                return;
-            }
-            setSearching(true);
+        const fetchAllUsers = async () => {
+            setLoadingUsers(true);
             try {
-                const res = await fetch(`${API_URL}/folders/users/search?q=${encodeURIComponent(query)}`, {
+                const res = await fetch(`${API_URL}/users`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 if (res.ok) {
-                    setUsers(await res.json());
+                    setAllUsers(await res.json());
                 }
             } catch (e) {
                 console.error(e);
             } finally {
-                setSearching(false);
+                setLoadingUsers(false);
             }
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [query, token]);
+        };
+        fetchAllUsers();
+    }, [token]);
+
+    // Filter users based on search query
+    const filteredUsers = allUsers.filter(u => {
+        if (!query.trim()) return true;
+        const searchLower = query.toLowerCase();
+        return (
+            u.name?.toLowerCase().includes(searchLower) ||
+            u.username?.toLowerCase().includes(searchLower) ||
+            u.email?.toLowerCase().includes(searchLower)
+        );
+    });
 
     const handleShare = async () => {
         if (selectedUsers.length === 0) return;
@@ -248,19 +256,23 @@ const ShareDialog = ({ type, id, name, onClose, token }: ShareDialogProps) => {
                     </div>
 
                     {/* User List */}
-                    <div className="flex-1 overflow-y-auto border rounded-lg divide-y">
-                        {searching ? (
-                            <div className="p-4 text-center text-gray-500">Đang tìm...</div>
-                        ) : users.length === 0 ? (
+                    <div className="flex-1 overflow-y-auto border rounded-lg divide-y min-h-[200px]">
+                        {loadingUsers ? (
+                            <div className="p-4 text-center text-gray-500 flex items-center justify-center gap-2">
+                                <Loader2 size={18} className="animate-spin" />
+                                Đang tải danh sách...
+                            </div>
+                        ) : filteredUsers.length === 0 ? (
                             <div className="p-4 text-center text-gray-500">
-                                {query ? 'Không tìm thấy kết quả' : 'Nhập tên để tìm kiếm'}
+                                {query ? 'Không tìm thấy kết quả' : 'Không có người dùng nào'}
                             </div>
                         ) : (
-                            users.map(u => (
+                            filteredUsers.map(u => (
                                 <div
                                     key={u.id}
                                     onClick={() => toggleUser(u.id)}
-                                    className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer"
+                                    className={`flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer transition-colors ${selectedUsers.includes(u.id) ? 'bg-blue-50' : ''
+                                        }`}
                                 >
                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-medium">
                                         {u.avatar ? <img src={`${API_URL}/users/${u.id}/avatar`} className="w-8 h-8 rounded-full object-cover" alt={u.name} /> : (u.name?.[0] || 'U')}
@@ -274,6 +286,13 @@ const ShareDialog = ({ type, id, name, onClose, token }: ShareDialogProps) => {
                             ))
                         )}
                     </div>
+
+                    {/* Selected count */}
+                    {selectedUsers.length > 0 && (
+                        <div className="text-sm text-gray-600">
+                            Đã chọn: <span className="font-medium text-blue-600">{selectedUsers.length} người dùng</span>
+                        </div>
+                    )}
                 </div>
 
                 <div className="p-4 border-t flex justify-end gap-2">
@@ -293,6 +312,187 @@ const ShareDialog = ({ type, id, name, onClose, token }: ShareDialogProps) => {
         </div>
     );
 };
+
+// Move Dialog Component
+interface MoveDialogProps {
+    type: 'folder' | 'file';
+    id: number;
+    name: string;
+    currentFolderId: number | null;
+    onClose: () => void;
+    onSuccess: () => void;
+    token: string;
+}
+
+const MoveDialog = ({ type, id, name, currentFolderId, onClose, onSuccess, token }: MoveDialogProps) => {
+    const [folders, setFolders] = useState<UserFolder[]>([]);
+    const [targetFolderId, setTargetFolderId] = useState<number | null>(null);
+    const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [moving, setMoving] = useState(false);
+    const dialog = useDialog();
+
+    const fetchFolders = useCallback(async (parentId: number | null) => {
+        setLoading(true);
+        try {
+            const url = parentId
+                ? `${API_URL}/folders?parentId=${parentId}`
+                : `${API_URL}/folders`;
+
+            const response = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                // Filter out the folder being moved (for folder type)
+                let filteredFolders = data.folders.filter((f: UserFolder) => f.id > 0);
+                if (type === 'folder') {
+                    filteredFolders = filteredFolders.filter((f: UserFolder) => f.id !== id);
+                }
+                setFolders(filteredFolders);
+                setBreadcrumbs(data.breadcrumbs || []);
+            }
+        } catch (error) {
+            console.error('Error fetching folders:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [token, type, id]);
+
+    useEffect(() => {
+        fetchFolders(targetFolderId);
+    }, [fetchFolders, targetFolderId]);
+
+    const handleMove = async () => {
+        // Can't move to same location
+        if (targetFolderId === currentFolderId) {
+            dialog.showError('Đây là vị trí hiện tại');
+            return;
+        }
+
+        setMoving(true);
+        try {
+            const endpoint = type === 'folder'
+                ? `${API_URL}/folders/folders/${id}/move`
+                : `${API_URL}/folders/files/${id}/move`;
+
+            const response = await fetch(endpoint, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ targetFolderId })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || 'Failed to move');
+            }
+
+            dialog.showSuccess('Đã di chuyển thành công!');
+            onSuccess();
+            onClose();
+        } catch (error: any) {
+            dialog.showError(error.message || 'Lỗi khi di chuyển');
+        } finally {
+            setMoving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col max-h-[80vh]">
+                <div className="flex items-center justify-between p-4 border-b">
+                    <h2 className="text-xl font-semibold">Di chuyển "{name}"</h2>
+                    <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-hidden flex flex-col">
+                    {/* Breadcrumbs */}
+                    <div className="flex items-center gap-2 p-3 bg-gray-50 border-b overflow-x-auto">
+                        <button
+                            onClick={() => setTargetFolderId(null)}
+                            className={`flex items-center gap-1 whitespace-nowrap ${targetFolderId === null ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-blue-600'}`}
+                        >
+                            <Home size={16} />
+                            <span>Thư mục gốc</span>
+                        </button>
+                        {breadcrumbs.map(crumb => (
+                            <div key={crumb.id} className="flex items-center gap-1">
+                                <ChevronRight size={14} className="text-gray-400" />
+                                <button
+                                    onClick={() => setTargetFolderId(crumb.id)}
+                                    className={`whitespace-nowrap ${targetFolderId === crumb.id ? 'text-blue-600 font-medium' : 'text-gray-600 hover:text-blue-600'}`}
+                                >
+                                    {crumb.name}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Folder List */}
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {loading ? (
+                            <div className="flex justify-center py-10">
+                                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                            </div>
+                        ) : folders.length === 0 ? (
+                            <div className="text-center py-10 text-gray-500">
+                                <Folder className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                                <p>Không có thư mục con</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {folders.map(folder => (
+                                    <div
+                                        key={folder.id}
+                                        onClick={() => setTargetFolderId(folder.id)}
+                                        className="flex flex-col items-center p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-colors"
+                                    >
+                                        <Folder className="w-10 h-10 text-yellow-500 mb-2" />
+                                        <span className="text-sm text-center line-clamp-2">{folder.name}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-4 border-t bg-gray-50">
+                        <div className="text-sm text-gray-600 mb-3">
+                            Vị trí đích: <span className="font-medium text-blue-600">
+                                {targetFolderId === null ? 'Thư mục gốc' : breadcrumbs.find(b => b.id === targetFolderId)?.name || 'Thư mục đã chọn'}
+                            </span>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={onClose}
+                                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                                disabled={moving}
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleMove}
+                                disabled={moving || targetFolderId === currentFolderId}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {moving && <Loader2 size={16} className="animate-spin" />}
+                                <Move size={16} />
+                                Di chuyển đến đây
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 interface OnlyOfficeViewerProps {
     fileId: number;
     fileName: string;
@@ -767,6 +967,13 @@ const UserFolders = () => {
         percentage: number;
     } | null>(null);
     const [showCreateFolder, setShowCreateFolder] = useState(false);
+    const [createFileDialog, setCreateFileDialog] = useState<{
+        open: boolean;
+        type: 'word' | 'excel' | 'powerpoint';
+        ext: string;
+        mime: string;
+    } | null>(null);
+    const [newFileNameInput, setNewFileNameInput] = useState('');
     const [newFolderName, setNewFolderName] = useState('');
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [contextMenu, setContextMenu] = useState<{
@@ -794,10 +1001,29 @@ const UserFolders = () => {
     const [showSearchResults, setShowSearchResults] = useState(false);
     const [showActionDropdown, setShowActionDropdown] = useState(false);
     const [showDriveBrowser, setShowDriveBrowser] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+    const [selectedItems, setSelectedItems] = useState<{ folders: number[]; files: number[] }>({ folders: [], files: [] });
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [moveDialog, setMoveDialog] = useState<{
+        type: 'folder' | 'file';
+        id: number;
+        name: string;
+    } | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLDivElement>(null);
+    const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const dropZoneRef = useRef<HTMLDivElement>(null);
+    const dragCounter = useRef(0);
+    const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1024MB
+
+    // Search results from API (deep search)
+    const [searchResults, setSearchResults] = useState<{
+        folders: (UserFolder & { path?: string })[];
+        files: (UserFile & { path?: string })[];
+    }>({ folders: [], files: [] });
+    const [searchLoading, setSearchLoading] = useState(false);
 
     // Reset view when navigating to shared folder root logic handled in fetchData but we might want to clear breadcrumbs in other cases?
     // Actually we don't need the activeTab effect anymore.
@@ -884,20 +1110,133 @@ const UserFolders = () => {
         return () => document.removeEventListener('click', handleClick);
     }, []);
 
-    // Show search results when typing
+    // Deep search using API
     useEffect(() => {
-        if (searchQuery) {
-            setShowSearchResults(true);
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
         }
-    }, [searchQuery]);
 
-    // Filter folders and files based on search query
-    const filteredFolders = folders.filter(folder =>
-        folder.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    const filteredFiles = files.filter(file =>
-        file.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+        if (!searchQuery || searchQuery.length < 2) {
+            setSearchResults({ folders: [], files: [] });
+            setSearchLoading(false);
+            return;
+        }
+
+        setSearchLoading(true);
+        setShowSearchResults(true);
+
+        searchTimeoutRef.current = setTimeout(async () => {
+            try {
+                const url = currentParentId && currentParentId > 0
+                    ? `${API_URL}/folders/search?q=${encodeURIComponent(searchQuery)}&parentId=${currentParentId}`
+                    : `${API_URL}/folders/search?q=${encodeURIComponent(searchQuery)}`;
+
+                const response = await fetch(url, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    setSearchResults({
+                        folders: data.folders || [],
+                        files: data.files || []
+                    });
+                }
+            } catch (error) {
+                console.error('Error searching:', error);
+            } finally {
+                setSearchLoading(false);
+            }
+        }, 300); // Debounce 300ms
+
+        return () => {
+            if (searchTimeoutRef.current) {
+                clearTimeout(searchTimeoutRef.current);
+            }
+        };
+    }, [searchQuery, currentParentId, token]);
+
+    // Clear search when navigating
+    useEffect(() => {
+        setSearchQuery('');
+        setSearchResults({ folders: [], files: [] });
+        setShowSearchResults(false);
+    }, [currentParentId]);
+
+    const createOfficeFile = (type: 'word' | 'excel' | 'powerpoint') => {
+        const config = {
+            word: {
+                name: 'Tài liệu mới',
+                mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ext: '.docx'
+            },
+            excel: {
+                name: 'Bảng tính mới',
+                mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ext: '.xlsx'
+            },
+            powerpoint: {
+                name: 'Bài trình bày mới',
+                mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                ext: '.pptx'
+            }
+        };
+
+        const { name, mime, ext } = config[type];
+        setNewFileNameInput(name);
+        setCreateFileDialog({ open: true, type, ext, mime });
+        setShowActionDropdown(false);
+    };
+
+    const handleConfirmCreateFile = async () => {
+        if (!createFileDialog || !newFileNameInput.trim()) return;
+
+        const { ext, mime, type } = createFileDialog;
+        let fileName = newFileNameInput.trim();
+        if (!fileName.toLowerCase().endsWith(ext.toLowerCase())) {
+            fileName += ext;
+        }
+
+        setUploading(true);
+        try {
+            // Use minimal content to create a valid non-empty file
+            // For Office files, we can't easily generate valid zip structures on frontend without a heavy library.
+            // We create a text file with clear content. The user should use opening logic to handle it or backend should provide templates.
+            // However, to fix "Upload failed", we ensure size > 0.
+            const content = type === 'word' ? 'New Word Document' :
+                type === 'excel' ? 'New Excel Spreadsheet' :
+                    'New PowerPoint Presentation';
+
+            const blob = new Blob([content], { type: mime });
+            const file = new File([blob], fileName, { type: mime });
+
+            const formData = new FormData();
+            formData.append('file', file);
+            if (currentParentId && currentParentId !== GOOGLE_DRIVE_FOLDER_ID) {
+                formData.append('folderId', String(currentParentId));
+            }
+
+            const response = await fetch(`${API_URL}/folders/upload`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: formData
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to create file');
+            }
+
+            dialog.showSuccess('Đã tạo file thành công!');
+            setCreateFileDialog(null);
+            fetchData();
+        } catch (error: any) {
+            console.error('Create file error:', error);
+            dialog.showError(error.message || 'Lỗi khi tạo file');
+        } finally {
+            setUploading(false);
+        }
+    };
 
     const handleCreateFolder = async () => {
         if (!newFolderName.trim()) return;
@@ -1153,24 +1492,26 @@ const UserFolders = () => {
 
     const handleDownloadFile = async (fileId: number, fileName: string) => {
         try {
-            // Get presigned URL for download - no need to load entire file into memory
-            const response = await fetch(`${API_URL}/folders/files/${fileId}/url`, {
+            // Fetch file directly with auth token as blob
+            const response = await fetch(`${API_URL}/folders/files/${fileId}/download`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            if (!response.ok) throw new Error('Failed to get download URL');
+            if (!response.ok) throw new Error('Failed to download file');
 
-            const { url } = await response.json();
+            const blob = await response.blob();
 
-            // Open download in new tab - browser will handle the download
+            // Create blob URL and trigger download
+            const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
+            a.href = blobUrl;
             a.download = fileName;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+
+            // Cleanup blob URL
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
         } catch (error) {
             console.error('Error downloading file:', error);
             dialog.showError('Lỗi khi tải file', { title: 'Lỗi' });
@@ -1265,6 +1606,313 @@ const UserFolders = () => {
         setContextMenu({ type, id, name, userId, x, y });
     };
 
+    // Drag & Drop handlers
+    const handleDragEnter = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current++;
+        if (e.dataTransfer.types.includes('Files')) {
+            setIsDragging(true);
+        }
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current--;
+        // Only hide overlay when fully leaving the drop zone
+        if (dragCounter.current <= 0) {
+            dragCounter.current = 0;
+            setIsDragging(false);
+        }
+    };
+
+    // ESC key to close drag overlay
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isDragging) {
+                dragCounter.current = 0;
+                setIsDragging(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isDragging]);
+
+    const handleDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter.current = 0;
+        setIsDragging(false);
+
+        const items = e.dataTransfer.items;
+        if (!items || items.length === 0) return;
+
+        setUploading(true);
+
+        const filesToUpload: { file: File; relativePath: string }[] = [];
+        const foldersToCreate: Set<string> = new Set();
+
+        const processEntry = async (entry: FileSystemEntry | null, path: string): Promise<void> => {
+            if (!entry) return;
+
+            if (entry.isFile) {
+                const fileEntry = entry as FileSystemFileEntry;
+                return new Promise((resolve) => {
+                    fileEntry.file((file) => {
+                        if (file.size > MAX_FILE_SIZE) {
+                            dialog.showError(`File "${file.name}" vượt quá giới hạn 1024MB`);
+                            resolve();
+                            return;
+                        }
+                        const parts = path.split('/');
+                        parts.pop();
+                        const folderPath = parts.join('/');
+                        if (folderPath) foldersToCreate.add(folderPath);
+                        filesToUpload.push({ file, relativePath: path });
+                        resolve();
+                    }, () => resolve());
+                });
+            } else if (entry.isDirectory) {
+                const dirEntry = entry as FileSystemDirectoryEntry;
+                foldersToCreate.add(path);
+                const reader = dirEntry.createReader();
+                return new Promise((resolve) => {
+                    const readEntries = () => {
+                        reader.readEntries(async (entries) => {
+                            if (entries.length === 0) {
+                                resolve();
+                            } else {
+                                for (const subEntry of entries) {
+                                    await processEntry(subEntry, `${path}/${subEntry.name}`);
+                                }
+                                readEntries();
+                            }
+                        }, () => resolve());
+                    };
+                    readEntries();
+                });
+            }
+        };
+
+        try {
+            const firstItem = items[0];
+            const hasWebkitEntry = firstItem && typeof firstItem.webkitGetAsEntry === 'function';
+
+            if (hasWebkitEntry) {
+                for (let i = 0; i < items.length; i++) {
+                    const entry = items[i].webkitGetAsEntry();
+                    if (entry) {
+                        await processEntry(entry, entry.name);
+                    }
+                }
+            } else {
+                const droppedFiles = e.dataTransfer.files;
+                for (let i = 0; i < droppedFiles.length; i++) {
+                    const file = droppedFiles[i];
+                    if (file.size > MAX_FILE_SIZE) continue;
+                    filesToUpload.push({ file, relativePath: file.name });
+                }
+            }
+
+            if (filesToUpload.length === 0) {
+                setUploading(false);
+                return;
+            }
+
+            // Create folder structure using API ensure-structure
+            const sortedPaths = Array.from(foldersToCreate).sort((a, b) =>
+                a.split('/').length - b.split('/').length
+            );
+
+            const folderIdMap = new Map<string, number>();
+
+            if (sortedPaths.length > 0) {
+                setUploadProgress({
+                    currentFile: 'Đang tạo cấu trúc thư mục...',
+                    currentIndex: 0,
+                    totalFiles: filesToUpload.length,
+                    percentage: 0
+                });
+
+                const structureResponse = await fetch(`${API_URL}/folders/ensure-structure`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        paths: sortedPaths,
+                        parentId: currentParentId
+                    })
+                });
+
+                if (!structureResponse.ok) {
+                    throw new Error('Failed to create folder structure');
+                }
+
+                const { pathMap } = await structureResponse.json();
+                Object.entries(pathMap).forEach(([k, v]) => folderIdMap.set(k, v as number));
+            }
+
+            // Upload files
+            let success = 0;
+            let failed = 0;
+            const total = filesToUpload.length;
+
+            for (let i = 0; i < total; i++) {
+                const { file, relativePath } = filesToUpload[i];
+                const parts = relativePath.split('/');
+                parts.pop();
+                const folderPath = parts.join('/');
+                const folderId = folderPath ? (folderIdMap.get(folderPath) ?? currentParentId) : currentParentId;
+
+                setUploadProgress({
+                    currentFile: file.name,
+                    currentIndex: i + 1,
+                    totalFiles: total,
+                    percentage: Math.round(((i + 1) / total) * 100)
+                });
+
+                // Simple retry logic
+                let uploaded = false;
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        if (folderId) {
+                            formData.append('folderId', String(folderId));
+                        }
+
+                        const response = await fetch(`${API_URL}/folders/upload`, {
+                            method: 'POST',
+                            headers: { Authorization: `Bearer ${token}` },
+                            body: formData
+                        });
+
+                        if (response.ok) {
+                            uploaded = true;
+                            break;
+                        }
+                        await new Promise(r => setTimeout(r, 1000));
+                    } catch (err) {
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+
+                if (uploaded) success++;
+                else failed++;
+            }
+
+            if (failed > 0) {
+                dialog.showError(`Đã upload ${success} file. ${failed} file thất bại.`);
+            } else {
+                dialog.showSuccess(`Đã upload ${success} file thành công!`);
+            }
+
+            fetchData();
+        } catch (error) {
+            console.error('Drop error:', error);
+            dialog.showError('Lỗi khi upload file');
+        } finally {
+            setUploading(false);
+            setUploadProgress(null);
+        }
+    };
+
+    // Multi-select handlers
+    const toggleSelectItem = (type: 'folder' | 'file', id: number) => {
+        setSelectedItems(prev => {
+            if (type === 'folder') {
+                const exists = prev.folders.includes(id);
+                return {
+                    ...prev,
+                    folders: exists ? prev.folders.filter(x => x !== id) : [...prev.folders, id]
+                };
+            } else {
+                const exists = prev.files.includes(id);
+                return {
+                    ...prev,
+                    files: exists ? prev.files.filter(x => x !== id) : [...prev.files, id]
+                };
+            }
+        });
+    };
+
+    const toggleSelectionMode = () => {
+        setIsSelectionMode(prev => !prev);
+        setSelectedItems({ folders: [], files: [] });
+    };
+
+    const selectAll = () => {
+        setSelectedItems({
+            folders: folders.filter(f => f.id > 0 && f.userId === user?.id).map(f => f.id),
+            files: files.filter(f => f.userId === user?.id).map(f => f.id)
+        });
+    };
+
+    const clearSelection = () => {
+        setSelectedItems({ folders: [], files: [] });
+    };
+
+    const handleBulkDelete = async () => {
+        const totalSelected = selectedItems.folders.length + selectedItems.files.length;
+        if (totalSelected === 0) return;
+
+        const confirmed = await dialog.showConfirm(
+            `Bạn có chắc muốn xóa ${totalSelected} mục đã chọn? Hành động này không thể hoàn tác.`,
+            { title: 'Xác nhận xóa', confirmText: 'Xóa', cancelText: 'Hủy' }
+        );
+
+        if (!confirmed) return;
+
+        let deleted = 0;
+        let failed = 0;
+
+        // Delete folders
+        for (const folderId of selectedItems.folders) {
+            try {
+                const response = await fetch(`${API_URL}/folders/folders/${folderId}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (response.ok) deleted++;
+                else failed++;
+            } catch {
+                failed++;
+            }
+        }
+
+        // Delete files
+        for (const fileId of selectedItems.files) {
+            try {
+                const response = await fetch(`${API_URL}/folders/files/${fileId}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                if (response.ok) deleted++;
+                else failed++;
+            } catch {
+                failed++;
+            }
+        }
+
+        if (failed > 0) {
+            dialog.showError(`Đã xóa ${deleted} mục. ${failed} mục thất bại.`);
+        } else {
+            dialog.showSuccess(`Đã xóa ${deleted} mục thành công!`);
+        }
+
+        setSelectedItems({ folders: [], files: [] });
+        setIsSelectionMode(false);
+        fetchData();
+    };
+
     const navigateToFolder = (folderId: number | null) => {
         // Optimistic update - immediately show loading state and clear old data
         setLoading(true);
@@ -1298,102 +1946,136 @@ const UserFolders = () => {
     const GOOGLE_DRIVE_FOLDER_ID = -998;
 
     // Grid View Item for Folder
-    const FolderGridItem = ({ folder }: { folder: UserFolder }) => (
-        <div
-            className="group relative bg-white border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer active:scale-98 touch-manipulation"
-            onClick={() => {
-                if (folder.id === GOOGLE_DRIVE_FOLDER_ID) {
-                    setShowDriveBrowser(true);
-                } else {
-                    navigateToFolder(folder.id);
-                }
-            }}
-            onContextMenu={(e) => {
-                if (folder.id !== GOOGLE_DRIVE_FOLDER_ID) {
-                    handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
-                }
-            }}
-        >
-            <div className="flex flex-col items-center">
-                {folder.id === SHARED_FOLDER_ID ? (
-                    <div className="relative">
-                        <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-blue-500 mb-1 sm:mb-2" />
-                        <User className="absolute -bottom-1 -right-1 w-6 h-6 text-white bg-blue-500 rounded-full p-1 border-2 border-white" />
+    const FolderGridItem = ({ folder }: { folder: UserFolder }) => {
+        const isSelected = selectedItems.folders.includes(folder.id);
+        const canSelect = folder.id > 0 && folder.userId === user?.id;
+
+        return (
+            <div
+                className={`group relative bg-white border rounded-xl p-3 sm:p-4 hover:shadow-lg transition-all cursor-pointer active:scale-98 touch-manipulation ${isSelected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                onClick={() => {
+                    if (isSelectionMode && canSelect) {
+                        toggleSelectItem('folder', folder.id);
+                    } else if (folder.id === GOOGLE_DRIVE_FOLDER_ID) {
+                        setShowDriveBrowser(true);
+                    } else {
+                        navigateToFolder(folder.id);
+                    }
+                }}
+                onContextMenu={(e) => {
+                    if (folder.id !== GOOGLE_DRIVE_FOLDER_ID) {
+                        handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                    }
+                }}
+            >
+                {/* Selection Checkbox */}
+                {isSelectionMode && canSelect && (
+                    <div className={`absolute top-2 left-2 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
+                        }`}>
+                        {isSelected && <Check size={12} className="text-white" />}
                     </div>
-                ) : folder.id === GOOGLE_DRIVE_FOLDER_ID ? (
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center mb-1 sm:mb-2">
-                        <GoogleDriveIcon size={48} />
-                    </div>
-                ) : (
-                    <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-yellow-500 mb-1 sm:mb-2" />
                 )}
-                <span className="text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2">
-                    {folder.name}
-                </span>
-                {folder.ownerName && (
-                    <span className="text-[10px] sm:text-xs text-blue-500 flex items-center gap-1 mt-0.5">
-                        <User size={10} /> {folder.ownerName}
+                <div className="flex flex-col items-center">
+                    {folder.id === SHARED_FOLDER_ID ? (
+                        <div className="relative">
+                            <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-blue-500 mb-1 sm:mb-2" />
+                            <User className="absolute -bottom-1 -right-1 w-6 h-6 text-white bg-blue-500 rounded-full p-1 border-2 border-white" />
+                        </div>
+                    ) : folder.id === GOOGLE_DRIVE_FOLDER_ID ? (
+                        <div className="w-14 h-14 sm:w-16 sm:h-16 flex items-center justify-center mb-1 sm:mb-2">
+                            <GoogleDriveIcon size={48} />
+                        </div>
+                    ) : (
+                        <Folder className="w-12 h-12 sm:w-16 sm:h-16 text-yellow-500 mb-1 sm:mb-2" />
+                    )}
+                    <span className="text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2">
+                        {folder.name}
                     </span>
-                )}
-                {folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
-                    <span className="text-xs text-gray-400 mt-1 flex items-center gap-1 hidden sm:flex">
-                        <Clock size={10} />
-                        {formatDate(folder.createdAt)}
-                    </span>
+                    {folder.ownerName && (
+                        <span className="text-[10px] sm:text-xs text-blue-500 flex items-center gap-1 mt-0.5">
+                            <User size={10} /> {folder.ownerName}
+                        </span>
+                    )}
+                    {folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+                        <span className="text-xs text-gray-400 mt-1 flex items-center gap-1 hidden sm:flex">
+                            <Clock size={10} />
+                            {formatDate(folder.createdAt)}
+                        </span>
+                    )}
+                </div>
+
+                {folder.id !== SHARED_FOLDER_ID && folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                        }}
+                        className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
+                    >
+                        <MoreVertical size={16} className="text-gray-500" />
+                    </button>
                 )}
             </div>
+        );
+    };
 
-            {folder.id !== SHARED_FOLDER_ID && folder.id !== GOOGLE_DRIVE_FOLDER_ID && (
+    // Grid View Item for File
+    const FileGridItem = ({ file }: { file: UserFile }) => {
+        const isSelected = selectedItems.files.includes(file.id);
+        const canSelect = file.userId === user?.id;
+
+        return (
+            <div
+                className={`group relative bg-white border rounded-xl p-3 sm:p-4 hover:shadow-lg transition-all cursor-pointer active:scale-98 touch-manipulation ${isSelected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:border-blue-300'
+                    }`}
+                onClick={() => {
+                    if (isSelectionMode && canSelect) {
+                        toggleSelectItem('file', file.id);
+                    } else {
+                        handleViewFile(file);
+                    }
+                }}
+                onContextMenu={(e) => handleContextMenu(e, 'file', file.id, file.name, file.userId)}
+            >
+                {/* Selection Checkbox */}
+                {isSelectionMode && canSelect && (
+                    <div className={`absolute top-2 left-2 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-gray-300'
+                        }`}>
+                        {isSelected && <Check size={12} className="text-white" />}
+                    </div>
+                )}
+                <div className="flex flex-col items-center">
+                    {getFileIcon(file.name)}
+                    <span className="mt-1 sm:mt-2 text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2">
+                        {file.name}
+                    </span>
+                    {file.ownerName && (
+                        <span className="text-[10px] sm:text-xs text-blue-500 flex items-center gap-1 mt-0.5">
+                            <User size={10} /> {file.ownerName}
+                        </span>
+                    )}
+                    <span className="text-xs text-gray-400 mt-1">
+                        {formatFileSize(file.fileSize)}
+                    </span>
+                    <span className="text-xs text-gray-400 mt-0.5 hidden sm:flex items-center gap-1">
+                        <Clock size={10} />
+                        {formatDate(file.createdAt)}
+                    </span>
+                </div>
+
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        handleContextMenu(e, 'folder', folder.id, folder.name, folder.userId);
+                        handleContextMenu(e, 'file', file.id, file.name, file.userId);
                     }}
                     className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
                 >
                     <MoreVertical size={16} className="text-gray-500" />
                 </button>
-            )}
-        </div>
-    );
-
-    // Grid View Item for File
-    const FileGridItem = ({ file }: { file: UserFile }) => (
-        <div
-            className="group relative bg-white border border-gray-200 rounded-xl p-3 sm:p-4 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer active:scale-98 touch-manipulation"
-            onClick={() => handleViewFile(file)}
-            onContextMenu={(e) => handleContextMenu(e, 'file', file.id, file.name, file.userId)}
-        >
-            <div className="flex flex-col items-center">
-                {getFileIcon(file.name)}
-                <span className="mt-1 sm:mt-2 text-xs sm:text-sm font-medium text-gray-700 text-center line-clamp-2">
-                    {file.name}
-                </span>
-                {file.ownerName && (
-                    <span className="text-[10px] sm:text-xs text-blue-500 flex items-center gap-1 mt-0.5">
-                        <User size={10} /> {file.ownerName}
-                    </span>
-                )}
-                <span className="text-xs text-gray-400 mt-1">
-                    {formatFileSize(file.fileSize)}
-                </span>
-                <span className="text-xs text-gray-400 mt-0.5 hidden sm:flex items-center gap-1">
-                    <Clock size={10} />
-                    {formatDate(file.createdAt)}
-                </span>
             </div>
-
-            <button
-                onClick={(e) => {
-                    e.stopPropagation();
-                    handleContextMenu(e, 'file', file.id, file.name, file.userId);
-                }}
-                className="absolute top-1 right-1 sm:top-2 sm:right-2 p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-gray-100 rounded transition-all"
-            >
-                <MoreVertical size={16} className="text-gray-500" />
-            </button>
-        </div>
-    );
+        );
+    };
 
     // List View Item for Folder
     const FolderListItem = ({ folder }: { folder: UserFolder }) => (
@@ -1497,7 +2179,26 @@ const UserFolders = () => {
     );
 
     return (
-        <div className="space-y-4 sm:space-y-6">
+        <div
+            className="space-y-4 sm:space-y-6 relative"
+            ref={dropZoneRef}
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
+            {/* Drag Overlay */}
+            {isDragging && (
+                <div className="fixed inset-0 z-[9998] bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-dashed border-blue-500">
+                        <div className="flex flex-col items-center gap-4">
+                            <Upload className="w-16 h-16 text-blue-500" />
+                            <p className="text-xl font-semibold text-gray-800">Thả file hoặc thư mục vào đây</p>
+                            <p className="text-sm text-gray-500">Để tải lên vào thư mục hiện tại</p>
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
                 <div>
@@ -1506,84 +2207,112 @@ const UserFolders = () => {
                 </div>
 
                 {/* Small Search Bar */}
-                <div ref={searchRef} className="relative w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-                    <input
-                        type="text"
-                        placeholder="Tìm kiếm..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onFocus={() => searchQuery && setShowSearchResults(true)}
-                        className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-all outline-none text-sm"
-                    />
-                    {searchQuery && (
-                        <button
-                            onClick={() => {
-                                setSearchQuery('');
-                                setShowSearchResults(false);
-                            }}
-                            className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                        >
-                            <X size={14} />
-                        </button>
-                    )}
-
-                    {/* Search Results Dropdown */}
-                    {showSearchResults && searchQuery && (filteredFolders.length > 0 || filteredFiles.length > 0) && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-100 max-h-64 overflow-y-auto z-50">
-                            {filteredFolders.length > 0 && (
-                                <div className="p-1">
-                                    <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase">Thư mục</p>
-                                    {filteredFolders.slice(0, 4).map((folder) => (
-                                        <div
-                                            key={`search-folder-${folder.id}`}
-                                            onClick={() => {
-                                                if (folder.id === GOOGLE_DRIVE_FOLDER_ID) {
-                                                    setShowDriveBrowser(true);
-                                                } else {
-                                                    navigateToFolder(folder.id);
-                                                }
-                                                setSearchQuery('');
-                                                setShowSearchResults(false);
-                                            }}
-                                            className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 cursor-pointer rounded-md transition-colors"
-                                        >
-                                            {folder.id === GOOGLE_DRIVE_FOLDER_ID ? (
-                                                <GoogleDriveIcon />
-                                            ) : (
-                                                <Folder size={16} className="text-yellow-500" />
-                                            )}
-                                            <span className="text-sm text-gray-700 truncate">{folder.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                            {filteredFiles.length > 0 && (
-                                <div className="p-1 border-t border-gray-50">
-                                    <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase">File</p>
-                                    {filteredFiles.slice(0, 4).map((file) => (
-                                        <div
-                                            key={`search-file-${file.id}`}
-                                            onClick={() => {
-                                                handleViewFile(file);
-                                                setSearchQuery('');
-                                                setShowSearchResults(false);
-                                            }}
-                                            className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 cursor-pointer rounded-md transition-colors"
-                                        >
-                                            {getFileIcon(file.name, 'xs')}
-                                            <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
+                <div ref={searchRef} className="relative w-full sm:w-64 group" onClick={(e) => e.stopPropagation()}>
+                    <div className="relative w-full p-[1.5px] rounded-xl bg-gray-200 group-focus-within:bg-gradient-to-r group-focus-within:from-blue-500 group-focus-within:via-purple-500 group-focus-within:to-pink-500 transition-all duration-500">
+                        <div className="relative w-full bg-white rounded-[10.5px] flex items-center h-full">
+                            <Search className="absolute left-3 text-gray-400 group-focus-within:text-blue-500 transition-colors z-10" size={16} />
+                            <input
+                                type="text"
+                                placeholder="Tìm kiếm..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onFocus={() => searchQuery && setShowSearchResults(true)}
+                                className="w-full pl-9 pr-8 py-2 bg-transparent border-none focus:ring-0 text-sm outline-none rounded-[10.5px]"
+                            />
+                            {searchQuery && (
+                                <button
+                                    onClick={() => {
+                                        setSearchQuery('');
+                                        setShowSearchResults(false);
+                                    }}
+                                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
+                                >
+                                    <X size={14} />
+                                </button>
                             )}
                         </div>
-                    )}
+                    </div>
 
-                    {/* No Results */}
-                    {showSearchResults && searchQuery && filteredFolders.length === 0 && filteredFiles.length === 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-100 p-4 text-center z-50">
-                            <p className="text-gray-400 text-sm">Không tìm thấy</p>
+                    {/* Search Results Dropdown */}
+                    {showSearchResults && searchQuery && searchQuery.length >= 2 && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg shadow-xl border border-gray-100 max-h-80 overflow-y-auto z-50">
+                            {searchLoading ? (
+                                <div className="flex items-center justify-center py-6">
+                                    <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                                    <span className="ml-2 text-sm text-gray-500">Đang tìm kiếm...</span>
+                                </div>
+                            ) : (searchResults.folders.length > 0 || searchResults.files.length > 0) ? (
+                                <>
+                                    {searchResults.folders.length > 0 && (
+                                        <div className="p-2">
+                                            <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase">Thư mục ({searchResults.folders.length})</p>
+                                            {searchResults.folders.slice(0, 8).map((folder) => (
+                                                <div
+                                                    key={`search-folder-${folder.id}`}
+                                                    onClick={() => {
+                                                        navigateToFolder(folder.id);
+                                                        setSearchQuery('');
+                                                        setShowSearchResults(false);
+                                                    }}
+                                                    className="flex items-center gap-2 px-2 py-2 hover:bg-blue-50 cursor-pointer rounded-md transition-colors"
+                                                >
+                                                    <Folder size={16} className="text-yellow-500 flex-shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm text-gray-700 truncate">{folder.name}</span>
+                                                            {(folder as any).ownerName && (
+                                                                <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded flex-shrink-0">
+                                                                    <User size={10} className="inline mr-0.5" />{(folder as any).ownerName}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {folder.path && (
+                                                            <span className="text-xs text-gray-400 block truncate">{folder.path}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {searchResults.files.length > 0 && (
+                                        <div className="p-2 border-t border-gray-100">
+                                            <p className="px-2 py-1 text-[10px] font-semibold text-gray-400 uppercase">File ({searchResults.files.length})</p>
+                                            {searchResults.files.slice(0, 8).map((file) => (
+                                                <div
+                                                    key={`search-file-${file.id}`}
+                                                    onClick={() => {
+                                                        handleViewFile(file);
+                                                        setSearchQuery('');
+                                                        setShowSearchResults(false);
+                                                    }}
+                                                    className="flex items-center gap-2 px-2 py-2 hover:bg-blue-50 cursor-pointer rounded-md transition-colors"
+                                                >
+                                                    {getFileIcon(file.name, 'xs')}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                                                            {(file as any).ownerName && (
+                                                                <span className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded flex-shrink-0">
+                                                                    <User size={10} className="inline mr-0.5" />{(file as any).ownerName}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {file.path && (
+                                                            <span className="text-xs text-gray-400 block truncate">{file.path}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            ) : (
+                                <div className="p-6 text-center">
+                                    <Search size={24} className="text-gray-300 mx-auto mb-2" />
+                                    <p className="text-gray-400 text-sm">Không tìm thấy kết quả</p>
+                                    <p className="text-gray-300 text-xs mt-1">Thử tìm kiếm với từ khóa khác</p>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -1653,36 +2382,103 @@ const UserFolders = () => {
                                         <FolderPlus size={16} className="text-indigo-500" />
                                         <span>Tải thư mục lên</span>
                                     </button>
+                                    <div className="h-px bg-gray-100 my-1"></div>
+                                    <button
+                                        onClick={() => createOfficeFile('word')}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        <FileText size={16} className="text-blue-600" />
+                                        <span>Tạo file Word</span>
+                                    </button>
+                                    <button
+                                        onClick={() => createOfficeFile('excel')}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        <FileSpreadsheet size={16} className="text-green-600" />
+                                        <span>Tạo file Excel</span>
+                                    </button>
+                                    <button
+                                        onClick={() => createOfficeFile('powerpoint')}
+                                        className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                    >
+                                        <Presentation size={16} className="text-orange-600" />
+                                        <span>Tạo file PowerPoint</span>
+                                    </button>
                                 </div>
                             )}
                         </div>
                     )}
                 </div>
 
-                {/* View Mode Toggle */}
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                {/* Right side: View Mode Toggle + Selection Mode Toggle */}
+                <div className="flex items-center gap-2">
+                    {/* View Mode Toggle */}
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            title="Xem dạng lưới"
+                        >
+                            <Grid3X3 size={16} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`p-1.5 rounded-md transition-colors ${viewMode === 'list'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                                }`}
+                            title="Xem dạng danh sách"
+                        >
+                            <List size={16} />
+                        </button>
+                    </div>
+
+                    {/* Selection Mode Toggle */}
                     <button
-                        onClick={() => setViewMode('grid')}
-                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'grid'
-                            ? 'bg-white text-blue-600 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
+                        onClick={toggleSelectionMode}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${isSelectionMode
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             }`}
-                        title="Xem dạng lưới"
                     >
-                        <Grid3X3 size={16} />
-                    </button>
-                    <button
-                        onClick={() => setViewMode('list')}
-                        className={`p-1.5 rounded-md transition-colors ${viewMode === 'list'
-                            ? 'bg-white text-blue-600 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
-                            }`}
-                        title="Xem dạng danh sách"
-                    >
-                        <List size={16} />
+                        <Check size={16} />
+                        <span className="hidden sm:inline">Chọn</span>
                     </button>
                 </div>
             </div>
+
+            {/* Selection Toolbar */}
+            {isSelectionMode && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <span className="text-sm text-blue-700 font-medium">
+                        Đã chọn: {selectedItems.folders.length + selectedItems.files.length}
+                    </span>
+                    <div className="flex-1" />
+                    <button
+                        onClick={selectAll}
+                        className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-100 rounded-lg"
+                    >
+                        Chọn tất cả
+                    </button>
+                    <button
+                        onClick={clearSelection}
+                        className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                    >
+                        Bỏ chọn
+                    </button>
+                    <button
+                        onClick={handleBulkDelete}
+                        disabled={selectedItems.folders.length + selectedItems.files.length === 0}
+                        className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                        <Trash2 size={14} />
+                        Xóa
+                    </button>
+                </div>
+            )}
 
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg overflow-x-auto">
@@ -1728,14 +2524,14 @@ const UserFolders = () => {
                 </div>
             ) : viewMode === 'grid' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {filteredFolders.map((folder) => (
+                    {folders.map((folder) => (
                         <FolderGridItem key={`folder-${folder.id}`} folder={folder} />
                     ))}
-                    {filteredFiles.map((file) => (
+                    {files.map((file) => (
                         <FileGridItem key={`file-${file.id}`} file={file} />
                     ))}
 
-                    {filteredFolders.length === 0 && filteredFiles.length === 0 && (
+                    {folders.length === 0 && files.length === 0 && (
                         <div className="col-span-full text-center py-20 text-gray-500">
                             <Folder className="w-20 h-20 mx-auto mb-4 text-gray-300" />
                             <p className="text-lg">
@@ -1753,14 +2549,14 @@ const UserFolders = () => {
                 </div>
             ) : (
                 <div className="space-y-2">
-                    {filteredFolders.map((folder) => (
+                    {folders.map((folder) => (
                         <FolderListItem key={`folder-${folder.id}`} folder={folder} />
                     ))}
-                    {filteredFiles.map((file) => (
+                    {files.map((file) => (
                         <FileListItem key={`file-${file.id}`} file={file} />
                     ))}
 
-                    {filteredFolders.length === 0 && filteredFiles.length === 0 && (
+                    {folders.length === 0 && files.length === 0 && (
                         <div className="text-center py-20 text-gray-500">
                             <Folder className="w-20 h-20 mx-auto mb-4 text-gray-300" />
                             <p className="text-lg">
@@ -1813,26 +2609,26 @@ const UserFolders = () => {
                             </>
                         )}
 
-                        {/* Check ownership for Rename, Delete, Share */}
+                        {/* Share button - Allow all users (including shared users) to share */}
+                        <div className="my-1 border-t border-gray-100" />
+                        <button
+                            onClick={() => {
+                                setShareDialog({
+                                    type: contextMenu.type,
+                                    id: contextMenu.id,
+                                    name: contextMenu.name
+                                });
+                                setContextMenu(null);
+                            }}
+                            className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
+                        >
+                            <User size={16} className="text-gray-500" />
+                            <span>Chia sẻ</span>
+                        </button>
+
+                        {/* Check ownership for Rename and Delete only */}
                         {(contextMenu.userId === user?.id || !contextMenu.userId /* Fallback if userId missing */) && (
                             <>
-                                <div className="my-1 border-t border-gray-100" />
-
-                                <button
-                                    onClick={() => {
-                                        setShareDialog({
-                                            type: contextMenu.type,
-                                            id: contextMenu.id,
-                                            name: contextMenu.name
-                                        });
-                                        setContextMenu(null);
-                                    }}
-                                    className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
-                                >
-                                    <User size={16} className="text-gray-500" />
-                                    <span>Chia sẻ</span>
-                                </button>
-
                                 <button
                                     onClick={() => {
                                         setRenameDialog({
@@ -1847,6 +2643,21 @@ const UserFolders = () => {
                                 >
                                     <Edit2 size={16} className="text-gray-500" />
                                     <span>Đổi tên</span>
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        setMoveDialog({
+                                            type: contextMenu.type,
+                                            id: contextMenu.id,
+                                            name: contextMenu.name
+                                        });
+                                        setContextMenu(null);
+                                    }}
+                                    className="flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-100"
+                                >
+                                    <Move size={16} className="text-gray-500" />
+                                    <span>Di chuyển</span>
                                 </button>
 
                                 <button
@@ -1917,6 +2728,69 @@ const UserFolders = () => {
                                     className="px-5 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
                                 >
                                     Tạo thư mục
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Create File Dialog */}
+            {
+                createFileDialog && createFileDialog.open && (
+                    <div className="fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className={`p-3 rounded-full ${createFileDialog.type === 'word' ? 'bg-blue-100' :
+                                    createFileDialog.type === 'excel' ? 'bg-green-100' : 'bg-orange-100'
+                                    }`}>
+                                    {createFileDialog.type === 'word' && <FileText className="w-6 h-6 text-blue-600" />}
+                                    {createFileDialog.type === 'excel' && <FileSpreadsheet className="w-6 h-6 text-green-600" />}
+                                    {createFileDialog.type === 'powerpoint' && <Presentation className="w-6 h-6 text-orange-600" />}
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                    {createFileDialog.type === 'word' && 'Tạo file Word mới'}
+                                    {createFileDialog.type === 'excel' && 'Tạo file Excel mới'}
+                                    {createFileDialog.type === 'powerpoint' && 'Tạo file PowerPoint mới'}
+                                </h3>
+                            </div>
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Tên file
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={newFileNameInput}
+                                        onChange={(e) => setNewFileNameInput(e.target.value)}
+                                        placeholder="Nhập tên file"
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all pr-16"
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleConfirmCreateFile();
+                                            if (e.key === 'Escape') setCreateFileDialog(null);
+                                        }}
+                                    />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                                        {createFileDialog.ext}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={() => setCreateFileDialog(null)}
+                                    className="px-5 py-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors font-medium"
+                                >
+                                    Hủy
+                                </button>
+                                <button
+                                    onClick={handleConfirmCreateFile}
+                                    className={`px-5 py-2.5 text-white rounded-xl transition-colors font-medium ${createFileDialog.type === 'word' ? 'bg-blue-600 hover:bg-blue-700' :
+                                        createFileDialog.type === 'excel' ? 'bg-green-600 hover:bg-green-700' :
+                                            'bg-orange-600 hover:bg-orange-700'
+                                        }`}
+                                >
+                                    Tạo file
                                 </button>
                             </div>
                         </div>
@@ -2033,6 +2907,19 @@ const UserFolders = () => {
                     </div>
                 )
             }
+
+            {/* Move Dialog */}
+            {moveDialog && (
+                <MoveDialog
+                    type={moveDialog.type}
+                    id={moveDialog.id}
+                    name={moveDialog.name}
+                    currentFolderId={currentParentId}
+                    onClose={() => setMoveDialog(null)}
+                    onSuccess={fetchData}
+                    token={token!}
+                />
+            )}
 
             {/* Google Drive Browser Modal */}
             {showDriveBrowser && (

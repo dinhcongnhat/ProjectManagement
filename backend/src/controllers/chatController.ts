@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import * as fs from 'fs';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
@@ -249,9 +250,22 @@ export const createConversation = async (req: AuthRequest, res: Response) => {
             const ext = normalizedFilename.split('.').pop() || 'jpg';
             const uniqueFilename = `group-avatar-${timestamp}-${randomId}.${ext}`;
             const fileName = `chat-avatars/${uniqueFilename}`;
-            avatarPath = await uploadFile(fileName, req.file.buffer, {
+            let fileInput: any;
+            if (req.file.path) {
+                fileInput = fs.createReadStream(req.file.path);
+            } else {
+                fileInput = req.file.buffer;
+            }
+
+            avatarPath = await uploadFile(fileName, fileInput, {
                 'Content-Type': req.file.mimetype,
             });
+
+            if (req.file.path) {
+                fs.unlink(req.file.path, (err) => {
+                    if (err) console.error('Error deleting temp avatar file:', err);
+                });
+            }
         }
 
         // Tạo conversation
@@ -755,9 +769,22 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
 
         const fileName = `chat/${id}/${originalFilename}`;
         console.log('[sendFileMessage] Uploading file:', fileName);
-        const filePath = await uploadFile(fileName, req.file.buffer, {
+        let fileInput: any;
+        if (req.file.path) {
+            fileInput = fs.createReadStream(req.file.path);
+        } else {
+            fileInput = req.file.buffer;
+        }
+
+        const filePath = await uploadFile(fileName, fileInput, {
             'Content-Type': req.file.mimetype,
         });
+
+        if (req.file.path) {
+            fs.unlink(req.file.path, (err) => {
+                if (err) console.error('Error deleting temp chat file:', err);
+            });
+        }
         console.log('[sendFileMessage] File uploaded, path:', filePath);
 
         // Xác định loại message
@@ -1514,14 +1541,53 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
 
         console.log('[serveMessageAttachment] Attachment path:', message.attachment);
 
-        const { getFileStream, getFileStats, proxyFileViaPresignedUrl } = await import('../services/minioService.js');
+        const { getFileStream, getFileStats, proxyFileViaPresignedUrl, getPartialFileStream } = await import('../services/minioService.js');
 
-        // Helper to set response headers and pipe stream
-        const sendFile = (stream: any, contentType: string, contentLength: number) => {
-            res.setHeader('Content-Type', contentType);
-            if (contentLength > 0) {
-                res.setHeader('Content-Length', contentLength);
+        // Try direct stream first (supports Range requests)
+        try {
+            console.log('[serveMessageAttachment] Getting file stats...');
+            const fileStats = await getFileStats(message.attachment!);
+            const fileSize = fileStats.size;
+            const contentType = fileStats.metaData?.['content-type'] || 'application/octet-stream';
+
+            // Handle Range Request (Video Streaming)
+            const range = req.headers.range;
+            if (range && fileSize > 0) {
+                const parts = range.replace(/bytes=/, "").split("-");
+                const start = parseInt(parts[0] || '0', 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+                // Validate range
+                if (start >= fileSize || end >= fileSize) {
+                    res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+                    return res.end();
+                }
+
+                const chunksize = (end - start) + 1;
+                console.log(`[serveMessageAttachment] Serving range ${start}-${end}/${fileSize} for ${messageId}`);
+
+                const fileStream = await getPartialFileStream(message.attachment!, start, end);
+
+                res.writeHead(206, {
+                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunksize,
+                    'Content-Type': contentType,
+                    'Access-Control-Allow-Origin': '*',
+                    'Cache-Control': 'public, max-age=31536000'
+                });
+
+                fileStream.pipe(res);
+                return;
             }
+
+            // Normal Request (Full content)
+            console.log('[serveMessageAttachment] Serving full file direct stream...');
+            const fileStream = await getFileStream(message.attachment!);
+
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Length', fileSize);
+            res.setHeader('Accept-Ranges', 'bytes'); // Advertise range support
             res.setHeader('Cache-Control', 'public, max-age=31536000');
             res.setHeader('Access-Control-Allow-Origin', '*');
 
@@ -1529,28 +1595,36 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
                 res.setHeader('Content-Disposition', 'inline');
             } else {
                 const originalName = message.attachment!.split('/').pop() || 'file';
-                res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+                // Encode filename for Content-Disposition
+                const encodedName = encodeURIComponent(originalName).replace(/'/g, "%27");
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
             }
 
-            stream.pipe(res);
-        };
+            fileStream.pipe(res);
 
-        // Try direct stream first, then fallback to presigned URL proxy
-        try {
-            console.log('[serveMessageAttachment] Trying direct stream...');
-            const fileStream = await getFileStream(message.attachment);
-            const fileStats = await getFileStats(message.attachment);
-            const contentType = fileStats.metaData?.['content-type'] || 'application/octet-stream';
-            console.log('[serveMessageAttachment] Direct stream success:', contentType, fileStats.size);
-            sendFile(fileStream, contentType, fileStats.size);
         } catch (directError: any) {
             console.log('[serveMessageAttachment] Direct stream failed, trying presigned URL proxy...');
             console.log('[serveMessageAttachment] Direct error:', directError?.code || directError?.message);
 
+            // Fallback to Proxy (Note: This fallback currently does not support Range requests efficiently)
             try {
-                const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(message.attachment);
+                const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(message.attachment!);
                 console.log('[serveMessageAttachment] Proxy success:', contentType, contentLength);
-                sendFile(stream, contentType, contentLength);
+
+                res.setHeader('Content-Type', contentType);
+                if (contentLength > 0) res.setHeader('Content-Length', contentLength);
+                res.setHeader('Cache-Control', 'public, max-age=31536000');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+
+                if (contentType.startsWith('image/') || contentType.startsWith('audio/') || contentType.startsWith('video/')) {
+                    res.setHeader('Content-Disposition', 'inline');
+                } else {
+                    const originalName = message.attachment!.split('/').pop() || 'file';
+                    const encodedName = encodeURIComponent(originalName).replace(/'/g, "%27");
+                    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
+                }
+
+                stream.pipe(res);
             } catch (proxyError: any) {
                 console.error('[serveMessageAttachment] Both methods failed');
                 console.error('[serveMessageAttachment] Proxy error:', proxyError?.message || proxyError);

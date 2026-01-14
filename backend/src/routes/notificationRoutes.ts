@@ -494,6 +494,25 @@ router.put('/mark-all-read', authenticateToken, async (req: AuthRequest, res: Re
     }
 });
 
+// Delete all read notifications (MUST come before /:id route)
+router.delete('/delete-read', authenticateToken, async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+
+        await prisma.notification.deleteMany({
+            where: { userId, isRead: true }
+        });
+
+        res.json({ message: 'All read notifications deleted' });
+    } catch (error) {
+        console.error('[NotificationRoutes] Delete read error:', error);
+        res.status(500).json({ message: 'Failed to delete read notifications' });
+    }
+});
+
 // Delete notification
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
@@ -520,25 +539,6 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
     } catch (error) {
         console.error('[NotificationRoutes] Delete error:', error);
         res.status(500).json({ message: 'Failed to delete notification' });
-    }
-});
-
-// Delete all read notifications
-router.delete('/delete-read', authenticateToken, async (req: AuthRequest, res: Response) => {
-    try {
-        const userId = req.user?.id;
-        if (!userId) {
-            return res.status(401).json({ message: 'Unauthorized' });
-        }
-
-        await prisma.notification.deleteMany({
-            where: { userId, isRead: true }
-        });
-
-        res.json({ message: 'All read notifications deleted' });
-    } catch (error) {
-        console.error('[NotificationRoutes] Delete read error:', error);
-        res.status(500).json({ message: 'Failed to delete read notifications' });
     }
 });
 

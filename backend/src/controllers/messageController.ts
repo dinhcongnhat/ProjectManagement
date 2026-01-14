@@ -20,7 +20,7 @@ const decodeFilename = (filename: string): string => {
             return filename;
         }
     }
-    
+
     // Try URL decoding
     try {
         if (filename.includes('%')) {
@@ -29,16 +29,16 @@ const decodeFilename = (filename: string): string => {
     } catch {
         // Keep as is
     }
-    
+
     return filename;
 };
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
-export const upload = multer({ 
+export const upload = multer({
     storage,
     limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB max file size
+        fileSize: 1024 * 1024 * 1024, // 1024MB (1GB) max file size for video
     }
 });
 
@@ -150,8 +150,8 @@ export const createMessage = async (req: Request, res: Response): Promise<void> 
                     ...project.followers.map(f => f.id)
                 ];
                 const uniqueRecipientIds = [...new Set(recipientIds)];
-                const messagePreview = content.length > 50 
-                    ? content.substring(0, 50) + '...' 
+                const messagePreview = content.length > 50
+                    ? content.substring(0, 50) + '...'
                     : content;
 
                 await notifyProjectDiscussion(
@@ -251,6 +251,63 @@ export const uploadVoiceMessage = async (req: Request, res: Response): Promise<v
             console.error('WebSocket emit error:', wsError);
         }
 
+        // Send push notification
+        try {
+            // Fetch project members and sender info for notification
+            const [project, sender] = await Promise.all([
+                prisma.project.findUnique({
+                    where: { id: parseInt(projectId) },
+                    include: {
+                        manager: { select: { id: true } },
+                        implementers: { select: { id: true } },
+                        cooperators: { select: { id: true } },
+                        followers: { select: { id: true } }
+                    }
+                }),
+                prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true }
+                })
+            ]);
+
+            if (project && sender) {
+                const recipientIds = new Set<number>();
+                if (project.managerId) recipientIds.add(project.managerId);
+                project.implementers.forEach(u => recipientIds.add(u.id));
+                project.cooperators.forEach(u => recipientIds.add(u.id));
+                project.followers.forEach(u => recipientIds.add(u.id));
+                recipientIds.delete(userId); // Exclude sender
+
+                if (recipientIds.size > 0) {
+                    await notifyProjectDiscussion(
+                        Array.from(recipientIds),
+                        userId,
+                        sender.name,
+                        parseInt(projectId),
+                        project.name,
+                        'đã gửi một tin nhắn thoại'
+                    );
+                }
+            }
+        } catch (pushError) {
+            console.error('Push notification error:', pushError);
+        }
+
+        // Log activity for voice message
+        try {
+            await prisma.projectActivity.create({
+                data: {
+                    action: 'SEND_VOICE',
+                    fieldName: 'message',
+                    newValue: 'tin nhắn thoại',
+                    projectId: parseInt(projectId),
+                    userId: userId
+                }
+            });
+        } catch (activityError) {
+            console.error('Activity logging error:', activityError);
+        }
+
         res.status(201).json({ ...message, attachmentUrl });
     } catch (error) {
         console.error('Error uploading voice message:', error);
@@ -279,10 +336,10 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
         let originalName = decodeFilename(file.originalname);
         // Normalize to NFC form for Vietnamese characters
         originalName = originalName.normalize('NFC');
-        
+
         console.log('Original filename from multer:', file.originalname);
         console.log('Decoded filename:', originalName);
-        
+
         // Use original filename directly without timestamp prefix
         const fileName = `${projectId}/${originalName}`;
 
@@ -294,7 +351,15 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
 
         // Determine message type based on file type
         const isImage = file.mimetype.startsWith('image/');
-        const messageType = content ? 'TEXT_WITH_FILE' : (isImage ? 'IMAGE' : 'FILE');
+        const isVideo = file.mimetype.startsWith('video/');
+        let messageType = 'FILE';
+        if (content) {
+            messageType = 'TEXT_WITH_FILE';
+        } else if (isImage) {
+            messageType = 'IMAGE';
+        } else if (isVideo) {
+            messageType = 'VIDEO';
+        }
 
         // Create message record
         const message = await prisma.message.create({
@@ -324,6 +389,75 @@ export const uploadFileMessage = async (req: Request, res: Response): Promise<vo
             });
         } catch (wsError) {
             console.error('WebSocket emit error:', wsError);
+        }
+
+        // Send push notification
+        try {
+            const contentTypes: Record<string, string> = {
+                'IMAGE': 'hình ảnh',
+                'VIDEO': 'video',
+                'FILE': 'file đính kèm',
+                'TEXT_WITH_FILE': 'tin nhắn có file'
+            };
+            const typeLabel = contentTypes[messageType] || 'tệp đính kèm';
+
+            // Fetch project members and sender info for notification
+            const [project, sender] = await Promise.all([
+                prisma.project.findUnique({
+                    where: { id: parseInt(projectId) },
+                    include: {
+                        manager: { select: { id: true } },
+                        implementers: { select: { id: true } },
+                        cooperators: { select: { id: true } },
+                        followers: { select: { id: true } }
+                    }
+                }),
+                prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true }
+                })
+            ]);
+
+            if (project && sender) {
+                const recipientIds = new Set<number>();
+                if (project.managerId) recipientIds.add(project.managerId);
+                project.implementers.forEach(u => recipientIds.add(u.id));
+                project.cooperators.forEach(u => recipientIds.add(u.id));
+                project.followers.forEach(u => recipientIds.add(u.id));
+                recipientIds.delete(userId); // Exclude sender
+
+                if (recipientIds.size > 0) {
+                    await notifyProjectDiscussion(
+                        Array.from(recipientIds),
+                        userId,
+                        sender.name,
+                        parseInt(projectId),
+                        project.name,
+                        `đã gửi một ${typeLabel}`
+                    );
+                }
+            }
+        } catch (pushError) {
+            console.error('Push notification error:', pushError);
+        }
+
+        // Log activity for file/image/video attachment
+        try {
+            const activityAction = messageType === 'IMAGE' ? 'SEND_IMAGE' :
+                messageType === 'VIDEO' ? 'SEND_VIDEO' :
+                    messageType === 'VOICE' ? 'SEND_VOICE' : 'SEND_ATTACHMENT';
+
+            await prisma.projectActivity.create({
+                data: {
+                    action: activityAction,
+                    fieldName: 'message',
+                    newValue: originalName,
+                    projectId: parseInt(projectId),
+                    userId: userId
+                }
+            });
+        } catch (activityError) {
+            console.error('Activity logging error:', activityError);
         }
 
         res.status(201).json({ ...message, attachmentUrl, originalFileName: originalName });
@@ -430,12 +564,12 @@ export const serveAttachment = async (req: Request, res: Response): Promise<void
         const contentType = stats.metaData['content-type'] || 'application/octet-stream';
         res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Length', stats.size);
-        
+
         // For images, allow caching
         if (contentType.startsWith('image/')) {
             res.setHeader('Cache-Control', 'public, max-age=3600');
         }
-        
+
         // Allow CORS
         res.setHeader('Access-Control-Allow-Origin', '*');
 

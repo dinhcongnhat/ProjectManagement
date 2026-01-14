@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createProject, getProjects, getProjectById, updateProject, deleteProject, downloadAttachment, updateProjectProgress, approveProject } from '../controllers/projectController.js';
+import { createProject, getProjects, getProjectById, updateProject, deleteProject, downloadAttachment, updateProjectProgress, approveProject, createSubProject } from '../controllers/projectController.js';
 import {
     getProjectAttachments,
     uploadProjectAttachment,
@@ -21,9 +21,11 @@ const upload = multer({ storage: multer.memoryStorage() });
 // POST /with-file accepts FormData with file
 router.post('/', authenticateToken, isAdmin, createProject);
 router.post('/with-file', authenticateToken, isAdmin, upload.single('file'), createProject);
+// Create sub-project - allowed for Manager of parent project or Admin
+router.post('/sub-project', authenticateToken, createSubProject);
 router.get('/', authenticateToken, getProjects);
 router.get('/:id', authenticateToken, getProjectById);
-router.put('/:id', authenticateToken, isAdmin, updateProject);
+router.put('/:id', authenticateToken, updateProject); // Permission check done in controller
 router.delete('/:id', authenticateToken, isAdmin, deleteProject);
 router.get('/:id/attachment', authenticateToken, downloadAttachment);
 router.patch('/:id/progress', authenticateToken, updateProjectProgress);

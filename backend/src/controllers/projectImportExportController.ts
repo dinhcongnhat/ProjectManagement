@@ -120,7 +120,7 @@ const parsePriority = (text: string): ProjectPriority => {
 
 export const exportProjects = async (req: AuthRequest, res: Response) => {
     try {
-        const { projectIds } = req.body; // Array of project IDs to export, empty = all
+        const { projectIds, parentsOnly } = req.body; // Array of project IDs to export, empty = all; parentsOnly = only parent projects
         const userId = req.user?.id;
         const userRole = req.user?.role;
 
@@ -136,6 +136,11 @@ export const exportProjects = async (req: AuthRequest, res: Response) => {
         const whereClause: any = {};
         if (projectIds && Array.isArray(projectIds) && projectIds.length > 0) {
             whereClause.id = { in: projectIds.map((id: any) => parseInt(id)) };
+        }
+
+        // Filter only parent projects (no parentId)
+        if (parentsOnly) {
+            whereClause.parentId = null;
         }
 
         // Fetch projects

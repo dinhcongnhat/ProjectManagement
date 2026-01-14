@@ -1,123 +1,91 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-    Upload,
     Download,
     FileSpreadsheet,
     X,
-    CheckCircle,
-    AlertCircle,
     Loader2,
     FileDown,
-    FileUp
+    Check,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-react';
 import { API_URL } from '../config/api';
 
-interface ImportResult {
-    success: number;
-    failed: number;
-    errors: string[];
-    message: string;
+interface Project {
+    id: number;
+    code: string;
+    name: string;
+    manager?: { name: string };
+    children?: { id: number }[];
 }
 
-interface ProjectImportExportProps {
-    selectedProjectIds?: number[];
+interface ProjectExportProps {
     onClose: () => void;
     onSuccess?: () => void;
 }
 
-const ProjectImportExport: React.FC<ProjectImportExportProps> = ({
-    selectedProjectIds = [],
+const ProjectExport: React.FC<ProjectExportProps> = ({
     onClose,
-    onSuccess
 }) => {
-    const [activeTab, setActiveTab] = useState<'import' | 'export'>('export');
     const [isLoading, setIsLoading] = useState(false);
-    const [importResult, setImportResult] = useState<ImportResult | null>(null);
+    const [isLoadingProjects, setIsLoadingProjects] = useState(true);
     const [exportType, setExportType] = useState<'selected' | 'all'>('all');
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const [showProjectList, setShowProjectList] = useState(false);
 
     const token = localStorage.getItem('token');
 
-    // Download import template
-    const handleDownloadTemplate = async () => {
-        setIsLoading(true);
-        try {
-            const response = await fetch(`${API_URL}/projects-io/template`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
+    // Fetch parent projects
+    useEffect(() => {
+        const fetchProjects = async () => {
+            setIsLoadingProjects(true);
+            try {
+                const response = await fetch(`${API_URL}/projects`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    // Filter only parent projects (no parentId)
+                    const parentProjects = data.filter((p: any) => !p.parentId);
+                    setProjects(parentProjects);
                 }
-            });
-
-            if (!response.ok) {
-                throw new Error('Không thể tải file mẫu');
+            } catch (error) {
+                console.error('Error fetching projects:', error);
+            } finally {
+                setIsLoadingProjects(false);
             }
+        };
+        fetchProjects();
+    }, [token]);
 
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'Mau_Import_DuAn.xlsx';
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (error: any) {
-            console.error('Download template error:', error);
-            alert('Lỗi khi tải file mẫu: ' + error.message);
-        } finally {
-            setIsLoading(false);
-        }
+    const toggleProject = (id: number) => {
+        setSelectedIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) {
+                newSet.delete(id);
+            } else {
+                newSet.add(id);
+            }
+            return newSet;
+        });
     };
 
-    // Handle file import
-    const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        setIsLoading(true);
-        setImportResult(null);
-
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const response = await fetch(`${API_URL}/projects-io/import`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
-                body: formData
-            });
-
-            const result = await response.json();
-            setImportResult(result);
-
-            if (result.success > 0 && onSuccess) {
-                onSuccess();
-            }
-        } catch (error: any) {
-            console.error('Import error:', error);
-            setImportResult({
-                success: 0,
-                failed: 0,
-                errors: [error.message],
-                message: 'Lỗi khi import dự án'
-            });
-        } finally {
-            setIsLoading(false);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
-        }
+    const selectAll = () => {
+        setSelectedIds(new Set(projects.map(p => p.id)));
     };
 
-    // Handle export
+    const deselectAll = () => {
+        setSelectedIds(new Set());
+    };
+
+    // Handle export - chỉ export dự án cha (không có parentId)
     const handleExport = async () => {
         setIsLoading(true);
         try {
-            const body = exportType === 'selected' && selectedProjectIds.length > 0
-                ? { projectIds: selectedProjectIds }
-                : {};
+            const body = exportType === 'selected' && selectedIds.size > 0
+                ? { projectIds: Array.from(selectedIds), parentsOnly: true }
+                : { parentsOnly: true };
 
             const response = await fetch(`${API_URL}/projects-io/export`, {
                 method: 'POST',
@@ -142,6 +110,7 @@ const ProjectImportExport: React.FC<ProjectImportExportProps> = ({
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
+            onClose();
         } catch (error: any) {
             console.error('Export error:', error);
             alert('Lỗi khi export dự án: ' + error.message);
@@ -152,19 +121,19 @@ const ProjectImportExport: React.FC<ProjectImportExportProps> = ({
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
+                <div className="flex items-center justify-between p-6 border-b dark:border-gray-700 flex-shrink-0">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
                             <FileSpreadsheet className="w-6 h-6 text-white" />
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                                Import / Export Dự Án
+                                Export Dự Án
                             </h2>
                             <p className="text-sm text-gray-500 dark:text-gray-400">
-                                Quản lý dự án với file Excel
+                                Xuất danh sách dự án cha ra Excel
                             </p>
                         </div>
                     </div>
@@ -176,244 +145,189 @@ const ProjectImportExport: React.FC<ProjectImportExportProps> = ({
                     </button>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex border-b dark:border-gray-700">
-                    <button
-                        onClick={() => { setActiveTab('export'); setImportResult(null); }}
-                        className={`flex-1 py-4 px-6 text-center font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'export'
-                            ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50 dark:bg-blue-900/20'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-                            }`}
-                    >
-                        <Download className="w-5 h-5" />
-                        Export Dự Án
-                    </button>
-                    <button
-                        onClick={() => { setActiveTab('import'); setImportResult(null); }}
-                        className={`flex-1 py-4 px-6 text-center font-medium transition-colors flex items-center justify-center gap-2 ${activeTab === 'import'
-                            ? 'text-green-600 border-b-2 border-green-600 bg-green-50/50 dark:bg-green-900/20'
-                            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-                            }`}
-                    >
-                        <Upload className="w-5 h-5" />
-                        Import Dự Án
-                    </button>
-                </div>
-
                 {/* Content */}
-                <div className="p-6 overflow-y-auto max-h-[60vh]">
-                    {activeTab === 'export' ? (
-                        <div className="space-y-6">
-                            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-5 border border-blue-200 dark:border-blue-800">
-                                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2">
-                                    <FileDown className="w-5 h-5" />
-                                    Xuất dữ liệu dự án ra file Excel
-                                </h3>
-                                <p className="text-blue-600 dark:text-blue-400 text-sm">
-                                    File xuất sẽ bao gồm thông tin đầy đủ của các dự án: mã, tên, ngày tháng,
-                                    người phụ trách, tiến độ, trạng thái và các thông tin liên quan.
-                                </p>
-                            </div>
+                <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                        <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-1 flex items-center gap-2">
+                            <FileDown className="w-5 h-5" />
+                            Xuất dữ liệu dự án ra file Excel
+                        </h3>
+                        <p className="text-blue-600 dark:text-blue-400 text-sm">
+                            File xuất sẽ bao gồm danh sách các <strong>dự án cha</strong> với thông tin đầy đủ.
+                        </p>
+                    </div>
 
-                            <div className="space-y-3">
-                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Chọn dự án để export:
-                                </label>
-                                <div className="space-y-2">
-                                    <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${exportType === 'all'
-                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-                                        }`}>
-                                        <input
-                                            type="radio"
-                                            name="exportType"
-                                            value="all"
-                                            checked={exportType === 'all'}
-                                            onChange={() => setExportType('all')}
-                                            className="w-4 h-4 text-blue-600"
-                                        />
-                                        <div>
-                                            <span className="font-medium text-gray-900 dark:text-white">
-                                                Tất cả dự án
-                                            </span>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                                                Export toàn bộ dự án trong hệ thống
-                                            </p>
-                                        </div>
-                                    </label>
-
-                                    <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${exportType === 'selected'
-                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                        : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
-                                        } ${selectedProjectIds.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                        <input
-                                            type="radio"
-                                            name="exportType"
-                                            value="selected"
-                                            checked={exportType === 'selected'}
-                                            onChange={() => setExportType('selected')}
-                                            disabled={selectedProjectIds.length === 0}
-                                            className="w-4 h-4 text-blue-600"
-                                        />
-                                        <div>
-                                            <span className="font-medium text-gray-900 dark:text-white">
-                                                Dự án đã chọn ({selectedProjectIds.length})
-                                            </span>
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                                                {selectedProjectIds.length === 0
-                                                    ? 'Chưa chọn dự án nào'
-                                                    : `Export ${selectedProjectIds.length} dự án đã chọn`
-                                                }
-                                            </p>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={handleExport}
-                                disabled={isLoading}
-                                className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/25"
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                        Đang xuất...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Download className="w-5 h-5" />
-                                        Xuất File Excel
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="bg-green-50 dark:bg-green-900/20 rounded-xl p-5 border border-green-200 dark:border-green-800">
-                                <h3 className="font-semibold text-green-800 dark:text-green-300 mb-2 flex items-center gap-2">
-                                    <FileUp className="w-5 h-5" />
-                                    Nhập dự án từ file Excel
-                                </h3>
-                                <p className="text-green-600 dark:text-green-400 text-sm">
-                                    Tải file mẫu, điền thông tin dự án theo hướng dẫn, sau đó upload để tạo hàng loạt dự án.
-                                </p>
-                            </div>
-
-                            {/* Download Template */}
-                            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-6 text-center">
-                                <FileSpreadsheet className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-                                <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                                    Bước 1: Tải file mẫu
-                                </h4>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                                    File mẫu bao gồm hướng dẫn chi tiết và danh sách user
-                                </p>
-                                <button
-                                    onClick={handleDownloadTemplate}
-                                    disabled={isLoading}
-                                    className="px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2 mx-auto"
-                                >
-                                    <Download className="w-5 h-5" />
-                                    Tải File Mẫu (.xlsx)
-                                </button>
-                            </div>
-
-                            {/* Upload File */}
-                            <div className="border-2 border-dashed border-green-300 dark:border-green-700 rounded-xl p-6 text-center bg-green-50/50 dark:bg-green-900/10">
-                                <Upload className="w-12 h-12 mx-auto text-green-500 mb-3" />
-                                <h4 className="font-medium text-gray-900 dark:text-white mb-2">
-                                    Bước 2: Upload file đã điền
-                                </h4>
-                                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                                    Chọn file Excel (.xlsx) chứa dữ liệu dự án
-                                </p>
+                    <div className="space-y-3">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Chọn dự án để export:
+                        </label>
+                        <div className="space-y-2">
+                            {/* All projects option */}
+                            <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${exportType === 'all'
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                }`}>
                                 <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    onChange={handleImport}
-                                    className="hidden"
-                                    id="import-file"
+                                    type="radio"
+                                    name="exportType"
+                                    value="all"
+                                    checked={exportType === 'all'}
+                                    onChange={() => setExportType('all')}
+                                    className="w-4 h-4 text-blue-600"
                                 />
-                                <label
-                                    htmlFor="import-file"
-                                    className={`inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl font-medium cursor-pointer hover:from-green-600 hover:to-emerald-700 transition-all shadow-lg shadow-green-500/25 ${isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                                        }`}
-                                >
-                                    {isLoading ? (
-                                        <>
-                                            <Loader2 className="w-5 h-5 animate-spin" />
-                                            Đang xử lý...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Upload className="w-5 h-5" />
-                                            Chọn File & Import
-                                        </>
-                                    )}
-                                </label>
-                            </div>
+                                <div className="flex-1">
+                                    <span className="font-medium text-gray-900 dark:text-white">
+                                        Tất cả dự án cha ({projects.length})
+                                    </span>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                                        Export toàn bộ dự án cha trong hệ thống
+                                    </p>
+                                </div>
+                            </label>
 
-                            {/* Import Result */}
-                            {importResult && (
-                                <div className={`rounded-xl p-5 ${importResult.failed === 0 && importResult.success > 0
-                                    ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                                    : importResult.success === 0
-                                        ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                                        : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                                    }`}>
-                                    <div className="flex items-start gap-3">
-                                        {importResult.failed === 0 && importResult.success > 0 ? (
-                                            <CheckCircle className="w-6 h-6 text-green-500 flex-shrink-0 mt-0.5" />
-                                        ) : (
-                                            <AlertCircle className={`w-6 h-6 flex-shrink-0 mt-0.5 ${importResult.success === 0 ? 'text-red-500' : 'text-yellow-500'
-                                                }`} />
-                                        )}
-                                        <div className="flex-1">
-                                            <h4 className="font-semibold text-gray-900 dark:text-white mb-1">
-                                                {importResult.message}
-                                            </h4>
-                                            <div className="flex gap-4 text-sm mb-2">
-                                                <span className="text-green-600 dark:text-green-400">
-                                                    ✓ Thành công: {importResult.success}
-                                                </span>
-                                                {importResult.failed > 0 && (
-                                                    <span className="text-red-600 dark:text-red-400">
-                                                        ✕ Thất bại: {importResult.failed}
-                                                    </span>
-                                                )}
+                            {/* Selected projects option */}
+                            <div className={`rounded-xl border-2 transition-all ${exportType === 'selected'
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
+                                }`}>
+                                <label className="flex items-center gap-3 p-4 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="exportType"
+                                        value="selected"
+                                        checked={exportType === 'selected'}
+                                        onChange={() => setExportType('selected')}
+                                        className="w-4 h-4 text-blue-600"
+                                    />
+                                    <div className="flex-1">
+                                        <span className="font-medium text-gray-900 dark:text-white">
+                                            Chọn từng dự án ({selectedIds.size})
+                                        </span>
+                                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                                            {selectedIds.size === 0
+                                                ? 'Nhấn để chọn dự án cụ thể'
+                                                : `Đã chọn ${selectedIds.size} dự án`
+                                            }
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setExportType('selected');
+                                            setShowProjectList(!showProjectList);
+                                        }}
+                                        className="p-1 hover:bg-blue-100 rounded-lg transition-colors"
+                                    >
+                                        {showProjectList ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                    </button>
+                                </label>
+
+                                {/* Project selection list */}
+                                {exportType === 'selected' && showProjectList && (
+                                    <div className="border-t border-gray-200 dark:border-gray-700">
+                                        {/* Select/Deselect all */}
+                                        <div className="px-4 py-2 bg-gray-100 dark:bg-gray-700 flex items-center justify-between">
+                                            <span className="text-sm text-gray-600 dark:text-gray-300">
+                                                {selectedIds.size}/{projects.length} đã chọn
+                                            </span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={selectAll}
+                                                    className="text-xs text-blue-600 hover:underline"
+                                                >
+                                                    Chọn tất cả
+                                                </button>
+                                                <span className="text-gray-400">|</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={deselectAll}
+                                                    className="text-xs text-gray-600 hover:underline"
+                                                >
+                                                    Bỏ chọn
+                                                </button>
                                             </div>
-                                            {importResult.errors.length > 0 && (
-                                                <div className="mt-3 max-h-32 overflow-y-auto">
-                                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                                        Chi tiết lỗi:
-                                                    </p>
-                                                    <ul className="text-sm text-red-600 dark:text-red-400 space-y-1">
-                                                        {importResult.errors.slice(0, 10).map((error, idx) => (
-                                                            <li key={idx}>• {error}</li>
-                                                        ))}
-                                                        {importResult.errors.length > 10 && (
-                                                            <li className="text-gray-500">
-                                                                ... và {importResult.errors.length - 10} lỗi khác
-                                                            </li>
-                                                        )}
-                                                    </ul>
+                                        </div>
+
+                                        {/* Project list */}
+                                        <div className="max-h-48 overflow-y-auto">
+                                            {isLoadingProjects ? (
+                                                <div className="p-4 text-center text-gray-500">
+                                                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                                                    Đang tải...
                                                 </div>
+                                            ) : projects.length === 0 ? (
+                                                <div className="p-4 text-center text-gray-500">
+                                                    Không có dự án nào
+                                                </div>
+                                            ) : (
+                                                projects.map(project => (
+                                                    <label
+                                                        key={project.id}
+                                                        className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                                                    >
+                                                        <div
+                                                            onClick={() => toggleProject(project.id)}
+                                                            className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer ${selectedIds.has(project.id)
+                                                                    ? 'bg-blue-500 border-blue-500'
+                                                                    : 'border-gray-300 hover:border-blue-400'
+                                                                }`}
+                                                        >
+                                                            {selectedIds.has(project.id) && (
+                                                                <Check size={14} className="text-white" />
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-medium text-sm text-gray-900 dark:text-white truncate">
+                                                                {project.name}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500">
+                                                                {project.code}
+                                                                {project.children && project.children.length > 0 && (
+                                                                    <span className="ml-2 text-blue-500">
+                                                                        ({project.children.length} dự án con)
+                                                                    </span>
+                                                                )}
+                                                            </p>
+                                                        </div>
+                                                    </label>
+                                                ))
                                             )}
                                         </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
-                    )}
+                    </div>
+
+                    <button
+                        onClick={handleExport}
+                        disabled={isLoading || (exportType === 'selected' && selectedIds.size === 0)}
+                        className="w-full py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-500/25"
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                Đang xuất...
+                            </>
+                        ) : (
+                            <>
+                                <Download className="w-5 h-5" />
+                                Xuất File Excel
+                                {exportType === 'selected' && selectedIds.size > 0 && (
+                                    <span className="ml-1">({selectedIds.size} dự án)</span>
+                                )}
+                            </>
+                        )}
+                    </button>
                 </div>
 
                 {/* Footer */}
-                <div className="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <div className="px-6 py-4 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex-shrink-0">
                     <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
                         <span>
-                            💡 Tip: File Excel hỗ trợ định dạng .xlsx
+                            💡 Chỉ export các dự án cha (level 1)
                         </span>
                         <button
                             onClick={onClose}
@@ -428,4 +342,4 @@ const ProjectImportExport: React.FC<ProjectImportExportProps> = ({
     );
 };
 
-export default ProjectImportExport;
+export default ProjectExport;

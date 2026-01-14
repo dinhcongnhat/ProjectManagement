@@ -4,6 +4,56 @@ import prisma from '../config/prisma.js';
 import { createActivity } from './activityController.js';
 import { notifyProjectUpdate } from '../services/pushNotificationService.js';
 
+// Workflow Progress Mapping:
+// RECEIVED (confirmed) = 25% - Đã tiếp nhận thông tin
+// IN_PROGRESS (confirmed) = 50% - Đang thực hiện  
+// COMPLETED = 75% - Đã hoàn thành (chờ duyệt)
+// SENT_TO_CUSTOMER = 100% - Đã gửi khách hàng
+
+// Helper function to recalculate parent project progress from children
+const recalculateParentProgress = async (parentId: number) => {
+    const children = await prisma.project.findMany({
+        where: { parentId },
+        select: { progress: true }
+    });
+
+    if (children.length === 0) return;
+
+    // Calculate average progress of all children
+    const totalProgress = children.reduce((sum, child) => sum + (child.progress ?? 0), 0);
+    const avgProgress = Math.round(totalProgress / children.length);
+
+    // Get current parent status
+    const parent = await prisma.project.findUnique({
+        where: { id: parentId },
+        select: { status: true, progress: true, parentId: true }
+    });
+
+    if (!parent || parent.status === 'COMPLETED') return;
+
+    // Determine new status based on progress
+    let newStatus = parent.status;
+    if (avgProgress === 100 && parent.status === 'IN_PROGRESS') {
+        newStatus = 'PENDING_APPROVAL';
+    } else if (avgProgress < 100 && parent.status === 'PENDING_APPROVAL') {
+        newStatus = 'IN_PROGRESS';
+    }
+
+    // Update parent progress
+    await prisma.project.update({
+        where: { id: parentId },
+        data: {
+            progress: avgProgress,
+            status: newStatus
+        }
+    });
+
+    // Recursively update grandparent if exists
+    if (parent.parentId) {
+        await recalculateParentProgress(parent.parentId);
+    }
+};
+
 // Helper to get project members for notification
 const getProjectMembers = async (projectId: number) => {
     const project = await prisma.project.findUnique({
@@ -70,11 +120,16 @@ export const confirmReceived = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Sync Project Status
-        await prisma.project.update({
+        // Sync Project Status and set progress to 25% (RECEIVED confirmed)
+        const updatedProject = await prisma.project.update({
             where: { id: Number(id) },
-            data: { status: 'IN_PROGRESS', progress: 0 }
+            data: { status: 'IN_PROGRESS', progress: 25 }
         });
+
+        // Recalculate parent project progress if this is a sub-project
+        if (updatedProject.parentId) {
+            await recalculateParentProgress(updatedProject.parentId);
+        }
 
         // Log activity
         if (userId) {
@@ -147,11 +202,16 @@ export const confirmInProgress = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Sync Project Status to PENDING_APPROVAL
-        await prisma.project.update({
+        // Sync Project Status to PENDING_APPROVAL and set progress to 75% (COMPLETED status)
+        const updatedProject = await prisma.project.update({
             where: { id: Number(id) },
-            data: { status: 'PENDING_APPROVAL', progress: 100 }
+            data: { status: 'PENDING_APPROVAL', progress: 75 }
         });
+
+        // Recalculate parent project progress if this is a sub-project
+        if (updatedProject.parentId) {
+            await recalculateParentProgress(updatedProject.parentId);
+        }
 
         // Log activity
         if (userId) {
@@ -262,11 +322,16 @@ export const approveCompleted = async (req: AuthRequest, res: Response) => {
             }
         });
 
-        // Sync Project Status to COMPLETED
-        await prisma.project.update({
+        // Sync Project Status to COMPLETED and set progress to 100%
+        const updatedProject = await prisma.project.update({
             where: { id: Number(id) },
             data: { status: 'COMPLETED', progress: 100 }
         });
+
+        // Recalculate parent project progress if this is a sub-project
+        if (updatedProject.parentId) {
+            await recalculateParentProgress(updatedProject.parentId);
+        }
 
         // Log activity
         await createActivity(
@@ -345,14 +410,19 @@ export const confirmSentToCustomer = async (req: AuthRequest, res: Response) => 
             }
         });
 
-        // Cập nhật project status thành COMPLETED (ensure it stays completed)
-        await prisma.project.update({
+        // Cập nhật project status và progress thành 100% (SENT_TO_CUSTOMER)
+        const updatedProject = await prisma.project.update({
             where: { id: Number(id) },
             data: {
                 status: 'COMPLETED',
                 progress: 100,
             }
         });
+
+        // Recalculate parent project progress if this is a sub-project
+        if (updatedProject.parentId) {
+            await recalculateParentProgress(updatedProject.parentId);
+        }
 
         // Log activity
         if (userId) {

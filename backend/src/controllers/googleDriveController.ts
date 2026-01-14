@@ -190,7 +190,7 @@ export const listDriveFiles = async (req: Request, res: Response) => {
     try {
         // @ts-ignore
         const userId = req.user.id;
-        const { folderId, q } = req.query;
+        const { folderId, q, starred, sharedWithMe } = req.query;
 
         const auth = await getUserAuth(userId);
         if (!auth) return res.status(400).json({ error: 'Google Drive not connected' });
@@ -199,11 +199,18 @@ export const listDriveFiles = async (req: Request, res: Response) => {
 
         // Build query
         let query = "trashed = false";
-        if (folderId) {
-            query += ` and '${folderId}' in parents`;
-        } else if (!q) {
-            // Default to root if no search
-            query += " and 'root' in parents";
+
+        if (starred === 'true') {
+            query += " and starred = true";
+        } else if (sharedWithMe === 'true') {
+            query += " and sharedWithMe = true";
+        } else {
+            if (folderId) {
+                query += ` and '${folderId}' in parents`;
+            } else if (!q) {
+                // Default to root if no search and not looking for starred
+                query += " and 'root' in parents";
+            }
         }
 
         if (q) {
@@ -212,7 +219,7 @@ export const listDriveFiles = async (req: Request, res: Response) => {
 
         const response = await drive.files.list({
             q: query,
-            fields: 'nextPageToken, files(id, name, mimeType, iconLink, webViewLink, thumbnailLink, hasThumbnail)',
+            fields: 'nextPageToken, files(id, name, mimeType, iconLink, webViewLink, thumbnailLink, hasThumbnail, starred)',
             pageSize: 1000,
         });
 
@@ -397,5 +404,34 @@ export const createFolder = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('Create Drive Folder Error:', error);
         res.status(500).json({ error: 'Failed to create folder', message: error.message });
+    }
+};
+
+export const toggleStar = async (req: Request, res: Response) => {
+    try {
+        // @ts-ignore
+        const userId = req.user.id;
+        const { fileId } = req.params;
+        const { starred } = req.body;
+
+        const auth = await getUserAuth(userId);
+        if (!auth) return res.status(400).json({ error: 'Google Drive not connected' });
+
+        if (!fileId) {
+            return res.status(400).json({ error: 'File ID is required' });
+        }
+
+        const drive = google.drive({ version: 'v3', auth });
+
+        const result = await drive.files.update({
+            fileId: fileId,
+            requestBody: { starred },
+            fields: 'id, starred'
+        });
+
+        res.json((result as any).data);
+    } catch (error: any) {
+        console.error('Toggle Star Error:', error);
+        res.status(500).json({ error: 'Failed to update star status', message: error.message });
     }
 };

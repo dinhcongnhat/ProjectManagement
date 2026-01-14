@@ -22,6 +22,14 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             description,
             parentId,  // Add parentId for sub-project
             priority,
+            // New fields for sub-project
+            documentNumber,
+            documentDate,
+            implementingUnit,
+            appraisalUnit,
+            approver,
+            productType,
+            status,
         } = req.body;
 
         // Parse array fields if they come as strings (FormData behavior)
@@ -76,6 +84,10 @@ export const createProject = async (req: AuthRequest, res: Response) => {
         }
 
         const now = new Date();
+
+        // Determine project status - use provided status for sub-projects or default to IN_PROGRESS
+        const projectStatus = parentId && status ? status : 'IN_PROGRESS';
+
         const project = await prisma.project.create({
             data: {
                 code,
@@ -89,11 +101,18 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 description,
                 attachment: attachmentPath,
                 progress: 0,
-                status: 'IN_PROGRESS',
+                status: projectStatus,
                 priority: priority || 'NORMAL',
                 managerId: Number(managerId),
                 createdById: req.user?.id ?? null, // Save the creator ID
                 parentId: parentId ? Number(parentId) : null,  // Add parentId
+                // New fields for sub-project
+                documentNumber: documentNumber || null,
+                documentDate: documentDate ? new Date(documentDate) : null,
+                implementingUnit: implementingUnit || null,
+                appraisalUnit: appraisalUnit || null,
+                approver: approver || null,
+                productType: productType || null,
                 implementers: {
                     connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
                 },
@@ -265,8 +284,19 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                         code: true,
                         progress: true,
                         status: true,
+                        priority: true,
                         startDate: true,
                         endDate: true,
+                        duration: true,
+                        value: true,
+                        description: true,
+                        // Sub-project specific fields
+                        documentNumber: true,
+                        documentDate: true,
+                        implementingUnit: true,
+                        appraisalUnit: true,
+                        approver: true,
+                        productType: true,
                         manager: { select: { id: true, name: true } },
                         implementers: { select: { id: true, name: true } },
                         cooperators: { select: { id: true, name: true } },
@@ -278,8 +308,17 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                                 code: true,
                                 progress: true,
                                 status: true,
+                                priority: true,
                                 startDate: true,
                                 endDate: true,
+                                duration: true,
+                                value: true,
+                                documentNumber: true,
+                                documentDate: true,
+                                implementingUnit: true,
+                                appraisalUnit: true,
+                                approver: true,
+                                productType: true,
                                 manager: { select: { id: true, name: true } },
                             }
                         }
@@ -314,9 +353,22 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                         code: true,
                         progress: true,
                         status: true,
+                        priority: true,
                         startDate: true,
                         endDate: true,
+                        duration: true,
+                        value: true,
+                        description: true,
+                        // Sub-project specific fields
+                        documentNumber: true,
+                        documentDate: true,
+                        implementingUnit: true,
+                        appraisalUnit: true,
+                        approver: true,
+                        productType: true,
                         manager: { select: { id: true, name: true } },
+                        implementers: { select: { id: true, name: true } },
+                        cooperators: { select: { id: true, name: true } },
                         // Nested children (3rd level)
                         children: {
                             select: {
@@ -325,9 +377,21 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
                                 code: true,
                                 progress: true,
                                 status: true,
+                                priority: true,
                                 startDate: true,
                                 endDate: true,
+                                duration: true,
+                                value: true,
+                                description: true,
+                                documentNumber: true,
+                                documentDate: true,
+                                implementingUnit: true,
+                                appraisalUnit: true,
+                                approver: true,
+                                productType: true,
                                 manager: { select: { id: true, name: true } },
+                                implementers: { select: { id: true, name: true } },
+                                cooperators: { select: { id: true, name: true } },
                             },
                             orderBy: { createdAt: 'desc' },
                         }
@@ -362,6 +426,32 @@ export const getProjectById = async (req: AuthRequest, res: Response) => {
 export const updateProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
+        const userId = req.user?.id;
+        const userRole = req.user?.role;
+
+        // First, fetch the project to check permissions
+        const existingProject = await prisma.project.findUnique({
+            where: { id: Number(id) },
+            include: {
+                implementers: { select: { id: true } },
+                cooperators: { select: { id: true } },
+            }
+        });
+
+        if (!existingProject) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Check permission: Admin, Manager, Implementer, or Cooperator can update
+        const isAdmin = userRole === 'ADMIN';
+        const isManager = existingProject.managerId === userId;
+        const isImplementer = existingProject.implementers.some(imp => imp.id === userId);
+        const isCooperator = existingProject.cooperators.some(coop => coop.id === userId);
+
+        if (!isAdmin && !isManager && !isImplementer && !isCooperator) {
+            return res.status(403).json({ message: 'Access denied. You are not authorized to update this project.' });
+        }
+
         const {
             code,
             name,
@@ -372,10 +462,20 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
             value,
             managerId,
             implementerIds,
+            cooperatorIds,
             followerIds,
             description,
             priority,
+            // Sub-project specific fields
+            documentNumber,
+            documentDate,
+            implementingUnit,
+            appraisalUnit,
+            approver,
+            productType,
+            status,
         } = req.body;
+
 
         const project = await prisma.project.update({
             where: { id: Number(id) },
@@ -390,14 +490,32 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
                 description,
                 priority,
                 managerId: Number(managerId),
+                // Sub-project specific fields
+                documentNumber,
+                documentDate: documentDate ? new Date(documentDate) : null,
+                implementingUnit,
+                appraisalUnit,
+                approver,
+                productType,
+                status,
                 implementers: {
                     set: [], // Clear existing relations
                     connect: implementerIds?.map((id: string) => ({ id: Number(id) })) || [],
+                },
+                cooperators: {
+                    set: [], // Clear existing relations
+                    connect: cooperatorIds?.map((id: string) => ({ id: Number(id) })) || [],
                 },
                 followers: {
                     set: [], // Clear existing relations
                     connect: followerIds?.map((id: string) => ({ id: Number(id) })) || [],
                 },
+            },
+            include: {
+                manager: { select: { id: true, name: true } },
+                implementers: { select: { id: true, name: true } },
+                cooperators: { select: { id: true, name: true } },
+                followers: { select: { id: true, name: true } },
             },
         });
 
@@ -411,8 +529,29 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
 export const deleteProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
-        await prisma.project.delete({ where: { id: Number(id) } });
-        res.json({ message: 'Project deleted' });
+        const projectId = Number(id);
+
+        // Find all child projects (cascade delete)
+        const childProjects = await prisma.project.findMany({
+            where: { parentId: projectId },
+            select: { id: true }
+        });
+
+        // Delete all child projects first
+        if (childProjects.length > 0) {
+            const childIds = childProjects.map(p => p.id);
+            await prisma.project.deleteMany({
+                where: { id: { in: childIds } }
+            });
+        }
+
+        // Delete the parent project
+        await prisma.project.delete({ where: { id: projectId } });
+
+        res.json({
+            message: 'Project deleted',
+            deletedChildren: childProjects.length
+        });
     } catch (error) {
         console.error('Error deleting project:', error);
         res.status(500).json({ message: 'Server error' });
@@ -476,6 +615,50 @@ export const downloadAttachment = async (req: AuthRequest, res: Response) => {
     }
 };
 
+// Helper function to recalculate parent project progress from children
+const recalculateParentProgress = async (parentId: number) => {
+    const children = await prisma.project.findMany({
+        where: { parentId },
+        select: { progress: true }
+    });
+
+    if (children.length === 0) return;
+
+    // Calculate average progress of all children
+    const totalProgress = children.reduce((sum, child) => sum + (child.progress ?? 0), 0);
+    const avgProgress = Math.round(totalProgress / children.length);
+
+    // Get current parent status
+    const parent = await prisma.project.findUnique({
+        where: { id: parentId },
+        select: { status: true, progress: true, parentId: true }
+    });
+
+    if (!parent || parent.status === 'COMPLETED') return;
+
+    // Determine new status based on progress
+    let newStatus = parent.status;
+    if (avgProgress === 100 && parent.status === 'IN_PROGRESS') {
+        newStatus = 'PENDING_APPROVAL';
+    } else if (avgProgress < 100 && parent.status === 'PENDING_APPROVAL') {
+        newStatus = 'IN_PROGRESS';
+    }
+
+    // Update parent progress
+    await prisma.project.update({
+        where: { id: parentId },
+        data: {
+            progress: avgProgress,
+            status: newStatus
+        }
+    });
+
+    // Recursively update grandparent if exists
+    if (parent.parentId) {
+        await recalculateParentProgress(parent.parentId);
+    }
+};
+
 export const updateProjectProgress = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
@@ -485,14 +668,27 @@ export const updateProjectProgress = async (req: AuthRequest, res: Response) => 
             return res.status(400).json({ message: 'Progress must be between 0 and 100' });
         }
 
-        // Check current project status and progress
+        // Check current project status, progress, and if it has children
         const currentProject = await prisma.project.findUnique({
             where: { id: Number(id) },
-            select: { status: true, progress: true },
+            select: {
+                status: true,
+                progress: true,
+                parentId: true,
+                children: { select: { id: true } }
+            },
         });
 
         if (!currentProject) {
             return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // If project has children, don't allow manual progress update
+        // Progress is calculated automatically from children
+        if (currentProject.children && currentProject.children.length > 0) {
+            return res.status(400).json({
+                message: 'Không thể cập nhật tiến độ thủ công. Tiến độ dự án cha được tính tự động từ các dự án con.'
+            });
         }
 
         // Don't allow progress updates if already completed
@@ -520,6 +716,11 @@ export const updateProjectProgress = async (req: AuthRequest, res: Response) => 
                 followers: { select: { id: true, name: true } },
             },
         });
+
+        // If this project has a parent, recalculate parent's progress
+        if (currentProject.parentId) {
+            await recalculateParentProgress(currentProject.parentId);
+        }
 
         // Log activity
         if (req.user?.id) {
@@ -641,6 +842,196 @@ export const approveProject = async (req: AuthRequest, res: Response) => {
         res.json(project);
     } catch (error) {
         console.error('Error approving project:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Create sub-project - allowed for Manager of parent project or Admin
+export const createSubProject = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id;
+        const userRole = req.user?.role;
+        const parentId = req.body.parentId;
+
+        if (!parentId) {
+            return res.status(400).json({ message: 'parentId is required for sub-project creation' });
+        }
+
+        // Check if user is Admin or Manager of parent project
+        const parentProject = await prisma.project.findUnique({
+            where: { id: Number(parentId) },
+            select: { id: true, managerId: true, code: true }
+        });
+
+        if (!parentProject) {
+            return res.status(404).json({ message: 'Parent project not found' });
+        }
+
+        const isAdmin = userRole === 'ADMIN';
+        const isParentManager = parentProject.managerId === userId;
+
+        if (!isAdmin && !isParentManager) {
+            return res.status(403).json({
+                message: 'Access denied. Only Admin or Manager of parent project can create sub-projects'
+            });
+        }
+
+        // Now proceed with project creation (same logic as createProject)
+        const {
+            code,
+            name,
+            startDate,
+            endDate,
+            duration,
+            value,
+            managerId,
+            description,
+            priority,
+            documentNumber,
+            documentDate,
+            implementingUnit,
+            appraisalUnit,
+            approver,
+            productType,
+        } = req.body;
+
+        // Parse array fields
+        let implementerIds = req.body.implementerIds;
+        if (typeof implementerIds === 'string') {
+            try {
+                implementerIds = JSON.parse(implementerIds);
+            } catch (e) {
+                implementerIds = [implementerIds];
+            }
+        }
+
+        let cooperatorIds = req.body.cooperatorIds;
+        if (typeof cooperatorIds === 'string') {
+            try {
+                cooperatorIds = JSON.parse(cooperatorIds);
+            } catch (e) {
+                cooperatorIds = [cooperatorIds];
+            }
+        }
+
+        // Basic validation
+        const missingFields = [];
+        if (!code) missingFields.push('code');
+        if (!name) missingFields.push('name');
+        if (!managerId) missingFields.push('managerId');
+
+        if (missingFields.length > 0) {
+            return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
+        }
+
+        const now = new Date();
+
+        const project = await prisma.project.create({
+            data: {
+                code,
+                name,
+                startDate: startDate ? new Date(startDate) : null,
+                endDate: endDate ? new Date(endDate) : null,
+                duration,
+                value,
+                description,
+                progress: 0,
+                status: 'IN_PROGRESS',
+                priority: priority || 'NORMAL',
+                managerId: Number(managerId),
+                createdById: userId ?? null,
+                parentId: Number(parentId),
+                documentNumber: documentNumber || null,
+                documentDate: documentDate ? new Date(documentDate) : null,
+                implementingUnit: implementingUnit || null,
+                appraisalUnit: appraisalUnit || null,
+                approver: approver || null,
+                productType: productType || null,
+                implementers: {
+                    connect: Array.isArray(implementerIds) ? implementerIds.map((id: string | number) => ({ id: Number(id) })) : [],
+                },
+                cooperators: {
+                    connect: Array.isArray(cooperatorIds) ? cooperatorIds.map((id: string | number) => ({ id: Number(id) })) : [],
+                },
+                workflow: {
+                    create: {
+                        currentStatus: 'RECEIVED',
+                        receivedStartAt: now,
+                    }
+                }
+            },
+            include: {
+                parent: { select: { id: true, name: true, code: true } },
+                manager: { select: { id: true, name: true, email: true, avatar: true } },
+                implementers: { select: { id: true, name: true, email: true, avatar: true } },
+                cooperators: { select: { id: true, name: true, email: true, avatar: true } },
+            },
+        });
+
+        // Create activity log
+        await createActivity(
+            project.id,
+            userId!,
+            'PROJECT_CREATED',
+            'Dự án con đã được tạo'
+        );
+
+        // Send push notifications and emails to assigned users
+        try {
+            // Get creator name from database
+            let creatorName = 'Admin';
+            if (userId) {
+                const creator = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { name: true }
+                });
+                creatorName = creator?.name || 'Admin';
+            }
+
+            // Helper function to send notification ONLY (no email for sub-projects)
+            const notifyOnly = async (targetUserId: number, role: 'manager' | 'implementer' | 'cooperator') => {
+                // Send push notification only - no email for sub-projects
+                await notifyProjectAssignment(
+                    targetUserId,
+                    project.id,
+                    name,
+                    creatorName,
+                    role
+                );
+            };
+
+            // Notify manager (push notification only, no email for sub-projects)
+            if (Number(managerId) !== userId) {
+                await notifyOnly(Number(managerId), 'manager');
+            }
+
+            // Notify implementers
+            if (Array.isArray(implementerIds)) {
+                for (const implId of implementerIds) {
+                    if (Number(implId) !== userId) {
+                        await notifyOnly(Number(implId), 'implementer');
+                    }
+                }
+            }
+
+            // Notify cooperators
+            if (Array.isArray(cooperatorIds)) {
+                for (const coopId of cooperatorIds) {
+                    if (Number(coopId) !== userId) {
+                        await notifyOnly(Number(coopId), 'cooperator');
+                    }
+                }
+            }
+        } catch (pushError) {
+            console.error('[createSubProject] Notification/Email error:', pushError);
+        }
+
+        res.status(201).json(project);
+    } catch (error: any) {
+        console.error('Error creating sub-project:', error);
+        if (error.code === 'P2002') {
+            return res.status(400).json({ message: 'Project code already exists' });
+        }
         res.status(500).json({ message: 'Server error' });
     }
 };

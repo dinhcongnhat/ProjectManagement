@@ -9,7 +9,8 @@ import {
     disconnectDrive,
     checkConnection,
     downloadFile,
-    createFolder
+    createFolder,
+    toggleStar
 } from '../controllers/googleDriveController.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 
@@ -23,6 +24,7 @@ router.get('/files/:fileId/download', authenticateToken, downloadFile);
 router.post('/link', authenticateToken, linkFileToProject);
 router.get('/projects/:projectId/links', authenticateToken, getProjectLinks);
 router.post('/folders', authenticateToken, createFolder);
+router.patch('/files/:fileId/star', authenticateToken, toggleStar);
 router.delete('/disconnect', authenticateToken, disconnectDrive);
 
 export default router;
