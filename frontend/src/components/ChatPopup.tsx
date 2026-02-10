@@ -1769,44 +1769,52 @@ const ChatPopup: React.FC = () => {
             .slice(0, 5);
     };
 
-    // Render message content with mentions highlighted
+    // Render text with clickable URLs
+    const renderTextWithLinks = (text: string, keyPrefix: number): React.ReactNode[] => {
+        const urlPattern = /(https?:\/\/[^\s<>"']+)/gi;
+        const parts: React.ReactNode[] = [];
+        let lastIdx = 0;
+        let m;
+        while ((m = urlPattern.exec(text)) !== null) {
+            if (m.index > lastIdx) parts.push(text.substring(lastIdx, m.index));
+            parts.push(
+                <a key={`${keyPrefix}-url-${m.index}`} href={m[0]} target="_blank" rel="noopener noreferrer"
+                    className="underline break-all hover:opacity-80" onClick={e => e.stopPropagation()}>
+                    {m[0]}
+                </a>
+            );
+            lastIdx = m.index + m[0].length;
+        }
+        if (lastIdx < text.length) parts.push(text.substring(lastIdx));
+        return parts;
+    };
+
+    // Render message content with mentions highlighted and URLs linkified
     const renderMessageWithMentions = (content: string | null): React.ReactNode => {
         if (!content) return null;
 
-        // Pattern to find @[Full Name] or @username mentions
-        // First pattern: @[Name With Spaces] - names in brackets
-        // Second pattern: @username - single word without spaces
         const mentionPattern = /@\[([^\]]+)\]|@(\S+)/g;
         const parts: React.ReactNode[] = [];
         let lastIndex = 0;
         let match;
 
         while ((match = mentionPattern.exec(content)) !== null) {
-            // Add text before mention
             if (match.index > lastIndex) {
-                parts.push(content.substring(lastIndex, match.index));
+                parts.push(...renderTextWithLinks(content.substring(lastIndex, match.index), lastIndex));
             }
-
-            // match[1] is for @[Name] format, match[2] is for @username format
             const mentionName = match[1] || match[2];
-
-            // Add highlighted mention
             parts.push(
-                <span
-                    key={match.index}
+                <span key={`mention-${match.index}`}
                     className="bg-blue-100 text-blue-700 px-1 rounded font-medium cursor-pointer hover:bg-blue-200"
-                    title={`Tag: ${mentionName}`}
-                >
+                    title={`Tag: ${mentionName}`}>
                     @{mentionName}
                 </span>
             );
-
             lastIndex = match.index + match[0].length;
         }
 
-        // Add remaining text
         if (lastIndex < content.length) {
-            parts.push(content.substring(lastIndex));
+            parts.push(...renderTextWithLinks(content.substring(lastIndex), lastIndex));
         }
 
         return parts.length > 0 ? <>{parts}</> : content;

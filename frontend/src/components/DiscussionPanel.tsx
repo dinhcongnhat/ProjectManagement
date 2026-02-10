@@ -542,6 +542,26 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         return name;
     };
 
+    // Render text with clickable URLs
+    const renderTextWithLinks = (text: string): React.ReactNode[] => {
+        const urlPattern = /(https?:\/\/[^\s<>"']+)/gi;
+        const parts: React.ReactNode[] = [];
+        let lastIdx = 0;
+        let m;
+        while ((m = urlPattern.exec(text)) !== null) {
+            if (m.index > lastIdx) parts.push(text.substring(lastIdx, m.index));
+            parts.push(
+                <a key={`url-${m.index}`} href={m[0]} target="_blank" rel="noopener noreferrer"
+                    className="underline text-blue-600 dark:text-blue-400 break-all hover:opacity-80" onClick={e => e.stopPropagation()}>
+                    {m[0]}
+                </a>
+            );
+            lastIdx = m.index + m[0].length;
+        }
+        if (lastIdx < text.length) parts.push(text.substring(lastIdx));
+        return parts;
+    };
+
     // Render message content based on type
     const renderMessageContent = (message: Message) => {
         const isOwnMessage = message.sender.id === user?.id;
@@ -550,7 +570,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         switch (message.messageType) {
             case 'TEXT':
                 return (
-                    <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    <p className="text-sm whitespace-pre-wrap break-words">{message.content ? renderTextWithLinks(message.content) : null}</p>
                 );
 
             case 'IMAGE':

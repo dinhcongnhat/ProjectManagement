@@ -79,6 +79,26 @@
   --shadow-dropdown: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4);
 }
 
+/* Base body styles - PWA standalone needs explicit background */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #f8fafc;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+#root {
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 /* Dark mode base styles */
 .dark body {
   @apply bg-gray-900 text-gray-50;
@@ -1143,10 +1163,12 @@ body {
     scroll-behavior: smooth;
     /* Prevent iOS Safari from auto-zooming */
     -webkit-text-size-adjust: 100%;
+    overflow: hidden;
   }
 
   body {
     @apply bg-gray-50 text-gray-900;
+    height: 100%;
     min-height: 100vh;
     min-height: -webkit-fill-available;
     min-height: 100dvh;
@@ -1154,7 +1176,7 @@ body {
     width: 100%;
     margin: 0;
     padding: 0;
-    overflow-x: hidden;
+    overflow: hidden;
     /* Prevent pull-to-refresh in PWA */
     overscroll-behavior-y: contain;
   }
@@ -1231,17 +1253,30 @@ body {
 
   /* PWA Standalone Mode - Apply safe areas */
   @media (display-mode: standalone) {
-    body {
-      /* Only bottom/left/right - header handles top */
-      padding-top: 0;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
-      padding-left: env(safe-area-inset-left, 0px);
-      padding-right: env(safe-area-inset-right, 0px);
+    html {
+      height: 100%;
+      overflow: hidden;
     }
 
-    /* Root container in standalone mode */
+    body {
+      /* No padding - layout components handle safe areas internally */
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      /* Extend background to fill entire viewport including safe area */
+      background-color: #f8fafc;
+    }
+
+    .dark body {
+      background-color: #0f172a;
+    }
+
+    /* Root container fills full viewport in standalone mode */
     #root {
+      height: 100%;
       min-height: 100dvh;
+      overflow: hidden;
     }
   }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -247,6 +248,67 @@ const resolveAvatarUrl = (avatarUrl: string | null | undefined): string | undefi
 };
 
 // ==================== SORTABLE CARD ====================
+const MoveCardMenu: React.FC<{
+    card: KanbanCard;
+    isDark: boolean;
+    lists: KanbanList[];
+    onMoveCard: (cardId: number, fromListId: number, toListId: number) => void;
+    onClose: () => void;
+    anchorRef: React.RefObject<HTMLButtonElement | null>;
+}> = ({ card, isDark, lists, onMoveCard, onClose, anchorRef }) => {
+    const menuRef = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState({ top: 0, left: 0 });
+
+    useEffect(() => {
+        if (anchorRef.current) {
+            const rect = anchorRef.current.getBoundingClientRect();
+            const menuHeight = (lists.length - 1) * 40 + 40;
+            const spaceBelow = window.innerHeight - rect.bottom;
+            const top = spaceBelow < menuHeight ? rect.top - menuHeight : rect.bottom + 4;
+            const left = Math.min(rect.right - 160, window.innerWidth - 168);
+            setPos({ top, left: Math.max(8, left) });
+        }
+    }, [anchorRef, lists.length]);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+                anchorRef.current && !anchorRef.current.contains(e.target as Node)) {
+                onClose();
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('touchstart', handleClickOutside as any);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('touchstart', handleClickOutside as any);
+        };
+    }, [onClose, anchorRef]);
+
+    return ReactDOM.createPortal(
+        <div
+            ref={menuRef}
+            style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
+            className={`w-40 rounded-lg shadow-xl py-1 border ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}
+            onClick={(e) => e.stopPropagation()}
+        >
+            <p className={`px-3 py-1.5 text-xs font-semibold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                Chuyển đến
+            </p>
+            {lists.filter(l => l.id !== card.listId).map(list => (
+                <button
+                    key={list.id}
+                    onClick={(e) => { e.stopPropagation(); onMoveCard(card.id, card.listId, list.id); onClose(); }}
+                    className={`w-full text-left px-3 py-2 text-sm ${isDark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'}`}
+                >
+                    {list.title}
+                </button>
+            ))}
+        </div>,
+        document.body
+    );
+};
+
 const SortableCard: React.FC<{
     card: KanbanCard;
     isDark: boolean;
@@ -255,6 +317,7 @@ const SortableCard: React.FC<{
     onMoveCard?: (cardId: number, fromListId: number, toListId: number) => void;
 }> = ({ card, isDark, onClick, lists, onMoveCard }) => {
     const [showMoveMenu, setShowMoveMenu] = useState(false);
+    const moveButtonRef = useRef<HTMLButtonElement>(null);
     const {
         attributes,
         listeners,
@@ -273,14 +336,6 @@ const SortableCard: React.FC<{
         opacity: isDragging ? 0.5 : 1,
     };
 
-    const handleMoveClick = (e: React.MouseEvent, toListId: number) => {
-        e.stopPropagation();
-        if (onMoveCard) {
-            onMoveCard(card.id, card.listId, toListId);
-        }
-        setShowMoveMenu(false);
-    };
-
     return (
         <div
             ref={setNodeRef}
@@ -295,29 +350,21 @@ const SortableCard: React.FC<{
             {lists && onMoveCard && (
                 <div className="sm:hidden absolute top-2 right-2 z-10">
                     <button
+                        ref={moveButtonRef}
                         onClick={(e) => { e.stopPropagation(); setShowMoveMenu(!showMoveMenu); }}
                         className={`p-1.5 rounded-lg ${isDark ? 'bg-gray-600 hover:bg-gray-500' : 'bg-gray-100 hover:bg-gray-200'}`}
                     >
                         <MoreHorizontal className="w-4 h-4" />
                     </button>
                     {showMoveMenu && (
-                        <div
-                            className={`absolute right-0 top-8 w-40 rounded-lg shadow-xl z-50 py-1 border ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <p className={`px-3 py-1.5 text-xs font-semibold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                                Chuyển đến
-                            </p>
-                            {lists.filter(l => l.id !== card.listId).map(list => (
-                                <button
-                                    key={list.id}
-                                    onClick={(e) => handleMoveClick(e, list.id)}
-                                    className={`w-full text-left px-3 py-2 text-sm ${isDark ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'}`}
-                                >
-                                    {list.title}
-                                </button>
-                            ))}
-                        </div>
+                        <MoveCardMenu
+                            card={card}
+                            isDark={isDark}
+                            lists={lists}
+                            onMoveCard={onMoveCard}
+                            onClose={() => setShowMoveMenu(false)}
+                            anchorRef={moveButtonRef}
+                        />
                     )}
                 </div>
             )}
@@ -681,6 +728,11 @@ const KanbanPage: React.FC = () => {
         useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
         useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
     );
+
+    // Check if current user can edit the selected card
+    const canEditCard = selectedCard ? (
+        selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id || selectedBoard?.members.some(m => m.user.id === user?.id && m.role === 'ADMIN')
+    ) : false;
 
     // Reset mobile active list index when board changes or lists are removed
     useEffect(() => {
@@ -1859,14 +1911,14 @@ const KanbanPage: React.FC = () => {
 
                 {/* Card Detail Modal */}
                 {selectedCard && (
-                    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-start justify-center z-50 sm:pt-10 sm:pb-10 sm:overflow-y-auto">
-                        <div className={`w-full sm:max-w-2xl sm:mx-4 rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[92vh] sm:max-h-[85vh] overflow-y-auto overscroll-contain ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
+                    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-start justify-center z-50 sm:pt-10 sm:pb-10 sm:overflow-y-auto" onClick={() => setSelectedCard(null)}>
+                        <div onClick={e => e.stopPropagation()} className={`w-full sm:max-w-2xl sm:mx-4 rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[95dvh] sm:max-h-[85vh] overflow-y-auto overscroll-contain ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
                             {/* Card Header */}
-                            <div className="p-4 sm:p-6 pb-2 sticky top-0 z-10 bg-inherit rounded-t-2xl sm:rounded-t-xl">
+                            <div className={`p-4 sm:p-6 pb-2 sticky top-0 z-10 rounded-t-2xl sm:rounded-t-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`} style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
                                 {/* Mobile drag handle */}
                                 <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mb-3 sm:hidden" />
-                                <div className="flex items-start justify-between">
-                                    <div className="flex-1 mr-4">
+                                <div className="flex items-start justify-between gap-2">
+                                    <div className="flex-1 min-w-0">
                                         {editingCard ? (
                                             <input
                                                 autoFocus
@@ -1876,8 +1928,8 @@ const KanbanPage: React.FC = () => {
                                             />
                                         ) : (
                                             <h2
-                                                className={`text-lg sm:text-xl font-bold cursor-pointer hover:underline ${isDark ? 'text-white' : 'text-gray-900'}`}
-                                                onClick={() => setEditingCard(true)}
+                                                className={`text-lg sm:text-xl font-bold ${canEditCard ? 'cursor-pointer hover:underline' : ''} ${isDark ? 'text-white' : 'text-gray-900'}`}
+                                                onClick={() => canEditCard && setEditingCard(true)}
                                             >
                                                 {selectedCard.title}
                                             </h2>
@@ -1888,7 +1940,7 @@ const KanbanPage: React.FC = () => {
                                     </div>
                                     <button
                                         onClick={() => setSelectedCard(null)}
-                                        className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                                        className={`p-2 rounded-lg shrink-0 ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
                                     >
                                         <X className="w-5 h-5" />
                                     </button>
@@ -1931,13 +1983,17 @@ const KanbanPage: React.FC = () => {
                                             />
                                         ) : (
                                             <div
-                                                onClick={() => setEditingCard(true)}
-                                                className={`text-sm min-h-[60px] p-3 rounded-lg cursor-pointer ${isDark
+                                                onClick={() => {
+                                                    if (selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id || selectedBoard?.members.some(m => m.user.id === user?.id && m.role === 'ADMIN')) {
+                                                        setEditingCard(true);
+                                                    }
+                                                }}
+                                                className={`text-sm min-h-[60px] p-3 rounded-lg ${(selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id || selectedBoard?.members.some(m => m.user.id === user?.id && m.role === 'ADMIN')) ? 'cursor-pointer' : ''} ${isDark
                                                         ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
                                                         : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                                                     }`}
                                             >
-                                                {selectedCard.description || 'Nhấp để thêm mô tả...'}
+                                                {selectedCard.description || (selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id ? 'Nhấp để thêm mô tả...' : 'Chưa có mô tả')}
                                             </div>
                                         )}
                                     </div>
@@ -2221,12 +2277,14 @@ const KanbanPage: React.FC = () => {
                                     </h4>
                                     {/* Mobile: horizontal scroll action bar */}
                                     <div className="flex md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 -mx-1 px-1 md:mx-0 md:px-0">
-                                        <button
-                                            onClick={() => setEditingCard(true)}
-                                            className={`shrink-0 px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                                        >
-                                            <Edit3 className="w-4 h-4" /> Chỉnh sửa
-                                        </button>
+                                        {(selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id || selectedBoard?.members.some(m => m.user.id === user?.id && m.role === 'ADMIN')) && (
+                                            <button
+                                                onClick={() => setEditingCard(true)}
+                                                className={`shrink-0 px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                            >
+                                                <Edit3 className="w-4 h-4" /> Chỉnh sửa
+                                            </button>
+                                        )}
                                         {/* Approve button - for board owner/admin/card creator */}
                                         {!selectedCard.approved && selectedBoard && (selectedBoard.ownerId === user?.id || selectedBoard.members.some(m => m.user.id === user?.id && m.role === 'ADMIN') || selectedCard.creator?.id === user?.id) && (
                                             <button
@@ -2249,12 +2307,14 @@ const KanbanPage: React.FC = () => {
                                                 <ShieldCheck className="w-4 h-4" /> Đã duyệt
                                             </div>
                                         )}
-                                        <button
-                                            onClick={() => handleDeleteCard(selectedCard.id)}
-                                            className="shrink-0 px-3 py-2 rounded-lg text-sm flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
-                                        >
-                                            <Trash2 className="w-4 h-4" /> Xóa
-                                        </button>
+                                        {(selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id || selectedBoard?.members.some(m => m.user.id === user?.id && m.role === 'ADMIN')) && (
+                                            <button
+                                                onClick={() => handleDeleteCard(selectedCard.id)}
+                                                className="shrink-0 px-3 py-2 rounded-lg text-sm flex items-center gap-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                                            >
+                                                <Trash2 className="w-4 h-4" /> Xóa
+                                            </button>
+                                        )}
                                     </div>
 
                                     {/* Card info - compact on mobile */}
@@ -2405,7 +2465,7 @@ const KanbanPage: React.FC = () => {
 
     // ==================== MAIN RENDER ====================
     return (
-        <div className="h-full">
+        <div className={`h-full ${view === 'board' ? '-mx-4 -mb-4 sm:mx-0 sm:mb-0 -mt-4 sm:mt-0' : ''}`}>
             {view === 'boards' ? renderBoardsList() : renderBoardView()}
         </div>
     );
