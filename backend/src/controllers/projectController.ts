@@ -4,6 +4,7 @@ import prisma from '../config/prisma.js';
 import { createActivity } from './activityController.js';
 import { notifyProjectAssignment, notifyProjectUpdate } from '../services/pushNotificationService.js';
 import { sendProjectAssignmentEmail } from '../services/emailService.js';
+import { getOrCreateProjectBoard } from './kanbanController.js';
 
 import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename } from '../services/minioService.js';
 
@@ -68,11 +69,14 @@ export const createProject = async (req: AuthRequest, res: Response) => {
         const missingFields = [];
         if (!code) missingFields.push('code');
         if (!name) missingFields.push('name');
-        if (!managerId) missingFields.push('managerId');
+        // managerId is optional - defaults to the current user (creator becomes manager)
 
         if (missingFields.length > 0) {
             return res.status(400).json({ message: `Missing required fields: ${missingFields.join(', ')}` });
         }
+
+        // If no managerId provided, the creator becomes the project manager
+        const projectManagerId = managerId ? Number(managerId) : req.user!.id;
 
         let attachmentPath = null;
         if (req.file) {
@@ -103,7 +107,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                 progress: 0,
                 status: projectStatus,
                 priority: priority || 'NORMAL',
-                managerId: Number(managerId),
+                managerId: projectManagerId,
                 createdById: req.user?.id ?? null, // Save the creator ID
                 parentId: parentId ? Number(parentId) : null,  // Add parentId
                 // New fields for sub-project
@@ -185,8 +189,8 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             };
 
             // Notify manager
-            if (Number(managerId) !== req.user?.id) {
-                await notifyAndEmail(Number(managerId), 'manager');
+            if (projectManagerId !== req.user?.id) {
+                await notifyAndEmail(projectManagerId, 'manager');
             }
 
             // Notify implementers
@@ -210,6 +214,37 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             console.error('[createProject] Notification/Email error:', pushError);
         }
 
+        // Auto-create Kanban board for project with implementers
+        try {
+            if (Array.isArray(implementerIds) && implementerIds.length > 0) {
+                const board = await getOrCreateProjectBoard(project.id, projectManagerId);
+                if (board) {
+                    // Add all implementers as board members
+                    for (const implId of implementerIds) {
+                        const uid = Number(implId);
+                        if (!board.members.some(m => m.userId === uid)) {
+                            await prisma.kanbanBoardMember.create({
+                                data: { boardId: board.id, userId: uid, role: 'MEMBER' }
+                            }).catch(() => {});
+                        }
+                    }
+                    // Add followers as board members too
+                    if (Array.isArray(followerIds)) {
+                        for (const fId of followerIds) {
+                            const uid = Number(fId);
+                            if (!board.members.some(m => m.userId === uid)) {
+                                await prisma.kanbanBoardMember.create({
+                                    data: { boardId: board.id, userId: uid, role: 'ADMIN' }
+                                }).catch(() => {});
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (kanbanError) {
+            console.error('[createProject] Kanban board creation error:', kanbanError);
+        }
+
         res.status(201).json(project);
     } catch (error: any) {
         console.error('Error creating project:', error);
@@ -226,8 +261,8 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
         const userRole = req.user?.role;
         const { q } = req.query; // Search query
 
-        // Nếu là Admin, lấy dự án mà admin đó tạo ra, quản lý hoặc là người thực hiện/theo dõi
-        // Nếu là User, lấy dự án mà user là người thực hiện hoặc theo dõi
+        // Nếu là Admin, lấy tất cả dự án
+        // Nếu là User, lấy dự án mà user tạo ra, quản lý hoặc là người thực hiện/theo dõi/phối hợp
         let whereClause: any = {};
 
         if (userRole === 'ADMIN') {
@@ -241,9 +276,10 @@ export const getProjects = async (req: AuthRequest, res: Response) => {
                 ]
             };
         } else {
-            // User thường: chỉ thấy dự án liên quan đến mình
+            // User thường: thấy dự án mình tạo, quản lý hoặc liên quan đến mình
             whereClause = {
                 OR: [
+                    { createdById: userId }, // User sees projects they created
                     { managerId: userId },
                     { implementers: { some: { id: userId } } },
                     { followers: { some: { id: userId } } },
@@ -530,6 +566,26 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
         const projectId = Number(id);
+        const userId = req.user?.id;
+        const userRole = req.user?.role;
+
+        // Check permission: Admin, project creator, or project manager can delete
+        const project = await prisma.project.findUnique({
+            where: { id: projectId },
+            select: { managerId: true, createdById: true }
+        });
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        const isAdmin = userRole === 'ADMIN';
+        const isManager = project.managerId === userId;
+        const isCreator = project.createdById === userId;
+
+        if (!isAdmin && !isManager && !isCreator) {
+            return res.status(403).json({ message: 'Bạn không có quyền xóa dự án này' });
+        }
 
         // Find all child projects (cascade delete)
         const childProjects = await prisma.project.findMany({

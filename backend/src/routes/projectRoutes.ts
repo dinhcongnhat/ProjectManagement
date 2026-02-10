@@ -19,14 +19,14 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Project CRUD
 // POST / accepts JSON body (no file)
 // POST /with-file accepts FormData with file
-router.post('/', authenticateToken, isAdmin, createProject);
-router.post('/with-file', authenticateToken, isAdmin, upload.single('file'), createProject);
-// Create sub-project - allowed for Manager of parent project or Admin
+router.post('/', authenticateToken, createProject);
+router.post('/with-file', authenticateToken, upload.single('file'), createProject);
+// Create sub-project - allowed for Manager of parent project or any user
 router.post('/sub-project', authenticateToken, createSubProject);
 router.get('/', authenticateToken, getProjects);
 router.get('/:id', authenticateToken, getProjectById);
 router.put('/:id', authenticateToken, updateProject); // Permission check done in controller
-router.delete('/:id', authenticateToken, isAdmin, deleteProject);
+router.delete('/:id', authenticateToken, deleteProject); // Permission check done in controller
 router.get('/:id/attachment', authenticateToken, downloadAttachment);
 router.patch('/:id/progress', authenticateToken, updateProjectProgress);
 router.post('/:id/approve', authenticateToken, approveProject);

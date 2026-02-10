@@ -997,16 +997,17 @@ const ChatPopup: React.FC = () => {
                 currentMobileActiveChat?.conversationId === data.conversationId ||
                 currentChatWindows.some(w => w.conversationId === data.conversationId && !w.isMinimized);
 
-            // Update chat windows
+            // Update chat windows (with deduplication check)
             setChatWindows(prev => prev.map(w =>
                 w.conversationId === data.conversationId
-                    ? { ...w, messages: [...w.messages, data.message] }
+                    ? { ...w, messages: w.messages.some(m => m.id === data.message.id) ? w.messages : [...w.messages, data.message] }
                     : w
             ));
 
-            // Update mobile chat - use functional update to avoid stale closure
+            // Update mobile chat - use functional update to avoid stale closure (with deduplication)
             setMobileActiveChat(prev => {
                 if (prev?.conversationId === data.conversationId) {
+                    if (prev.messages.some(m => m.id === data.message.id)) return prev;
                     return { ...prev, messages: [...prev.messages, data.message] };
                 }
                 return prev;
@@ -3310,9 +3311,9 @@ const ChatPopup: React.FC = () => {
         const otherStatus = getOtherUserStatus();
 
         return (
-            <div className="fixed inset-0 z-50 bg-white flex flex-col">
+            <div className={`fixed inset-0 z-50 flex flex-col ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
                 {/* Header - Clean Design with safe area */}
-                <div className="bg-blue-600 shrink-0 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+                <div className="bg-blue-600 shrink-0 shadow-sm">
                     <div className="flex items-center gap-3 px-3 py-2.5">
                         <button
                             onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
@@ -3385,7 +3386,7 @@ const ChatPopup: React.FC = () => {
 
                 {/* Messages */}
                 <div
-                    className={`flex-1 overflow-y-auto p-3 space-y-0.5 bg-gray-50 relative transition-colors ${isDraggingOver === conversationId ? 'bg-blue-50' : ''}`}
+                    className={`flex-1 overflow-y-auto p-3 space-y-0.5 relative transition-colors ${isDark ? 'bg-gray-800' : 'bg-gray-50'} ${isDraggingOver === conversationId ? (isDark ? 'bg-blue-900/30' : 'bg-blue-50') : ''}`}
                     onDragEnter={(e) => handleDragEnter(e, conversationId)}
                     onDragOver={handleDragOver}
                     onDragLeave={(e) => handleDragLeave(e, conversationId)}
@@ -3422,7 +3423,7 @@ const ChatPopup: React.FC = () => {
                                 {/* Date separator */}
                                 {showDateSeparator && (
                                     <div className="flex items-center justify-center my-3">
-                                        <div className="bg-gray-200 text-gray-600 text-xs px-3 py-1 rounded-full">
+                                        <div className={`text-xs px-3 py-1 rounded-full ${isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-200 text-gray-600'}`}>
                                             {formatDateSeparator(msg.createdAt)}
                                         </div>
                                     </div>
@@ -3456,20 +3457,20 @@ const ChatPopup: React.FC = () => {
                                         {/* Sender name with time */}
                                         {!isOwn && isNewSenderGroup && (
                                             <div className="flex items-center gap-2 mb-1 ml-1">
-                                                <span className="text-xs text-gray-700 font-medium">{msg.sender.name}</span>
-                                                <span className="text-xs text-gray-400">•</span>
-                                                <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                                <span className={`text-xs font-medium ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>{msg.sender.name}</span>
+                                                <span className={`text-xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>•</span>
+                                                <span className={`text-xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{formatMessageTime(msg.createdAt)}</span>
                                             </div>
                                         )}
                                         {/* Time for own messages */}
                                         {isOwn && isNewSenderGroup && (
                                             <div className="flex justify-end mb-1 mr-1">
-                                                <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
+                                                <span className={`text-xs ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{formatMessageTime(msg.createdAt)}</span>
                                             </div>
                                         )}
                                         <div className="relative">
                                             <div
-                                                className={`px-3 py-2 rounded-2xl select-none ${isOwn ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-800'
+                                                className={`px-3 py-2 rounded-2xl select-none ${isOwn ? 'bg-blue-500 text-white' : (isDark ? 'bg-gray-700 text-gray-100' : 'bg-gray-100 text-gray-800')
                                                     } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''} ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
                                                 onTouchStart={(e) => {
                                                     const target = e.target as HTMLElement;
@@ -3502,7 +3503,7 @@ const ChatPopup: React.FC = () => {
                                             {showReactionPicker === msg.id && (
                                                 <>
                                                     <div className="fixed inset-0 z-[9998] bg-black/10" onClick={() => setShowReactionPicker(null)} />
-                                                    <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 bg-white rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 z-[9999]`}>
+                                                    <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 z-[9999] ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
                                                         {REACTION_EMOJIS.map(emoji => (
                                                             <button
                                                                 key={emoji}
@@ -3524,7 +3525,7 @@ const ChatPopup: React.FC = () => {
                                                                     setShowReactionPicker(null);
                                                                     showSuccess('Đã sao chép');
                                                                 }}
-                                                                className="p-1.5 text-gray-500 hover:text-blue-500 hover:bg-gray-100 rounded-full"
+                                                                className={`p-1.5 rounded-full ${isDark ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700' : 'text-gray-500 hover:text-blue-500 hover:bg-gray-100'}`}
                                                                 title="Sao chép"
                                                             >
                                                                 <Copy size={16} />
@@ -3537,7 +3538,7 @@ const ChatPopup: React.FC = () => {
                                                                     setShowReactionPicker(null);
                                                                     deleteMessage(msg.id, conversationId);
                                                                 }}
-                                                                className="p-1.5 text-gray-500 hover:text-red-500 hover:bg-gray-100 rounded-full"
+                                                                className={`p-1.5 rounded-full ${isDark ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700' : 'text-gray-500 hover:text-red-500 hover:bg-gray-100'}`}
                                                             >
                                                                 <Trash2 size={16} />
                                                             </button>
@@ -3554,7 +3555,7 @@ const ChatPopup: React.FC = () => {
                                                     <button
                                                         key={emoji}
                                                         onClick={(e) => { e.stopPropagation(); toggleReaction(msg, emoji); }}
-                                                        className={`text-xs px-1 py-0.5 rounded-full ${reactions.some(r => r.userId === user?.id) ? 'bg-blue-100' : 'bg-gray-100'
+                                                        className={`text-xs px-1 py-0.5 rounded-full ${reactions.some(r => r.userId === user?.id) ? (isDark ? 'bg-blue-900/50' : 'bg-blue-100') : (isDark ? 'bg-gray-700' : 'bg-gray-100')
                                                             }`}
                                                     >
                                                         {emoji}{reactions.length > 1 && reactions.length}
@@ -3571,7 +3572,7 @@ const ChatPopup: React.FC = () => {
                     {/* Typing indicator */}
                     {typingUsers[conversationId] && typingUsers[conversationId].length > 0 && (
                         <div className="flex justify-start">
-                            <div className="px-3 py-2 bg-white rounded-2xl border">
+                            <div className={`px-3 py-2 rounded-2xl border ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
                                 <div className="flex gap-1">
                                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
                                     <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -3595,7 +3596,7 @@ const ChatPopup: React.FC = () => {
                         if (myLastMsg && otherMembers.length > 0) {
                             return (
                                 <div className="flex justify-end px-4 py-1">
-                                    <div className="flex items-center gap-1 text-xs text-gray-400">
+                                    <div className={`flex items-center gap-1 text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                         {hasOtherMembersRead ? (
                                             <>
                                                 <CheckCheck size={14} className="text-blue-500" />
@@ -3619,7 +3620,7 @@ const ChatPopup: React.FC = () => {
 
                 {/* Upload Progress */}
                 {progress !== undefined && (
-                    <div className="px-4 py-2 bg-blue-50 border-t border-blue-100">
+                    <div className={`px-4 py-2 border-t ${isDark ? 'bg-blue-900/30 border-blue-800' : 'bg-blue-50 border-blue-100'}`}>
                         <div className="flex items-center gap-3">
                             <Loader2 size={18} className="animate-spin text-blue-600" />
                             <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
@@ -3631,7 +3632,7 @@ const ChatPopup: React.FC = () => {
                 )}
 
                 {/* Input - Modern Design */}
-                <div className="p-3 bg-white border-t border-gray-100 shrink-0 safe-area-bottom shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+                <div className={`p-3 border-t shrink-0 ${isDark ? 'bg-gray-900 border-gray-700 shadow-[0_-2px_10px_rgba(0,0,0,0.3)]' : 'bg-white border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]'}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
                     {isRecording === conversationId ? (
                         <div className="flex items-center gap-3 px-3 py-2">
                             <div
@@ -3665,10 +3666,10 @@ const ChatPopup: React.FC = () => {
                                     setRecordingTime(0);
                                     setAudioLevel(0);
                                 }}
-                                className="p-3 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-full transition-colors"
+                                className={`p-3 rounded-full transition-colors ${isDark ? 'bg-gray-700 hover:bg-gray-600 active:bg-gray-500' : 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300'}`}
                                 title="Hủy"
                             >
-                                <X size={24} className="text-gray-600" />
+                                <X size={24} className={isDark ? 'text-gray-300' : 'text-gray-600'} />
                             </button>
                             {/* Nút gửi tin nhắn thoại */}
                             <button
@@ -3705,7 +3706,7 @@ const ChatPopup: React.FC = () => {
                                 onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
                                 accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.7z,.tar,.gz"
                                 multiple={false}
-                                buttonClassName="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                buttonClassName={`p-2 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
                                 iconSize={20}
                             />
                             <button
@@ -3716,7 +3717,7 @@ const ChatPopup: React.FC = () => {
                                         input.click();
                                     }
                                 }}
-                                className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                className={`p-2 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
                                 title="Chụp ảnh từ camera"
                             >
                                 <Camera size={20} />
@@ -3753,20 +3754,20 @@ const ChatPopup: React.FC = () => {
                                     }}
                                     placeholder="Nhập tin nhắn..."
                                     rows={1}
-                                    className="w-full px-4 py-2.5 bg-gray-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-white focus:shadow-sm text-base transition-all border border-transparent focus:border-blue-200 resize-none overflow-hidden"
+                                    className={`w-full px-4 py-2.5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:shadow-sm text-base transition-all border border-transparent resize-none overflow-hidden ${isDark ? 'bg-gray-800 text-white placeholder-gray-500 focus:bg-gray-700 focus:border-blue-700' : 'bg-gray-100 text-gray-800 focus:bg-white focus:border-blue-200'}`}
                                     style={{ minHeight: '44px', maxHeight: '120px' }}
                                     data-mobile-conversation-id={conversationId}
                                 />
 
                                 {/* Mobile Mention Popup */}
                                 {showMentionPopup === conversationId && (
-                                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-64 max-h-48 overflow-y-auto">
+                                    <div className={`absolute bottom-full left-0 mb-2 rounded-lg shadow-xl border py-1 z-[9999] w-64 max-h-48 overflow-y-auto ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
                                         {getMentionSuggestions(conversationId).length > 0 ? (
                                             getMentionSuggestions(conversationId).map((member) => (
                                                 <button
                                                     key={member.user.id}
                                                     onClick={() => insertMention(conversationId, member.user.name)}
-                                                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 active:bg-blue-100 transition-colors text-left"
+                                                    className={`w-full px-3 py-2 flex items-center gap-2 transition-colors text-left ${isDark ? 'hover:bg-gray-700 active:bg-gray-600' : 'hover:bg-blue-50 active:bg-blue-100'}`}
                                                 >
                                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
                                                         {member.user.avatarUrl ? (
@@ -3776,13 +3777,13 @@ const ChatPopup: React.FC = () => {
                                                         )}
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-medium text-gray-800 truncate">{member.user.name}</div>
-                                                        <div className="text-xs text-gray-500 truncate">{member.user.email}</div>
+                                                        <div className={`text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{member.user.name}</div>
+                                                        <div className={`text-xs truncate ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{member.user.email}</div>
                                                     </div>
                                                 </button>
                                             ))
                                         ) : (
-                                            <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy người dùng</div>
+                                            <div className={`px-3 py-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Không tìm thấy người dùng</div>
                                         )}
                                     </div>
                                 )}
@@ -3793,7 +3794,7 @@ const ChatPopup: React.FC = () => {
                                 disabled={!messageInput.trim()}
                                 className={`p-2.5 rounded-xl transition-all duration-300 shrink-0 ${messageInput.trim()
                                     ? 'bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-sm'
-                                    : 'bg-gray-200 text-gray-400'
+                                    : (isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-400')
                                     }`}
                             >
                                 <Send size={20} />
@@ -3801,7 +3802,7 @@ const ChatPopup: React.FC = () => {
                             {/* Mic Button - Always visible */}
                             <button
                                 onClick={() => startRecording(conversationId)}
-                                className="p-2.5 hover:bg-gray-100 active:bg-gray-200 rounded-full text-gray-500 transition-colors shrink-0"
+                                className={`p-2.5 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
                                 title="Ghi âm"
                             >
                                 <Mic size={20} />
@@ -3811,42 +3812,48 @@ const ChatPopup: React.FC = () => {
                 </div>
                 {/* Mobile Info Overlay */}
                 {mobileShowInfo && (
-                    <div className="fixed inset-0 z-[60] bg-white flex flex-col animate-slideUp">
-                        <div className="flex items-center justify-between px-4 py-3 border-b bg-white shadow-sm" style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)' }}>
-                            <h3 className="text-lg font-bold text-gray-800">Thông tin</h3>
-                            <button onClick={() => setMobileShowInfo(false)} className="p-2 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors">
-                                <X size={24} className="text-gray-600" />
+                    <div className={`fixed inset-0 z-[60] flex flex-col animate-slideUp ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+                        <div className={`flex items-center justify-between px-4 py-3 border-b shadow-sm ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
+                            <h3 className={`text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>Thông tin</h3>
+                            <button onClick={() => setMobileShowInfo(false)} className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-700 active:bg-gray-600' : 'hover:bg-gray-100 active:bg-gray-200'}`}>
+                                <X size={24} className={isDark ? 'text-gray-300' : 'text-gray-600'} />
                             </button>
                         </div>
 
                         {/* Tabs */}
-                        <div className="flex p-2 gap-1 bg-gray-50 border-b border-gray-100 shrink-0">
+                        <div className={`flex p-2 gap-1 border-b shrink-0 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
                             <button
                                 onClick={() => {
                                     if (!chatInfoData[conversationId]?.tab || chatInfoData[conversationId].tab !== 'search') {
                                         setChatInfoData(prev => ({ ...prev, [conversationId]: { ...prev[conversationId], tab: 'search', results: [], query: '' } }));
                                     }
                                 }}
-                                className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-all active:scale-95 ${chatInfoData[conversationId]?.tab === 'search' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:bg-gray-200/50'}`}
+                                className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-all active:scale-95 ${chatInfoData[conversationId]?.tab === 'search'
+                                    ? (isDark ? 'bg-gray-700 text-blue-400 shadow-sm ring-1 ring-gray-600' : 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5')
+                                    : (isDark ? 'text-gray-400 hover:bg-gray-700/50' : 'text-gray-500 hover:bg-gray-200/50')}`}
                             >
                                 Tìm kiếm
                             </button>
                             <button
                                 onClick={() => fetchChatInfoMedia(conversationId, 'media')}
-                                className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-all active:scale-95 ${chatInfoData[conversationId]?.tab === 'media' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:bg-gray-200/50'}`}
+                                className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-all active:scale-95 ${chatInfoData[conversationId]?.tab === 'media'
+                                    ? (isDark ? 'bg-gray-700 text-blue-400 shadow-sm ring-1 ring-gray-600' : 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5')
+                                    : (isDark ? 'text-gray-400 hover:bg-gray-700/50' : 'text-gray-500 hover:bg-gray-200/50')}`}
                             >
                                 Ảnh
                             </button>
                             <button
                                 onClick={() => fetchChatInfoMedia(conversationId, 'files')}
-                                className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-all active:scale-95 ${chatInfoData[conversationId]?.tab === 'files' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-gray-500 hover:bg-gray-200/50'}`}
+                                className={`flex-1 py-2.5 text-sm font-medium rounded-xl transition-all active:scale-95 ${chatInfoData[conversationId]?.tab === 'files'
+                                    ? (isDark ? 'bg-gray-700 text-blue-400 shadow-sm ring-1 ring-gray-600' : 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5')
+                                    : (isDark ? 'text-gray-400 hover:bg-gray-700/50' : 'text-gray-500 hover:bg-gray-200/50')}`}
                             >
                                 File
                             </button>
                         </div>
 
                         {/* Content */}
-                        <div className="flex-1 overflow-y-auto bg-white p-3">
+                        <div className={`flex-1 overflow-y-auto p-3 ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
                             {(() => {
                                 const info = chatInfoData[conversationId] || { tab: 'search', results: [], loading: false, query: '' };
 
@@ -3854,11 +3861,11 @@ const ChatPopup: React.FC = () => {
                                     return (
                                         <div className="space-y-4">
                                             <div className="relative">
-                                                <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
+                                                <Search size={18} className={`absolute left-3.5 top-3 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
                                                 <input
                                                     type="text"
                                                     placeholder="Tìm tin nhắn..."
-                                                    className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:bg-white transition-all"
+                                                    className={`w-full pl-10 pr-4 py-3 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all ${isDark ? 'bg-gray-800 text-white placeholder-gray-500 focus:bg-gray-700' : 'bg-gray-100 text-gray-800 placeholder-gray-400 focus:bg-white'}`}
                                                     value={info.query}
                                                     onChange={(e) => {
                                                         const val = e.target.value;
@@ -3877,26 +3884,26 @@ const ChatPopup: React.FC = () => {
                                                 <div className="space-y-3">
                                                     {info.results.length === 0 && info.query && (
                                                         <div className="text-center py-10">
-                                                            <Search size={48} className="mx-auto text-gray-200 mb-2" />
-                                                            <p className="text-gray-400 text-sm">Không tìm thấy kết quả</p>
+                                                            <Search size={48} className={`mx-auto mb-2 ${isDark ? 'text-gray-700' : 'text-gray-200'}`} />
+                                                            <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Không tìm thấy kết quả</p>
                                                         </div>
                                                     )}
                                                     {info.results.map(msg => (
                                                         <div key={msg.id}
                                                             onClick={() => {
-                                                                jumpToMessage(msg.id, conversationId);
                                                                 setMobileShowInfo(false);
+                                                                setTimeout(() => jumpToMessage(msg.id, conversationId), 300);
                                                             }}
-                                                            className="p-3 bg-gray-50 active:bg-blue-50 rounded-xl cursor-pointer border border-transparent transition-colors"
+                                                            className={`p-3 rounded-xl cursor-pointer border border-transparent transition-colors ${isDark ? 'bg-gray-800 active:bg-gray-700' : 'bg-gray-50 active:bg-blue-50'}`}
                                                         >
                                                             <div className="flex items-center gap-2 mb-1.5">
-                                                                <div className="w-6 h-6 rounded-full bg-blue-100 overflow-hidden shrink-0">
+                                                                <div className={`w-6 h-6 rounded-full overflow-hidden shrink-0 ${isDark ? 'bg-blue-900' : 'bg-blue-100'}`}>
                                                                     {msg.sender?.avatar && <img src={msg.sender.avatar} className="w-full h-full object-cover" />}
                                                                 </div>
-                                                                <span className="text-sm font-bold text-gray-700">{msg.sender?.name}</span>
-                                                                <span className="text-xs text-gray-400 ml-auto">{formatMessageTime(msg.createdAt)}</span>
+                                                                <span className={`text-sm font-bold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>{msg.sender?.name}</span>
+                                                                <span className={`text-xs ml-auto ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{formatMessageTime(msg.createdAt)}</span>
                                                             </div>
-                                                            <p className="text-sm text-gray-600 line-clamp-2 pl-8">{decryptMessage(msg.content || '')}</p>
+                                                            <p className={`text-sm line-clamp-2 pl-8 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>{decryptMessage(msg.content || '')}</p>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -3913,18 +3920,17 @@ const ChatPopup: React.FC = () => {
                                             {info.results.map(msg => (
                                                 <div key={msg.id}
                                                     onClick={() => {
-                                                        jumpToMessage(msg.id, conversationId);
                                                         setMobileShowInfo(false);
+                                                        setTimeout(() => jumpToMessage(msg.id, conversationId), 300);
                                                     }}
-                                                    className="aspect-square bg-gray-100 relative group overflow-hidden active:opacity-80"
+                                                    className={`aspect-square relative group overflow-hidden active:opacity-80 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
                                                 >
                                                     <img src={resolveAttachmentUrl(msg.attachmentUrl || msg.attachment) || ''} className="w-full h-full object-cover" loading="lazy" />
                                                 </div>
                                             ))}
                                             {info.results.length === 0 && (
-                                                <div className="col-span-3 text-center py-12 text-gray-400">
-                                                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                                        <img src="" alt="" className="hidden" /> {/* Placeholder hack or just empty */}
+                                                <div className={`col-span-3 text-center py-12 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
                                                         <span className="text-2xl">🖼️</span>
                                                     </div>
                                                     <p>Chưa có hình ảnh</p>
@@ -3940,22 +3946,22 @@ const ChatPopup: React.FC = () => {
                                             {info.results.map(msg => (
                                                 <div key={msg.id}
                                                     onClick={() => {
-                                                        jumpToMessage(msg.id, conversationId);
                                                         setMobileShowInfo(false);
+                                                        setTimeout(() => jumpToMessage(msg.id, conversationId), 300);
                                                     }}
-                                                    className="flex items-center gap-3 p-3 bg-gray-50 active:bg-gray-100 rounded-xl border border-gray-100"
+                                                    className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? 'bg-gray-800 active:bg-gray-700 border-gray-700' : 'bg-gray-50 active:bg-gray-100 border-gray-100'}`}
                                                 >
                                                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shrink-0 ${getFileIconColor(msg.attachmentName || 'file')}`}>
                                                         <FileText size={20} />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium truncate text-gray-800">{msg.attachmentName || extractFilename(msg.attachment || '')}</p>
-                                                        <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)} • {msg.sender.name}</span>
+                                                        <p className={`text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{msg.attachmentName || extractFilename(msg.attachment || '')}</p>
+                                                        <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{formatMessageTime(msg.createdAt)} • {msg.sender.name}</span>
                                                     </div>
                                                 </div>
                                             ))}
                                             {info.results.length === 0 && (
-                                                <div className="text-center py-12 text-gray-400">
+                                                <div className={`text-center py-12 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                                     <FileText size={48} className="mx-auto mb-3 opacity-20" />
                                                     <p>Chưa có file nào</p>
                                                 </div>
@@ -4217,7 +4223,7 @@ const ChatPopup: React.FC = () => {
                                     left: 0,
                                     right: 0,
                                     bottom: 0,
-                                    height: '85vh',
+                                    height: '92dvh',
                                     borderTopLeftRadius: '16px',
                                     borderTopRightRadius: '16px'
                                 } : {
@@ -4231,7 +4237,7 @@ const ChatPopup: React.FC = () => {
                             }}
                         >
                             {/* Panel Header - Gradient Design */}
-                            <div className="bg-blue-600 shrink-0" style={isMobile ? { paddingTop: 'max(env(safe-area-inset-top, 0px), 24px)' } : undefined}>
+                            <div className="bg-blue-600 shrink-0" style={isMobile ? { paddingTop: 'env(safe-area-inset-top, 0px)' } : undefined}>
                                 <div className="p-4 pb-3">
                                     <div className="flex items-center justify-between mb-4">
                                         <div className="flex items-center gap-2">
@@ -4296,7 +4302,7 @@ const ChatPopup: React.FC = () => {
                             </div>
 
                             {/* Recent conversations label */}
-                            <div className="px-4 py-2 text-sm text-gray-500 flex items-center gap-2 bg-white border-b border-gray-100">
+                            <div className={`px-4 py-2 text-sm flex items-center gap-2 border-b ${isDark ? 'text-gray-400 bg-gray-800 border-gray-700' : 'text-gray-500 bg-white border-gray-100'}`}>
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="12" r="10" />
                                     <polyline points="12 6 12 12 16 14" />
@@ -4329,22 +4335,22 @@ const ChatPopup: React.FC = () => {
                             </div>
 
                             {/* Content */}
-                            <div className="flex-1 overflow-y-auto bg-white">
+                            <div className={`flex-1 overflow-y-auto ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
                                 {loading ? (
                                     <div className="flex items-center justify-center py-16">
                                         <div className="text-center">
                                             <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-2" />
-                                            <p className="text-sm text-gray-500">Đang tải...</p>
+                                            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Đang tải...</p>
                                         </div>
                                     </div>
                                 ) : searchMode === 'conversations' ? (
                                     filteredConversations.length === 0 ? (
                                         <div className="text-center py-16 px-6">
-                                            <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mx-auto mb-4">
+                                            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${isDark ? 'bg-blue-900/30' : 'bg-blue-50'}`}>
                                                 <MessageSquare size={32} className="text-blue-400" />
                                             </div>
-                                            <p className="text-base font-semibold text-gray-700 mb-1">Chưa có tin nhắn</p>
-                                            <p className="text-sm text-gray-400">Bắt đầu trò chuyện với ai đó ngay nào!</p>
+                                            <p className={`text-base font-semibold mb-1 ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>Chưa có tin nhắn</p>
+                                            <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Bắt đầu trò chuyện với ai đó ngay nào!</p>
                                             <button
                                                 onClick={() => setSearchMode('users')}
                                                 className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
@@ -4357,8 +4363,8 @@ const ChatPopup: React.FC = () => {
                                             {filteredConversations.map(conv => (
                                                 <div
                                                     key={conv.id}
-                                                    className={`flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-all group relative ${conv.unreadCount > 0 ? 'bg-blue-50/30' : ''
-                                                        } ${pinnedConversations.has(conv.id) ? 'bg-amber-50/50' : ''}`}
+                                                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all group relative ${isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50'} ${conv.unreadCount > 0 ? (isDark ? 'bg-blue-900/20' : 'bg-blue-50/30') : ''
+                                                        } ${pinnedConversations.has(conv.id) ? (isDark ? 'bg-amber-900/20' : 'bg-amber-50/50') : ''}`}
                                                 >
                                                     {/* Pin indicator */}
                                                     {pinnedConversations.has(conv.id) && (
@@ -4392,8 +4398,7 @@ const ChatPopup: React.FC = () => {
                                                                     conv.displayName.charAt(0).toUpperCase()
                                                                 )}
                                                             </div>
-                                                            {/* Online indicator */}
-                                                            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                                                            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 ${isDark ? 'border-gray-900' : 'border-white'}`}></div>
                                                             {conv.unreadCount > 0 && (
                                                                 <div className="absolute -top-1 -left-1 min-w-[18px] h-[18px] bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center px-1">
                                                                     {conv.unreadCount > 9 ? '9+' : conv.unreadCount}
@@ -4402,12 +4407,12 @@ const ChatPopup: React.FC = () => {
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center justify-between mb-0.5">
-                                                                <p className={`font-semibold truncate ${conv.unreadCount > 0 ? 'text-gray-900' : 'text-gray-700'
+                                                                <p className={`font-semibold truncate ${conv.unreadCount > 0 ? (isDark ? 'text-white' : 'text-gray-900') : (isDark ? 'text-gray-300' : 'text-gray-700')
                                                                     }`}>
                                                                     {conv.displayName}
                                                                 </p>
                                                                 {conv.lastMessage && (
-                                                                    <span className={`text-xs shrink-0 ml-2 ${conv.unreadCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'
+                                                                    <span className={`text-xs shrink-0 ml-2 ${conv.unreadCount > 0 ? 'text-blue-600 font-medium' : (isDark ? 'text-gray-500' : 'text-gray-400')
                                                                         }`}>
                                                                         {formatMessageTime(conv.lastMessage.createdAt)}
                                                                     </span>
@@ -4423,15 +4428,15 @@ const ChatPopup: React.FC = () => {
                                                                     đang soạn...
                                                                 </p>
                                                             ) : conv.lastMessage ? (
-                                                                <p className={`text-sm truncate pr-2 ${conv.unreadCount > 0 ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
-                                                                    {conv.lastMessage.senderId === user?.id && <span className="text-gray-400">Bạn: </span>}
+                                                                <p className={`text-sm truncate pr-2 ${conv.unreadCount > 0 ? (isDark ? 'text-gray-200 font-medium' : 'text-gray-800 font-medium') : (isDark ? 'text-gray-500' : 'text-gray-500')}`}>
+                                                                    {conv.lastMessage.senderId === user?.id && <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>Bạn: </span>}
                                                                     {conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
                                                                         conv.lastMessage.messageType === 'IMAGE' ? '🖼️ Hình ảnh' :
                                                                             conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
                                                                                 conv.lastMessage.content ? decryptMessage(conv.lastMessage.content) : ''}
                                                                 </p>
                                                             ) : (
-                                                                <p className="text-sm text-gray-400 italic">Chưa có tin nhắn</p>
+                                                                <p className={`text-sm italic ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>Chưa có tin nhắn</p>
                                                             )}
                                                         </div>
                                                     </div>
@@ -4443,7 +4448,7 @@ const ChatPopup: React.FC = () => {
                                                                 e.stopPropagation();
                                                                 setConversationMenuOpen(conversationMenuOpen === conv.id ? null : conv.id);
                                                             }}
-                                                            className="p-1.5 hover:bg-gray-200 rounded-full text-gray-500 hover:text-gray-700 transition-all"
+                                                            className={`p-1.5 rounded-full transition-all ${isDark ? 'hover:bg-gray-700 text-gray-500 hover:text-gray-300' : 'hover:bg-gray-200 text-gray-500 hover:text-gray-700'}`}
                                                         >
                                                             <MoreVertical size={20} />
                                                         </button>
@@ -4451,14 +4456,14 @@ const ChatPopup: React.FC = () => {
                                                         {conversationMenuOpen === conv.id && (
                                                             <>
                                                                 <div className="fixed inset-0 z-[9998]" onClick={() => setConversationMenuOpen(null)} />
-                                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999]">
+                                                                <div className={`absolute right-0 top-full mt-1 rounded-lg shadow-lg border py-1 min-w-[160px] z-[9999] ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
                                                                             setConversationMenuOpen(null);
                                                                             togglePinConversation(conv.id);
                                                                         }}
-                                                                        className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-sm"
+                                                                        className={`w-full px-4 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-50'}`}
                                                                     >
                                                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill={pinnedConversations.has(conv.id) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                                             <line x1="12" y1="17" x2="12" y2="22" />
@@ -4472,7 +4477,7 @@ const ChatPopup: React.FC = () => {
                                                                             setConversationMenuOpen(null);
                                                                             deleteConversation(conv.id);
                                                                         }}
-                                                                        className="w-full px-4 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 text-sm"
+                                                                        className={`w-full px-4 py-2 text-left text-red-600 flex items-center gap-2 text-sm ${isDark ? 'hover:bg-red-900/30' : 'hover:bg-red-50'}`}
                                                                     >
                                                                         <Trash2 size={16} />
                                                                         Xóa cuộc trò chuyện
@@ -4486,7 +4491,7 @@ const ChatPopup: React.FC = () => {
 
                                             {/* XEM TẤT CẢ button */}
                                             {filteredConversations.length > 0 && (
-                                                <div className="py-3 text-center border-t border-gray-100">
+                                                <div className={`py-3 text-center border-t ${isDark ? 'border-gray-700' : 'border-gray-100'}`}>
                                                     <button
                                                         onClick={() => setSearchMode('users')}
                                                         className="text-blue-500 hover:text-blue-600 font-medium text-sm"
@@ -4500,7 +4505,7 @@ const ChatPopup: React.FC = () => {
                                 ) : (
                                     <>
                                         {/* Back to conversations button */}
-                                        <div className="px-4 py-2 border-b border-gray-100">
+                                        <div className={`px-4 py-2 border-b ${isDark ? 'border-gray-700' : 'border-gray-100'}`}>
                                             <button
                                                 onClick={() => {
                                                     setSearchMode('conversations');
@@ -4515,13 +4520,13 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                         {searchUsers.length === 0 ? (
                                             <div className="text-center py-16 px-6">
-                                                <div className="w-16 h-16 rounded-full bg-purple-50 flex items-center justify-center mx-auto mb-4">
+                                                <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${isDark ? 'bg-purple-900/30' : 'bg-purple-50'}`}>
                                                     <Users size={32} className="text-purple-400" />
                                                 </div>
-                                                <p className="text-base font-semibold text-gray-700 mb-1">
+                                                <p className={`text-base font-semibold mb-1 ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>
                                                     {loading ? 'Đang tải...' : (searchQuery ? 'Không tìm thấy người dùng' : 'Đang tải danh sách...')}
                                                 </p>
-                                                <p className="text-sm text-gray-400">
+                                                <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                                     {searchQuery ? 'Thử tìm với từ khóa khác' : 'Vui lòng đợi trong giây lát'}
                                                 </p>
                                             </div>
@@ -4531,7 +4536,7 @@ const ChatPopup: React.FC = () => {
                                                     <div
                                                         key={u.id}
                                                         onClick={() => openChatWithUser(u)}
-                                                        className="flex items-center gap-3 px-4 py-3 hover:bg-green-50 cursor-pointer transition-all group"
+                                                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-all group ${isDark ? 'hover:bg-green-900/20' : 'hover:bg-green-50'}`}
                                                     >
                                                         <div className="relative shrink-0">
                                                             <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center text-white font-semibold text-lg overflow-hidden shadow-sm">
@@ -4541,13 +4546,13 @@ const ChatPopup: React.FC = () => {
                                                                     u.name.charAt(0).toUpperCase()
                                                                 )}
                                                             </div>
-                                                            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                                                            <div className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 rounded-full border-2 shadow-sm ${isDark ? 'border-gray-900' : 'border-white'}`}></div>
                                                         </div>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="font-semibold text-gray-800 truncate group-hover:text-emerald-600 transition-colors">{u.name}</p>
-                                                            <p className="text-sm text-gray-500 truncate">@{u.username}</p>
+                                                            <p className={`font-semibold truncate group-hover:text-emerald-600 transition-colors ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{u.name}</p>
+                                                            <p className={`text-sm truncate ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>@{u.username}</p>
                                                         </div>
-                                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <div className="hidden md:block md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                                             <MessageCircle size={18} className="text-emerald-500" />
                                                         </div>
                                                     </div>

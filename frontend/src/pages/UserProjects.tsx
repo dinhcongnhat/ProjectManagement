@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle, FolderTree, ChevronRight, ChevronDown, Search, X } from 'lucide-react';
+import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle, FolderTree, ChevronRight, ChevronDown, Search, X, PlusCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import { useDialog } from '../components/ui/Dialog';
+import { CreateProjectModal } from '../components/CreateProjectModal';
 
 interface SubProject {
     id: number;
@@ -48,6 +49,7 @@ const UserProjects = () => {
     const searchRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
     const { showError } = useDialog();
+    const [showCreateModal, setShowCreateModal] = useState(false);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -181,9 +183,18 @@ const UserProjects = () => {
                         <h2 className="text-2xl lg:text-3xl font-bold text-gray-900">Dự án của tôi</h2>
                         <p className="text-gray-500 mt-1">Quản lý và theo dõi tiến độ dự án</p>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Briefcase size={18} className="text-blue-600" />
-                        <span className="font-medium">{filteredProjects.length} dự án</span>
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <Briefcase size={18} className="text-blue-600" />
+                            <span className="font-medium">{filteredProjects.length} dự án</span>
+                        </div>
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                        >
+                            <PlusCircle size={16} />
+                            <span className="hidden sm:inline">Tạo dự án</span>
+                        </button>
                     </div>
                 </div>
 
@@ -297,14 +308,22 @@ const UserProjects = () => {
                         <p className="text-gray-500">
                             {searchQuery
                                 ? `Không có dự án nào khớp với "${searchQuery}"`
-                                : 'Chưa có dự án nào được giao cho bạn.'}
+                                : 'Bạn có thể tạo dự án mới hoặc chờ được giao dự án.'}
                         </p>
-                        {searchQuery && (
+                        {searchQuery ? (
                             <button
                                 onClick={() => setSearchQuery('')}
                                 className="mt-4 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg font-medium transition-colors"
                             >
                                 Xóa bộ lọc
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => setShowCreateModal(true)}
+                                className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                            >
+                                <PlusCircle size={18} />
+                                Tạo dự án mới
                             </button>
                         )}
                     </div>
@@ -662,6 +681,18 @@ const UserProjects = () => {
                     })()
                 )}
             </div>
+
+            {/* Create Project Modal */}
+            {showCreateModal && (
+                <CreateProjectModal
+                    isOpen={showCreateModal}
+                    onClose={() => setShowCreateModal(false)}
+                    onSuccess={() => {
+                        setShowCreateModal(false);
+                        fetchProjects();
+                    }}
+                />
+            )}
         </div>
     );
 };

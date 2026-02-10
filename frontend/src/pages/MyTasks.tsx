@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X, StickyNote, MessageSquare } from 'lucide-react';
-import { DndContext, useDraggable, useDroppable, type DragEndEvent, DragOverlay, type DragStartEvent } from '@dnd-kit/core';
+import { DndContext, useDraggable, useDroppable, type DragEndEvent, DragOverlay, type DragStartEvent, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
@@ -105,15 +105,15 @@ const TaskCard = ({ task, onEdit, onDelete, onOpenNote, formatDateTime, formatDa
                 )}
             </div>
             {/* Action buttons */}
-            <div className="absolute top-1.5 right-1.5 flex gap-0.5">
+            <div className="absolute top-1 right-1 flex gap-0.5">
                 <NoteButton task={task} onOpenNote={onOpenNote} formatDateTime={formatDateTime} />
                 {task.type === 'PERSONAL' && (
                     <>
-                        <button onClick={(e) => { e.stopPropagation(); onEdit(task); }} className="p-1 text-gray-400 hover:text-blue-600 rounded" onPointerDown={(e) => e.stopPropagation()}>
-                            <Pencil size={12} />
+                        <button onClick={(e) => { e.stopPropagation(); onEdit(task); }} className="p-1.5 text-gray-400 hover:text-blue-600 active:text-blue-700 rounded-lg" onPointerDown={(e) => e.stopPropagation()}>
+                            <Pencil size={14} />
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="p-1 text-gray-400 hover:text-red-600 rounded" onPointerDown={(e) => e.stopPropagation()}>
-                            <Trash2 size={12} />
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(task.id); }} className="p-1.5 text-gray-400 hover:text-red-600 active:text-red-700 rounded-lg" onPointerDown={(e) => e.stopPropagation()}>
+                            <Trash2 size={14} />
                         </button>
                     </>
                 )}
@@ -132,7 +132,7 @@ const DraggableTask = ({ task, children }: { task: Task, children: React.ReactNo
     };
 
     return (
-        <div ref={setNodeRef} style={style} className="relative touch-none" {...listeners} {...attributes}>
+        <div ref={setNodeRef} style={style} className="relative" {...listeners} {...attributes}>
             {children}
         </div>
     );
@@ -170,6 +170,10 @@ const MyTasks = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [activeId, setActiveId] = useState<string | null>(null);
     const [view, setView] = useState<'list' | 'kanban' | 'gantt'>('kanban'); // Default to kanban for mobile
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+        useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
+    );
     const [showModal, setShowModal] = useState(false);
     const [showNoteModal, setShowNoteModal] = useState(false);
     const [selectedTaskForNote, setSelectedTaskForNote] = useState<Task | null>(null);
@@ -607,7 +611,7 @@ const MyTasks = () => {
             )}
 
             {view === 'kanban' && (
-                <DndContext onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
                     {/* Vertical columns layout */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                         {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
@@ -620,7 +624,7 @@ const MyTasks = () => {
                                         {filteredTasks.filter(t => t.status === status).length}
                                     </span>
                                 </div>
-                                <div className="space-y-2 max-h-48 sm:max-h-[400px] overflow-y-auto">
+                                <div className="space-y-2 max-h-64 sm:max-h-[400px] overflow-y-auto overscroll-contain">
                                     {filteredTasks.filter(t => t.status === status).length === 0 ? (
                                         <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-xs">
                                             Không có công việc

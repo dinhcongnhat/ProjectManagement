@@ -34,7 +34,8 @@ const GoogleDriveIcon = () => (
 );
 
 const CreateProject = () => {
-    const { token } = useAuth();
+    const { token, user } = useAuth();
+    const basePath = user?.role === 'ADMIN' ? '/admin/projects' : '/projects';
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const parentIdParam = searchParams.get('parentId');
@@ -319,9 +320,9 @@ const CreateProject = () => {
                 setShowUploadDialog(false);
                 showSuccess('Dự án đã được tạo thành công!');
                 if (parentIdParam) {
-                    navigate(`/admin/projects/${parentIdParam}`);
+                    navigate(`${basePath}/${parentIdParam}`);
                 } else {
-                    navigate('/admin/projects');
+                    navigate(basePath);
                 }
             }, 1000);
 
@@ -776,7 +777,7 @@ const CreateProject = () => {
                 <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
                     {parentProject && (
                         <Link
-                            to={`/admin/projects/${parentProject.id}`}
+                            to={`${basePath}/${parentProject.id}`}
                             className="p-2.5 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl text-gray-600 transition-colors shadow-lg shadow-gray-200/50 shrink-0"
                         >
                             <ArrowLeft size={20} />
@@ -1122,7 +1123,7 @@ const CreateProject = () => {
 
                 <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 mt-6 lg:mt-8 pt-4 lg:pt-6 border-t border-gray-200 dark:border-gray-700">
                     <button
-                        onClick={() => navigate('/admin/projects')}
+                        onClick={() => navigate(basePath)}
                         disabled={isCreating}
                         className="w-full sm:w-auto px-6 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-medium rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 dark:active:bg-gray-600 transition-colors touch-target disabled:opacity-50 disabled:cursor-not-allowed"
                     >

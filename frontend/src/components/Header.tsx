@@ -6,6 +6,7 @@ import UserProfilePopup from './UserProfilePopup';
 import NotificationList from './NotificationList';
 import api from '../config/api';
 import { useAuth } from '../context/AuthContext';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 interface HeaderProps {
     onMenuClick?: () => void;
@@ -15,8 +16,10 @@ const Header = ({ onMenuClick }: HeaderProps) => {
     const [showNotifications, setShowNotifications] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const notificationRef = useRef<HTMLDivElement>(null);
-    const { user } = useAuth();
+    const { user, token } = useAuth();
+    const { socketRef, connected } = useWebSocket(token);
 
+    // Fetch unread count on mount and poll as fallback
     useEffect(() => {
         const fetchUnreadCount = async () => {
             if (!user) return;
@@ -28,9 +31,26 @@ const Header = ({ onMenuClick }: HeaderProps) => {
             }
         };
         fetchUnreadCount();
-        const interval = setInterval(fetchUnreadCount, 5000);
+        // Reduced polling interval since we have socket updates now
+        const interval = setInterval(fetchUnreadCount, 30000);
         return () => clearInterval(interval);
     }, [user]);
+
+    // Listen for realtime notifications via socket
+    useEffect(() => {
+        const socket = socketRef.current;
+        if (!socket || !connected) return;
+
+        const handleNewNotification = () => {
+            // Instantly bump the unread count
+            setUnreadCount(prev => prev + 1);
+        };
+
+        socket.on('new_notification', handleNewNotification);
+        return () => {
+            socket.off('new_notification', handleNewNotification);
+        };
+    }, [socketRef, connected]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {

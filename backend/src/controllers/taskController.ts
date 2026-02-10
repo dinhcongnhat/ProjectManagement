@@ -1,19 +1,16 @@
 import type { Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
+import { createCardForTask } from './kanbanController.js';
 
 export const createTask = async (req: AuthRequest, res: Response) => {
     try {
-        const { title, description, assigneeId, startDate, endDate, type, reminderAt } = req.body;
+        const { title, description, assigneeId, startDate, endDate, type, reminderAt, projectId } = req.body;
         const creatorId = req.user!.id;
 
-        // If user is not admin, they can only create PERSONAL tasks
-        if (req.user!.role !== 'ADMIN' && type === 'ASSIGNED') {
-            return res.status(403).json({ message: 'Only admins can assign tasks.' });
-        }
-
-        const taskType = req.user!.role === 'ADMIN' ? (type || 'ASSIGNED') : 'PERSONAL';
-        const assignedTo = taskType === 'PERSONAL' ? creatorId : assigneeId;
+        // Any user can create both PERSONAL and ASSIGNED tasks
+        const taskType = type || 'PERSONAL';
+        const assignedTo = taskType === 'PERSONAL' ? creatorId : (assigneeId || creatorId);
 
         const now = new Date();
         const task = await prisma.task.create({
@@ -28,9 +25,22 @@ export const createTask = async (req: AuthRequest, res: Response) => {
                 isReminderSent: false,
                 creatorId,
                 assigneeId: assignedTo,
-                createdAt: now, // Tự động cập nhật thời gian tạo
+                createdAt: now,
             },
         });
+
+        // Auto-create Kanban card if task is ASSIGNED and has a projectId
+        if (taskType === 'ASSIGNED' && assignedTo && projectId) {
+            await createCardForTask(
+                task.id,
+                title,
+                description || null,
+                assignedTo,
+                creatorId,
+                Number(projectId),
+                endDate ? new Date(endDate) : null
+            );
+        }
 
         res.status(201).json(task);
     } catch (error) {
@@ -84,14 +94,10 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'Task not found' });
         }
 
-        // Check permissions
+        // Check permissions - user can update tasks they created or are assigned to
         if (role !== 'ADMIN') {
-            // User can only update status of assigned tasks, or everything of personal tasks
             if (task.assigneeId !== userId && task.creatorId !== userId) {
                 return res.status(403).json({ message: 'Access denied' });
-            }
-            if (task.type === 'ASSIGNED' && task.assigneeId === userId) {
-                // Assigned task: can only update status
             }
         }
 
@@ -138,10 +144,9 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'Task not found' });
         }
 
+        // Any user can delete tasks they created or are assigned to
         if (role !== 'ADMIN') {
-            if (task.type === 'PERSONAL' && task.creatorId === userId) {
-                // OK
-            } else {
+            if (task.creatorId !== userId && task.assigneeId !== userId) {
                 return res.status(403).json({ message: 'Access denied' });
             }
         }

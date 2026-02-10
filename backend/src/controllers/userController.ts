@@ -13,9 +13,14 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
                 name: true,
                 role: true,
                 position: true,
+                avatar: true,
             },
         });
-        res.json(users);
+        const usersWithAvatarUrl = users.map(u => ({
+            ...u,
+            avatarUrl: u.avatar ? `/api/users/${u.id}/avatar` : null
+        }));
+        res.json(usersWithAvatarUrl);
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });

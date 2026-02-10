@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import prisma from './config/prisma.js';
 dotenv.config();
 const app = express();
+// Force restart timestamp: 2026-01-07T15:55:00+07:00
 const httpServer = createServer(app);
 const allowedOrigins = [
     'http://localhost:3000',
@@ -55,6 +56,7 @@ const io = new Server(httpServer, {
     pingInterval: 25000,
     transports: ['websocket', 'polling']
 });
+export const getIO = () => io;
 const port = process.env.PORT || 3001;
 const host = process.env.HOST || '0.0.0.0';
 import authRoutes from './routes/authRoutes.js';
@@ -69,6 +71,8 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import folderRoutes from './routes/folderRoutes.js';
 import projectImportExportRoutes from './routes/projectImportExportRoutes.js';
 import workflowRoutes from './routes/workflowRoutes.js';
+import googleDriveRoutes from './routes/googleDriveRoutes.js';
+import kanbanRoutes from './routes/kanbanRoutes.js';
 app.use(cors({
     origin: function (origin, callback) {
         // Cho phép requests không có origin (như mobile apps, Postman)
@@ -98,8 +102,8 @@ app.use((req, res, next) => {
     next();
 });
 // Body parsing middleware - must be before routes
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '1gb' }));
+app.use(express.urlencoded({ extended: true, limit: '1gb' }));
 // Ensure body is always an object for JSON requests
 app.use((req, res, next) => {
     // Only for JSON content type
@@ -129,19 +133,19 @@ app.get('/api/chat/conversations/:id/avatar', async (req, res) => {
 app.get('/api/onlyoffice/download/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        console.log('[OnlyOffice Download] Project ID:', id);
-        const project = await prisma.project.findUnique({
+        console.log('[OnlyOffice Download] Attachment ID:', id);
+        const attachment = await prisma.projectAttachment.findUnique({
             where: { id: Number(id) },
         });
-        if (!project || !project.attachment) {
+        if (!attachment || !attachment.minioPath) {
             console.log('[OnlyOffice Download] Attachment not found');
             return res.status(404).json({ message: 'Attachment not found' });
         }
-        console.log('[OnlyOffice Download] Found attachment:', project.attachment);
+        console.log('[OnlyOffice Download] Found attachment:', attachment.minioPath);
         const { getFileStream, getFileStats } = await import('./services/minioService.js');
         let fileStats;
         try {
-            fileStats = await getFileStats(project.attachment);
+            fileStats = await getFileStats(attachment.minioPath);
             console.log('[OnlyOffice Download] File stats:', fileStats.size, 'bytes');
         }
         catch (statsError) {
@@ -150,25 +154,14 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
         }
         let fileStream;
         try {
-            fileStream = await getFileStream(project.attachment);
+            fileStream = await getFileStream(attachment.minioPath);
         }
         catch (streamError) {
             console.error('[OnlyOffice Download] Failed to get file stream:', streamError?.message);
             return res.status(500).json({ message: 'Cannot read file from storage' });
         }
-        // Extract original filename
-        let originalName = project.attachment.split('-').slice(1).join('-');
-        if (project.attachment.includes('/')) {
-            const pathParts = project.attachment.split('/');
-            const fileName = pathParts[pathParts.length - 1] || '';
-            originalName = fileName.split('-').slice(1).join('-');
-        }
-        try {
-            originalName = decodeURIComponent(originalName);
-        }
-        catch {
-            // If decoding fails, use as is
-        }
+        // Use the attachment's original filename
+        const originalName = attachment.name;
         const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
         const asciiFilename = originalName.replace(/[^\x00-\x7F]/g, '_');
         res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
@@ -182,14 +175,14 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
             'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
             'pdf': 'application/pdf',
         };
-        res.setHeader('Content-Type', mimeTypes[ext || ''] || 'application/octet-stream');
+        res.setHeader('Content-Type', mimeTypes[ext || ''] || attachment.fileType || 'application/octet-stream');
         if (fileStats.size) {
             res.setHeader('Content-Length', fileStats.size);
         }
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        console.log('[OnlyOffice Download] Streaming file:', project.attachment);
+        console.log('[OnlyOffice Download] Streaming file:', attachment.minioPath);
         fileStream.pipe(res);
     }
     catch (error) {
@@ -276,6 +269,239 @@ app.get('/api/folders/files/:id/onlyoffice-download', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+// OnlyOffice download for Google Drive temp files (NO AUTH - OnlyOffice needs direct access)
+app.get('/api/onlyoffice/drive/download/:fileId', async (req, res) => {
+    try {
+        const fileId = req.params.fileId;
+        console.log('[OnlyOffice Drive Download] File ID:', fileId);
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        // Look for any file in the temp/drive/fileId folder
+        const { minioClient, bucketName } = await import('./config/minio.js');
+        const prefix = `temp/drive/${fileId}/`;
+        let objectName = '';
+        const stream = minioClient.listObjects(bucketName, prefix, false);
+        await new Promise((resolve, reject) => {
+            stream.on('data', (obj) => {
+                if (obj.name)
+                    objectName = obj.name;
+            });
+            stream.on('error', reject);
+            stream.on('end', resolve);
+        });
+        if (!objectName) {
+            console.log('[OnlyOffice Drive Download] File not found');
+            return res.status(404).json({ message: 'File not found' });
+        }
+        console.log('[OnlyOffice Drive Download] Found:', objectName);
+        const fileStream = await getFileStream(objectName);
+        const fileStats = await getFileStats(objectName);
+        res.setHeader('Content-Type', fileStats.metaData?.['content-type'] || 'application/octet-stream');
+        if (fileStats.size)
+            res.setHeader('Content-Length', fileStats.size);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        fileStream.pipe(res);
+    }
+    catch (error) {
+        console.error('[OnlyOffice Drive Download] Error:', error?.message);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+// ==================== ONLYOFFICE PUBLIC CALLBACKS ====================
+// These MUST be public (no auth) as OnlyOffice Document Server calls them directly
+// Test endpoint to verify OnlyOffice callback URL is reachable
+app.get('/api/onlyoffice/callback-test', (req, res) => {
+    console.log('\n[OnlyOffice] Callback Test - GET request received');
+    console.log('[OnlyOffice] Callback Test - Headers:', JSON.stringify(req.headers, null, 2));
+    res.json({
+        success: true,
+        message: 'OnlyOffice callback endpoint is reachable',
+        timestamp: new Date().toISOString(),
+        method: 'GET'
+    });
+});
+app.post('/api/onlyoffice/callback-test', (req, res) => {
+    console.log('\n[OnlyOffice] Callback Test - POST request received');
+    console.log('[OnlyOffice] Callback Test - Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[OnlyOffice] Callback Test - Body:', JSON.stringify(req.body, null, 2));
+    res.json({
+        success: true,
+        message: 'OnlyOffice callback POST endpoint is reachable',
+        timestamp: new Date().toISOString(),
+        method: 'POST',
+        receivedBody: req.body
+    });
+});
+// Project callback (NO AUTH - OnlyOffice server calls this)
+app.post('/api/onlyoffice/callback/:id', async (req, res) => {
+    // Set CORS headers immediately
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    const { id } = req.params;
+    const { status, url, key, users, actions, forcesavetype } = req.body;
+    console.log('\n========== ONLYOFFICE PROJECT CALLBACK (PUBLIC) ==========');
+    console.log('[Public Callback] Project ID:', id);
+    console.log('[Public Callback] Status:', status, '(1=editing, 2=ready to save, 4=closed no changes, 6=forcesave)');
+    console.log('[Public Callback] URL:', url);
+    console.log('[Public Callback] Key:', key);
+    console.log('[Public Callback] Users:', users);
+    console.log('[Public Callback] Actions:', actions);
+    console.log('[Public Callback] Force Save Type:', forcesavetype);
+    console.log('[Public Callback] Timestamp:', new Date().toISOString());
+    console.log('============================================================\n');
+    try {
+        // Status 2 or 6 means document needs to be saved
+        if (status === 2 || status === 6) {
+            console.log('[Public Callback] Processing save request...');
+            const project = await prisma.project.findUnique({
+                where: { id: Number(id) },
+            });
+            if (!project || !project.attachment) {
+                console.error('[Public Callback] Project or attachment not found');
+                return res.json({ error: 0 });
+            }
+            console.log('[Public Callback] Found project attachment:', project.attachment);
+            if (!url) {
+                console.error('[Public Callback] No download URL provided');
+                return res.json({ error: 0 }); // Return 0 to acknowledge
+            }
+            // Download the edited file from OnlyOffice
+            console.log('[Public Callback] Downloading edited file from:', url);
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error('[Public Callback] Failed to download from OnlyOffice:', response.status, response.statusText);
+                return res.json({ error: 1 });
+            }
+            const buffer = Buffer.from(await response.arrayBuffer());
+            console.log('[Public Callback] Downloaded file size:', buffer.length, 'bytes');
+            const { minioClient, bucketName } = await import('./config/minio.js');
+            // Upload the updated file back to MinIO
+            await minioClient.putObject(bucketName, project.attachment, buffer);
+            console.log('[Public Callback] File saved to MinIO:', project.attachment);
+            // Update project timestamp
+            await prisma.project.update({
+                where: { id: project.id },
+                data: { updatedAt: new Date() }
+            });
+            console.log('[Public Callback] SUCCESS - File saved!');
+        }
+        else {
+            console.log('[Public Callback] Status', status, '- No save needed');
+        }
+        res.json({ error: 0 });
+    }
+    catch (error) {
+        console.error('[Public Callback] ERROR:', error?.message, error?.stack);
+        res.json({ error: 0 }); // Return 0 to prevent OnlyOffice retry loops
+    }
+});
+// General save endpoint (for Google Drive files)
+app.post('/api/onlyoffice/save', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    console.log('\n========== ONLYOFFICE SAVE CALLBACK ==========');
+    console.log('[Save] Query:', req.query);
+    console.log('[Save] Body:', JSON.stringify(req.body, null, 2));
+    console.log('===============================================\n');
+    const { handleGeneralSave } = await import('./controllers/onlyofficeController.js');
+    return handleGeneralSave(req, res);
+});
+// Folder file callback (NO AUTH - OnlyOffice server calls this)
+app.post('/api/onlyoffice/folder-callback/:id', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    const { id } = req.params;
+    const { status, url, key, users, actions } = req.body;
+    console.log('\n========== ONLYOFFICE FOLDER CALLBACK (PUBLIC) ==========');
+    console.log('[Folder Callback] File ID:', id);
+    console.log('[Folder Callback] Status:', status);
+    console.log('[Folder Callback] URL:', url);
+    console.log('[Folder Callback] Key:', key);
+    console.log('==========================================================\n');
+    try {
+        // Status 2 or 6 means document needs to be saved
+        if (status === 2 || status === 6) {
+            const fileId = parseInt(id);
+            const file = await prisma.userFile.findUnique({
+                where: { id: fileId }
+            });
+            if (!file) {
+                console.log('[Folder Callback] File not found:', fileId);
+                return res.json({ error: 0 });
+            }
+            if (!url) {
+                console.log('[Folder Callback] No download URL provided');
+                return res.json({ error: 0 });
+            }
+            // Download the edited file from OnlyOffice
+            const response = await fetch(url);
+            if (!response.ok) {
+                console.error('[Folder Callback] Failed to download:', response.status);
+                return res.json({ error: 1 });
+            }
+            const buffer = Buffer.from(await response.arrayBuffer());
+            const { minioClient, bucketName } = await import('./config/minio.js');
+            await minioClient.putObject(bucketName, file.minioPath, buffer);
+            await prisma.userFile.update({
+                where: { id: fileId },
+                data: { fileSize: buffer.length, updatedAt: new Date() }
+            });
+            console.log('[Folder Callback] File saved successfully:', file.minioPath);
+        }
+        res.json({ error: 0 });
+    }
+    catch (error) {
+        console.error('[Folder Callback] Error:', error?.message);
+        res.json({ error: 0 });
+    }
+});
+// OPTIONS handler for CORS preflight
+app.options('/api/onlyoffice/callback/:id', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).send();
+});
+app.options('/api/onlyoffice/save', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(204).send();
+});
+// JWT Debug Endpoint (NO AUTH) - For debugging OnlyOffice JWT issues
+app.get('/api/onlyoffice/jwt-debug', (req, res) => {
+    const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
+    console.log('[JWT Debug] Endpoint called');
+    console.log('[JWT Debug] Secret from env:', process.env.ONLYOFFICE_JWT_SECRET);
+    console.log('[JWT Debug] Using secret:', ONLYOFFICE_JWT_SECRET);
+    // Create a test payload similar to OnlyOffice config
+    const testPayload = {
+        document: {
+            fileType: 'docx',
+            key: 'test_key_' + Date.now(),
+            title: 'test.docx',
+            url: 'https://example.com/test.docx',
+        },
+        editorConfig: {
+            mode: 'view',
+            lang: 'en',
+            user: { id: '1', name: 'Test User' },
+        },
+    };
+    const token = jwt.sign(testPayload, ONLYOFFICE_JWT_SECRET, { algorithm: 'HS256' });
+    res.json({
+        status: 'ok',
+        secretLoaded: !!process.env.ONLYOFFICE_JWT_SECRET,
+        secretPreview: ONLYOFFICE_JWT_SECRET.substring(0, 3) + '***' + ONLYOFFICE_JWT_SECRET.slice(-2),
+        secretLength: ONLYOFFICE_JWT_SECRET.length,
+        testToken: token,
+        tokenPreview: token.substring(0, 50) + '...',
+        decodedPayload: jwt.decode(token),
+        timestamp: new Date().toISOString()
+    });
+});
 // ==================== END PUBLIC ROUTES ====================
 // Public route for VAPID key (NO AUTH - must be before authenticated routes)
 app.get('/api/notifications/vapid-public-key', (req, res) => {
@@ -284,21 +510,21 @@ app.get('/api/notifications/vapid-public-key', (req, res) => {
     console.log('[Index] Returning VAPID key:', publicKey ? publicKey.substring(0, 20) + '...' : 'NOT SET');
     res.json({ publicKey });
 });
-// Debug middleware to check body parsing
-app.use('/api/chat', (req, res, next) => {
-    if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
-        console.log('=== Chat Message Request Debug ===');
-        console.log('Method:', req.method);
-        console.log('Path:', req.path);
-        console.log('Content-Type:', req.headers['content-type']);
-        console.log('Content-Length:', req.headers['content-length']);
-        console.log('Body:', req.body);
-        console.log('Body type:', typeof req.body);
-        console.log('Body keys:', req.body ? Object.keys(req.body) : 'N/A');
-        console.log('=================================');
-    }
-    next();
-});
+// Debug middleware to check body parsing - DISABLED to reduce terminal spam
+// app.use('/api/chat', (req, res, next) => {
+//     if (req.method === 'POST' && req.path.includes('/messages') && !req.path.includes('/file') && !req.path.includes('/voice')) {
+//         console.log('=== Chat Message Request Debug ===');
+//         console.log('Method:', req.method);
+//         console.log('Path:', req.path);
+//         console.log('Content-Type:', req.headers['content-type']);
+//         console.log('Content-Length:', req.headers['content-length']);
+//         console.log('Body:', req.body);
+//         console.log('Body type:', typeof req.body);
+//         console.log('Body keys:', req.body ? Object.keys(req.body) : 'N/A');
+//         console.log('=================================');
+//     }
+//     next();
+// });
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tasks', taskRoutes);
@@ -311,6 +537,8 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api', workflowRoutes);
+app.use('/api/drive', googleDriveRoutes);
+app.use('/api/kanban', kanbanRoutes);
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');
 });
@@ -325,19 +553,36 @@ app.get('/health', async (req, res) => {
     }
 });
 // Socket.io authentication middleware
+// Socket.io authentication middleware
 io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
+    let token = socket.handshake.auth.token;
+    // Fallback: Check headers
+    if (!token && socket.handshake.headers.authorization) {
+        const authHeader = socket.handshake.headers.authorization;
+        if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        }
+    }
+    // Fallback: Check query
+    if (!token && socket.handshake.query && socket.handshake.query.token) {
+        token = socket.handshake.query.token;
+    }
+    console.log(`[WebSocket Auth] SocketID: ${socket.id}, Attempting auth. Token provided: ${!!token}`);
     if (!token) {
-        return next(new Error('Authentication error'));
+        console.log('[WebSocket Auth] No token provided in auth, headers, or query');
+        return next(new Error('Authentication error: No token provided'));
     }
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret');
+        const secret = process.env.JWT_SECRET || 'secret';
+        const decoded = jwt.verify(token, secret);
+        console.log('[WebSocket Auth] Success. UserID:', decoded.id);
         socket.data.userId = decoded.id;
         socket.data.user = decoded;
         next();
     }
     catch (err) {
-        next(new Error('Authentication error'));
+        console.error(`[WebSocket Auth] Verification failed for socket ${socket.id}:`, err.message);
+        next(new Error(`Authentication error: ${err.message}`));
     }
 });
 // Socket.io connection handling
@@ -349,7 +594,7 @@ io.on('connection', async (socket) => {
             where: { id: socket.data.userId },
             data: { isOnline: true, lastActive: new Date() }
         });
-        io.emit('user:online', { userId: socket.data.userId });
+        io.emit('user:online', { userId: socket.data.userId, lastActive: new Date().toISOString() });
     }
     catch (err) {
         console.error('Error updating online status:', err);
@@ -506,6 +751,30 @@ httpServer.listen(Number(port), host, () => {
         console.error('[DeadlineScheduler] Failed to start:', err);
     });
 });
-// Export io for use in controllers
-export const getIO = () => io;
+// Simple Ping endpoint for frontend to check connectivity
+app.get('/api/ping', (req, res) => {
+    res.send('pong');
+});
+// Keep alive / Pulse check for terminal health
+// This helps the user know if the terminal is "paused" (Windows QuickEdit mode)
+setInterval(() => {
+    const timestamp = new Date().toLocaleTimeString('vi-VN', { hour12: false });
+    // Use process.stdout.write to be less intrusive but visible
+    // console.log(`[${timestamp}] System Active - Press Enter if stuck`);
+    // We print to ensure the user sees the process is ALIVE.
+    // If this stops printing, the user knows to press Enter.
+    console.log(`[${timestamp}] ⚡ Server Heartbeat | Active`);
+}, 30000);
+// Explicit Database Connection Check on Startup
+// This ensures we fail fast or confirm connection immediately
+(async () => {
+    try {
+        console.log('Testing Database Connection...');
+        await prisma.$connect();
+        console.log('✅ Database connection successful');
+    }
+    catch (error) {
+        console.error('❌ Database connection failed:', error);
+    }
+})();
 //# sourceMappingURL=index.js.map

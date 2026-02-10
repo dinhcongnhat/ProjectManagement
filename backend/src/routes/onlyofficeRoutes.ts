@@ -17,7 +17,9 @@ import {
     onlyofficeDriveCallback,
     saveAsGoogleDriveFile,
     saveDriveFileToSystem,
-    handleGeneralSave
+    handleGeneralSave,
+    checkKanbanOnlyOfficeSupport,
+    getKanbanOnlyOfficeConfig
 } from '../controllers/onlyofficeController.js';
 
 const router = express.Router();
@@ -133,5 +135,12 @@ router.post('/drive/save-to-system/:fileId', authenticateToken, saveDriveFileToS
 
 // Unified save endpoint (no auth required as called by OnlyOffice server)
 router.post('/save', handleGeneralSave);
+
+// Kanban attachment endpoints (view only)
+// Check if kanban attachment can be opened with OnlyOffice
+router.get('/kanban/check/:id', authenticateToken, checkKanbanOnlyOfficeSupport);
+
+// Get OnlyOffice config for kanban attachment
+router.get('/kanban/config/:id', authenticateToken, getKanbanOnlyOfficeConfig);
 
 export default router;

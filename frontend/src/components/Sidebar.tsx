@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckSquare, ListTodo, GitGraph, LogOut, X, FolderOpen } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, ListTodo, LogOut, X, FolderOpen, Columns3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import { useAuth } from '../context/AuthContext';
@@ -65,9 +65,9 @@ const Sidebar = ({ isOpen = true, onClose }: SidebarProps) => {
     const navItems = [
         { icon: LayoutDashboard, label: 'Tổng quan', path: '/' },
         { icon: CheckSquare, label: 'Quản lý công việc', path: '/projects' },
+        { icon: Columns3, label: 'Làm việc nhóm', path: '/kanban' },
         { icon: ListTodo, label: 'Công việc cá nhân', path: '/my-tasks' },
         { icon: FolderOpen, label: 'Thư mục', path: '/folders' },
-        { icon: GitGraph, label: 'Quy trình', path: '/workflow' },
     ];
 
     const handleLogout = () => {
@@ -191,7 +191,7 @@ const SidebarContent = ({
             {showCloseButton && (
                 <motion.button
                     onClick={onClose}
-                    className="p-2 rounded-xl bg-white/80 dark:bg-gray-700/80 backdrop-blur-sm hover:bg-white dark:hover:bg-gray-600 transition-colors absolute right-3 top-3 shadow-sm"
+                    className="p-3 rounded-xl bg-white/80 dark:bg-gray-700/80 backdrop-blur-sm hover:bg-white dark:hover:bg-gray-600 active:bg-gray-100 dark:active:bg-gray-500 transition-colors absolute right-3 top-3 shadow-sm"
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
                 >

@@ -589,7 +589,7 @@ const ProjectDetails = () => {
                                             {project.children && project.children.length > 0 && (
                                                 <button
                                                     onClick={() => setShowExportModal(true)}
-                                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-medium rounded-lg transition-all"
+                                                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-all"
                                                     title="Xuất ra Excel"
                                                 >
                                                     <Download size={14} />
@@ -598,7 +598,7 @@ const ProjectDetails = () => {
                                             )}
                                             <button
                                                 onClick={() => setShowImportModal(true)}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-lg transition-all"
+                                                className="flex items-center gap-1.5 px-3 py-2 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white text-xs font-medium rounded-lg transition-all"
                                                 title="Import từ Excel"
                                             >
                                                 <FileSpreadsheet size={14} />
@@ -606,7 +606,7 @@ const ProjectDetails = () => {
                                             </button>
                                             <button
                                                 onClick={() => setShowCreateChildModal(true)}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium rounded-lg transition-all"
+                                                className="flex items-center gap-1.5 px-3 py-2 bg-purple-500 hover:bg-purple-600 active:bg-purple-700 text-white text-xs font-medium rounded-lg transition-all"
                                             >
                                                 <Plus size={14} />
                                                 Thêm
@@ -658,10 +658,10 @@ const ProjectDetails = () => {
                                                                             setEditingSubProject(child);
                                                                             setShowEditModal(true);
                                                                         }}
-                                                                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-100 active:bg-blue-200 rounded-lg transition-colors md:opacity-0 md:group-hover:opacity-100"
                                                                         title="Chỉnh sửa"
                                                                     >
-                                                                        <Edit3 size={14} />
+                                                                        <Edit3 size={16} />
                                                                     </button>
                                                                 )}
                                                                 <Link
@@ -683,15 +683,15 @@ const ProjectDetails = () => {
                                                                     <button
                                                                         onClick={() => setSubProjectPage(p => Math.max(1, p - 1))}
                                                                         disabled={subProjectPage === 1}
-                                                                        className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                        className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 active:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                                     >
-                                                                        <ChevronLeft size={14} />
+                                                                        <ChevronLeft size={16} />
                                                                     </button>
                                                                     {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                                                                         <button
                                                                             key={page}
                                                                             onClick={() => setSubProjectPage(page)}
-                                                                            className={`w-7 h-7 text-xs font-medium rounded-lg transition-colors ${subProjectPage === page
+                                                                            className={`min-w-[36px] h-9 text-xs font-medium rounded-lg transition-colors ${subProjectPage === page
                                                                                     ? 'bg-blue-600 text-white'
                                                                                     : 'border border-gray-200 hover:bg-gray-100 text-gray-600'
                                                                                 }`}
@@ -702,9 +702,9 @@ const ProjectDetails = () => {
                                                                     <button
                                                                         onClick={() => setSubProjectPage(p => Math.min(totalPages, p + 1))}
                                                                         disabled={subProjectPage === totalPages}
-                                                                        className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                                        className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 active:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                                     >
-                                                                        <ChevronRight size={14} />
+                                                                        <ChevronRight size={16} />
                                                                     </button>
                                                                 </div>
                                                             </div>

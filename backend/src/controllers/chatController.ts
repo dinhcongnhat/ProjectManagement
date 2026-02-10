@@ -643,23 +643,38 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         // Emit WebSocket event for realtime update
         const io = getIO();
 
-        // Emit to conversation room (for users who have joined)
-        io.to(`conversation:${id}`).emit('chat:new_message', {
-            conversationId: Number(id),
-            message: messageWithUrls
-        });
-
-        // Also emit to each member's user room (for real-time even if not in conversation room)
-        // This ensures push update to all conversation members
+        // Get all members of the conversation
         const conversationForEmit = await prisma.conversation.findUnique({
             where: { id: Number(id) },
             select: { members: { select: { userId: true } } }
         });
 
         if (conversationForEmit) {
+            // Get the set of socket IDs in the conversation room to avoid double-sending
+            const conversationRoom = `conversation:${id}`;
+            const socketsInRoom = await io.in(conversationRoom).fetchSockets();
+            const userIdsInRoom = new Set<number>();
+
+            // Identify which users are already in the conversation room
+            for (const socket of socketsInRoom) {
+                const socketUserId = (socket as any).data?.userId;
+                if (socketUserId) {
+                    userIdsInRoom.add(socketUserId);
+                }
+            }
+
+            // Emit to conversation room (for users who have the chat open)
+            io.to(conversationRoom).emit('chat:new_message', {
+                conversationId: Number(id),
+                message: messageWithUrls
+            });
+
+            // Emit to user rooms ONLY for members NOT in the conversation room
+            // This prevents duplicate messages for users who have the chat open
             conversationForEmit.members.forEach(member => {
                 // Don't send to sender (they already have the message via API response)
-                if (member.userId !== userId) {
+                // Don't send to users already in the conversation room (they got it above)
+                if (member.userId !== userId && !userIdsInRoom.has(member.userId)) {
                     io.to(`user:${member.userId}`).emit('chat:new_message', {
                         conversationId: Number(id),
                         message: messageWithUrls
@@ -834,21 +849,30 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
         // Emit WebSocket event for realtime update
         const io = getIO();
 
-        // Emit to conversation room
-        io.to(`conversation:${id}`).emit('chat:new_message', {
-            conversationId: Number(id),
-            message: responseMessage
-        });
-
-        // Also emit to each member's user room for guaranteed delivery
+        // Get members and check who is in the conversation room
         const conversationForEmit = await prisma.conversation.findUnique({
             where: { id: Number(id) },
             select: { members: { select: { userId: true } } }
         });
 
         if (conversationForEmit) {
+            const conversationRoom = `conversation:${id}`;
+            const socketsInRoom = await io.in(conversationRoom).fetchSockets();
+            const userIdsInRoom = new Set<number>();
+            for (const socket of socketsInRoom) {
+                const socketUserId = (socket as any).data?.userId;
+                if (socketUserId) userIdsInRoom.add(socketUserId);
+            }
+
+            // Emit to conversation room
+            io.to(conversationRoom).emit('chat:new_message', {
+                conversationId: Number(id),
+                message: responseMessage
+            });
+
+            // Emit to user rooms ONLY for members NOT in the conversation room
             conversationForEmit.members.forEach(member => {
-                if (member.userId !== userId) {
+                if (member.userId !== userId && !userIdsInRoom.has(member.userId)) {
                     io.to(`user:${member.userId}`).emit('chat:new_message', {
                         conversationId: Number(id),
                         message: responseMessage
@@ -933,21 +957,30 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
         // Emit WebSocket event for realtime update
         const io = getIO();
 
-        // Emit to conversation room
-        io.to(`conversation:${id}`).emit('chat:new_message', {
-            conversationId: Number(id),
-            message: responseMessage
-        });
-
-        // Also emit to each member's user room for guaranteed delivery
+        // Get members and check who is in the conversation room
         const conversationForEmit = await prisma.conversation.findUnique({
             where: { id: Number(id) },
             select: { members: { select: { userId: true } } }
         });
 
         if (conversationForEmit) {
+            const conversationRoom = `conversation:${id}`;
+            const socketsInRoom = await io.in(conversationRoom).fetchSockets();
+            const userIdsInRoom = new Set<number>();
+            for (const socket of socketsInRoom) {
+                const socketUserId = (socket as any).data?.userId;
+                if (socketUserId) userIdsInRoom.add(socketUserId);
+            }
+
+            // Emit to conversation room
+            io.to(conversationRoom).emit('chat:new_message', {
+                conversationId: Number(id),
+                message: responseMessage
+            });
+
+            // Emit to user rooms ONLY for members NOT in the conversation room
             conversationForEmit.members.forEach(member => {
-                if (member.userId !== userId) {
+                if (member.userId !== userId && !userIdsInRoom.has(member.userId)) {
                     io.to(`user:${member.userId}`).emit('chat:new_message', {
                         conversationId: Number(id),
                         message: responseMessage

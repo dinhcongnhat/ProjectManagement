@@ -1,7 +1,13 @@
-
 import { useState, useEffect } from 'react';
-import { Users, FolderKanban, CheckCircle2, AlertCircle, TrendingUp, Sparkles, ArrowRight, ChevronDown, ChevronRight, CornerDownRight } from 'lucide-react';
+import {
+    Users, FolderKanban, CheckCircle2, AlertCircle,
+    TrendingUp, Sparkles, ArrowRight, ChevronDown, ChevronRight,
+    CornerDownRight, BarChart3, Target, Zap
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import styled from '@emotion/styled';
+import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 
@@ -15,73 +21,261 @@ interface Project {
     code?: string;
 }
 
-const StatCard = ({ icon: Icon, label, value, gradient, shadowColor }: any) => (
-    <div className="bg-white dark:bg-gray-800 p-3 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-gray-900/50 hover:shadow-xl transition-all duration-300 group">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-4">
-            <div className={`p-2 sm:p-3 ${gradient} rounded-lg sm:rounded-xl text-white shadow-lg ${shadowColor} group-hover:scale-110 transition-transform w-fit`}>
-                <Icon size={18} className="sm:w-[22px] sm:h-[22px]" />
-            </div>
-            <span className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-0">{value}</span>
+/* ── Emotion Styled Components ── */
+
+const DashboardContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  @media (min-width: 640px) { gap: 24px; }
+`;
+
+const WelcomeBanner = styled(motion.div)`
+  position: relative;
+  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%);
+  border-radius: 16px;
+  padding: 24px;
+  color: white;
+  overflow: hidden;
+  box-shadow: 0 10px 40px -10px rgba(37, 99, 235, 0.4);
+
+  @media (min-width: 640px) { padding: 32px; border-radius: 20px; }
+  @media (min-width: 1024px) { padding: 40px; border-radius: 24px; }
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    left: -10%;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+`;
+
+const StatsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  @media (min-width: 768px) { gap: 16px; }
+  @media (min-width: 1024px) { grid-template-columns: repeat(4, 1fr); gap: 20px; }
+`;
+
+const StatCardStyled = styled(motion.div)`
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 16px;
+  border: 1px solid #f1f5f9;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s;
+  cursor: default;
+
+  &:hover {
+    box-shadow: 0 8px 30px -8px rgba(0,0,0,0.12);
+    transform: translateY(-2px);
+  }
+
+  .dark & {
+    background: #1e293b;
+    border-color: #334155;
+    &:hover { box-shadow: 0 8px 30px -8px rgba(0,0,0,0.4); }
+  }
+
+  @media (min-width: 640px) { padding: 20px; border-radius: 20px; }
+  @media (min-width: 1024px) { padding: 24px; }
+`;
+
+const StatIconWrap = styled.div<{ gradient: string }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: white;
+  background: ${p => p.gradient};
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  flex-shrink: 0;
+
+  @media (min-width: 640px) { width: 48px; height: 48px; border-radius: 14px; }
+`;
+
+const StatValue = styled.span`
+  font-size: 28px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  .dark & { color: #f8fafc; }
+  @media (min-width: 640px) { font-size: 32px; }
+  @media (min-width: 1024px) { font-size: 36px; }
+`;
+
+const StatLabel = styled.p`
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  margin-top: 4px;
+  .dark & { color: #94a3b8; }
+  @media (min-width: 640px) { font-size: 13px; }
+`;
+
+const ProjectsCard = styled(motion.div)`
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid #f1f5f9;
+  .dark & { background: #1e293b; border-color: #334155; }
+  @media (min-width: 640px) { padding: 24px; border-radius: 20px; }
+  @media (min-width: 1024px) { padding: 28px; }
+`;
+
+const SectionTitle = styled.h3`
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  .dark & { color: #f8fafc; }
+  @media (min-width: 640px) { font-size: 18px; }
+`;
+
+const ViewAllLink = styled(Link)`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3b82f6;
+  text-decoration: none;
+  transition: color 0.2s;
+  &:hover { color: #2563eb; }
+  .dark & { color: #60a5fa; &:hover { color: #93bbfd; } }
+`;
+
+const ProgressBarTrack = styled.div`
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  .dark & { background: #334155; }
+  @media (min-width: 640px) { height: 10px; }
+`;
+
+const ProgressBarFill = styled.div<{ width: number; gradient: string }>`
+  height: 100%;
+  border-radius: 999px;
+  background: ${p => p.gradient};
+  width: ${p => p.width}%;
+  transition: width 0.6s ease;
+`;
+
+const EmptyState = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  border-radius: 16px;
+  background: #f8fafc;
+  .dark & { background: #0f172a; }
+`;
+
+/* ── Animation variants ── */
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.05 } }
+};
+
+const itemVariants = {
+    hidden: { opacity: 0, y: 16 },
+    visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 300, damping: 24 } }
+};
+
+/* ── Sub-Components ── */
+const StatCard = ({ icon: Icon, label, value, gradient }: {
+    icon: React.ComponentType<{ size?: number }>;
+    label: string;
+    value: number;
+    gradient: string;
+}) => (
+    <StatCardStyled variants={itemVariants}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+            <StatIconWrap gradient={gradient}><Icon size={20} /></StatIconWrap>
+            <StatValue>{value}</StatValue>
         </div>
-        <h3 className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">{label}</h3>
-    </div>
+        <StatLabel>{label}</StatLabel>
+    </StatCardStyled>
 );
 
-const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?: boolean }) => {
+const ProjectItem = ({ project, isChild = false }: { project: Project; isChild?: boolean }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const hasChildren = project.children && project.children.length > 0;
 
-    return (
-        <div className={`transition-all duration-300 ${isChild ? 'ml-0' : ''}`}>
-            <div className={`relative p-3 sm:p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg sm:rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors active:bg-gray-200 dark:active:bg-gray-600 group border border-transparent ${isChild ? 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700' : ''}`}>
-                <div className="flex justify-between items-center mb-2 sm:mb-3">
-                    <div className="flex items-center gap-2 min-w-0 flex-1 mr-3">
-                        {isChild && <CornerDownRight size={16} className="text-gray-400 shrink-0" />}
+    const getStatusGradient = (status: string) => {
+        if (status === 'COMPLETED') return 'linear-gradient(90deg, #10b981, #059669)';
+        if (status === 'PENDING_APPROVAL') return 'linear-gradient(90deg, #f59e0b, #d97706)';
+        return 'linear-gradient(90deg, #3b82f6, #6366f1)';
+    };
 
+    const getStatusColor = (status: string) => {
+        if (status === 'COMPLETED') return '#059669';
+        if (status === 'PENDING_APPROVAL') return '#d97706';
+        return '#3b82f6';
+    };
+
+    return (
+        <div>
+            <div className={`relative p-3 sm:p-4 rounded-xl transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-700 ${isChild ? 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700' : 'bg-gray-50 dark:bg-gray-800/30'}`}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                        {isChild && <CornerDownRight size={16} className="text-gray-400 shrink-0" />}
                         {hasChildren && !isChild && (
                             <button
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    setIsExpanded(!isExpanded);
-                                }}
-                                className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors shrink-0"
+                                onClick={(e) => { e.preventDefault(); setIsExpanded(!isExpanded); }}
+                                className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-400 transition-colors shrink-0"
                             >
-                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                             </button>
                         )}
-                        {!hasChildren && !isChild && <div className="w-6.5"></div>}
-
-                        <Link to={`/admin/projects/${project.id}`} className="flex-1 min-w-0 group-hover:text-indigo-700 transition-colors">
-                            <span className="font-medium text-gray-800 dark:text-gray-200 text-sm sm:text-base truncate block">{project.name}</span>
-                            {project.code && <span className="text-xs text-gray-400 dark:text-gray-500 block truncate">{project.code}</span>}
+                        {!hasChildren && !isChild && <div style={{ width: 28 }} />}
+                        <Link to={`/admin/projects/${project.id}`} className="flex-1 min-w-0">
+                            <span className="font-semibold text-gray-800 dark:text-gray-200 text-sm sm:text-base truncate block">
+                                {project.name}
+                            </span>
+                            {project.code && (
+                                <span className="text-xs text-gray-400 dark:text-gray-500">{project.code}</span>
+                            )}
                         </Link>
                     </div>
-
-                    <span className={`text-xs sm:text-sm font-bold shrink-0 ${project.status === 'COMPLETED' ? 'text-green-600' :
-                        project.status === 'PENDING_APPROVAL' ? 'text-orange-600' :
-                            'text-blue-600'
-                        }`}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: getStatusColor(project.status), flexShrink: 0 }}>
                         {project.progress}%
                     </span>
                 </div>
-
-                {/* Progress Bar */}
-                <Link to={`/admin/projects/${project.id}`} className="block h-2 sm:h-2.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                        className={`h-full rounded-full transition-all duration-500 ${project.status === 'COMPLETED' ? 'bg-gradient-to-r from-emerald-500 to-green-500' :
-                            project.status === 'PENDING_APPROVAL' ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
-                                'bg-gradient-to-r from-blue-500 to-indigo-500'
-                            }`}
-                        style={{ width: `${project.progress}%` }}
-                    />
+                <Link to={`/admin/projects/${project.id}`} className="block">
+                    <ProgressBarTrack>
+                        <ProgressBarFill width={project.progress} gradient={getStatusGradient(project.status)} />
+                    </ProgressBarTrack>
                 </Link>
             </div>
-
-            {/* Sub Projects */}
             {hasChildren && isExpanded && (
                 <div className="mt-2 space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700 ml-3">
                     {project.children?.map(child => (
-                        <ProjectItem key={child.id} project={child} isChild={true} />
+                        <ProjectItem key={child.id} project={child} isChild />
                     ))}
                 </div>
             )}
@@ -89,13 +283,9 @@ const ProjectItem = ({ project, isChild = false }: { project: Project, isChild?:
     );
 };
 
+/* ── Main Dashboard Component ── */
 const Dashboard = () => {
-    const [stats, setStats] = useState({
-        totalProjects: 0,
-        totalUsers: 0,
-        completedProjects: 0,
-        pendingProjects: 0
-    });
+    const [stats, setStats] = useState({ totalProjects: 0, totalUsers: 0, completedProjects: 0, pendingProjects: 0 });
     const [projects, setProjects] = useState<Project[]>([]);
     const { token, user } = useAuth();
 
@@ -106,111 +296,151 @@ const Dashboard = () => {
                     fetch(`${API_URL}/projects`, { headers: { Authorization: `Bearer ${token}` } }),
                     fetch(`${API_URL}/users`, { headers: { Authorization: `Bearer ${token}` } })
                 ]);
-
                 if (projectsRes.ok && usersRes.ok) {
                     const projectsData = await projectsRes.json();
                     const usersData = await usersRes.json();
-
                     const completed = projectsData.filter((p: Project) => p.status === 'COMPLETED').length;
                     const pending = projectsData.filter((p: Project) => p.status === 'PENDING_APPROVAL').length;
-
-                    // Filter: Only show top-level projects (no parent) in the progress list
                     const rootProjects = projectsData.filter((p: Project) => !p.parent);
-
-                    setStats({
-                        totalProjects: projectsData.length,
-                        totalUsers: usersData.length,
-                        completedProjects: completed,
-                        pendingProjects: pending
-                    });
-
+                    setStats({ totalProjects: projectsData.length, totalUsers: usersData.length, completedProjects: completed, pendingProjects: pending });
                     setProjects(rootProjects.slice(0, 5));
                 }
-            } catch (error) {
-                console.error('Error fetching stats:', error);
-            }
+            } catch (error) { console.error('Error fetching stats:', error); }
         };
-
         if (token) fetchStats();
     }, [token]);
 
+    const completionRate = stats.totalProjects > 0
+        ? Math.round((stats.completedProjects / stats.totalProjects) * 100)
+        : 0;
+
     const statCards = [
-        { icon: FolderKanban, label: 'Tổng dự án', value: stats.totalProjects, gradient: 'bg-gradient-to-br from-blue-500 to-indigo-600', shadowColor: 'shadow-blue-500/30' },
-        { icon: Users, label: 'Thành viên', value: stats.totalUsers, gradient: 'bg-gradient-to-br from-violet-500 to-purple-600', shadowColor: 'shadow-purple-500/30' },
-        { icon: CheckCircle2, label: 'Hoàn thành', value: stats.completedProjects, gradient: 'bg-gradient-to-br from-emerald-500 to-green-600', shadowColor: 'shadow-green-500/30' },
-        { icon: AlertCircle, label: 'Chờ duyệt', value: stats.pendingProjects, gradient: 'bg-gradient-to-br from-amber-500 to-orange-600', shadowColor: 'shadow-orange-500/30' },
+        { icon: FolderKanban, label: 'Tổng dự án', value: stats.totalProjects, gradient: 'linear-gradient(135deg, #3b82f6, #6366f1)' },
+        { icon: Users, label: 'Thành viên', value: stats.totalUsers, gradient: 'linear-gradient(135deg, #8b5cf6, #a855f7)' },
+        { icon: CheckCircle2, label: 'Hoàn thành', value: stats.completedProjects, gradient: 'linear-gradient(135deg, #10b981, #059669)' },
+        { icon: AlertCircle, label: 'Chờ duyệt', value: stats.pendingProjects, gradient: 'linear-gradient(135deg, #f59e0b, #d97706)' },
     ];
 
     return (
-        <div className="space-y-4 sm:space-y-6">
-            {/* Welcome Header - Mobile Optimized */}
-            <div className="bg-blue-600 rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 text-white shadow-xl shadow-blue-500/25 overflow-hidden relative">
-                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRjMC0yIDItNCAyLTRzMiAyIDIgNC0yIDQtMiA0LTItMi0yLTR6TTAgMzRjMC0yIDItNCAyLTRzMiAyIDIgNC0yIDQtMiA0LTItMi0yLTR6Ii8+PC9nPjwvZz48L3N2Zz4=')] opacity-20" />
-                <div className="relative">
-                    <div className="flex items-start gap-3 sm:gap-4">
-                        <div className="p-2.5 sm:p-3 bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl shrink-0">
-                            <Sparkles size={22} className="sm:w-7 sm:h-7" />
-                        </div>
-                        <div className="min-w-0">
-                            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold truncate">Xin chào, {user?.name}!</h1>
-                            <p className="text-purple-100 mt-0.5 sm:mt-1 text-sm sm:text-base">Bảng điều khiển quản trị.</p>
-                        </div>
-                    </div>
+        <>
+            <Helmet>
+                <title>Tổng quan - JTSC Project</title>
+                <meta property="og:title" content="Bảng điều khiển quản trị - JTSC Project" />
+                <meta property="og:description" content="Hệ thống quản lý dự án JTSC - Bảng điều khiển quản trị" />
+                <meta property="og:type" content="website" />
+            </Helmet>
 
-                    {/* Quick Stats in Header */}
-                    <div className="mt-4 sm:mt-6 flex items-center gap-4 sm:gap-6 flex-wrap">
-                        <div className="flex items-center gap-2">
-                            <TrendingUp size={16} className="text-green-300 sm:w-[18px] sm:h-[18px]" />
-                            <span className="text-xs sm:text-sm text-purple-100">{stats.totalProjects} dự án</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Users size={16} className="text-cyan-300 sm:w-[18px] sm:h-[18px]" />
-                            <span className="text-xs sm:text-sm text-purple-100">{stats.totalUsers} thành viên</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <motion.div variants={containerVariants} initial="hidden" animate="visible">
+                <DashboardContainer>
+                    {/* Welcome Banner */}
+                    <WelcomeBanner variants={itemVariants}>
+                        <div style={{ position: 'relative', zIndex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+                                <motion.div
+                                    style={{
+                                        padding: 12,
+                                        background: 'rgba(255,255,255,0.15)',
+                                        backdropFilter: 'blur(8px)',
+                                        borderRadius: 14,
+                                        flexShrink: 0
+                                    }}
+                                    whileHover={{ scale: 1.1, rotate: 5 }}
+                                >
+                                    <Sparkles size={24} />
+                                </motion.div>
+                                <div style={{ minWidth: 0 }}>
+                                    <h1 style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>
+                                        Xin chào, {user?.name}!
+                                    </h1>
+                                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
+                                        Bảng điều khiển quản trị
+                                    </p>
+                                </div>
+                            </div>
 
-            {/* Stats Grid - 2x2 on mobile */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 lg:gap-6">
-                {statCards.map((stat, index) => (
-                    <StatCard key={index} {...stat} />
-                ))}
-            </div>
-
-            {/* Project Progress */}
-            <div className="bg-white dark:bg-gray-800 p-4 sm:p-5 lg:p-6 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-gray-900/50">
-                <div className="flex items-center justify-between mb-4 sm:mb-6">
-                    <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <FolderKanban size={18} className="text-indigo-600 dark:text-indigo-400 sm:w-5 sm:h-5" />
-                        Tiến độ dự án
-                    </h3>
-                    <Link
-                        to="/admin/projects"
-                        className="text-xs sm:text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium flex items-center gap-1 group"
-                    >
-                        <span className="hidden sm:inline">Xem tất cả</span>
-                        <span className="sm:hidden">Xem</span>
-                        <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform sm:w-4 sm:h-4" />
-                    </Link>
-                </div>
-
-                {projects.length === 0 ? (
-                    <div className="text-center py-8 sm:py-12 bg-gray-50 dark:bg-gray-700/30 rounded-lg sm:rounded-xl">
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                            <FolderKanban size={24} className="text-gray-400 sm:w-8 sm:h-8" />
+                            {/* Quick stats in banner */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 20 }}>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    background: 'rgba(255,255,255,0.12)', borderRadius: 10,
+                                    padding: '8px 14px', backdropFilter: 'blur(4px)'
+                                }}>
+                                    <BarChart3 size={16} style={{ color: '#86efac' }} />
+                                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{stats.totalProjects} dự án</span>
+                                </div>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    background: 'rgba(255,255,255,0.12)', borderRadius: 10,
+                                    padding: '8px 14px', backdropFilter: 'blur(4px)'
+                                }}>
+                                    <Users size={16} style={{ color: '#93c5fd' }} />
+                                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{stats.totalUsers} thành viên</span>
+                                </div>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                    background: 'rgba(255,255,255,0.12)', borderRadius: 10,
+                                    padding: '8px 14px', backdropFilter: 'blur(4px)'
+                                }}>
+                                    <Target size={16} style={{ color: '#fde047' }} />
+                                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{completionRate}% hoàn thành</span>
+                                </div>
+                            </div>
                         </div>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Chưa có dự án nào</p>
-                    </div>
-                ) : (
-                    <div className="space-y-2 sm:space-y-3">
-                        {projects.map((project) => (
-                            <ProjectItem key={project.id} project={project} />
+                    </WelcomeBanner>
+
+                    {/* Stats Grid */}
+                    <StatsGrid>
+                        {statCards.map((stat, i) => (
+                            <StatCard key={i} {...stat} />
                         ))}
-                    </div>
-                )}
-            </div>
-        </div>
+                    </StatsGrid>
+
+                    {/* Project Progress */}
+                    <ProjectsCard variants={itemVariants}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                            <SectionTitle>
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    width: 32, height: 32, borderRadius: 8,
+                                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                    color: 'white'
+                                }}>
+                                    <TrendingUp size={16} />
+                                </div>
+                                Tiến độ dự án
+                            </SectionTitle>
+                            <ViewAllLink to="/admin/projects">
+                                <span className="hidden sm:inline">Xem tất cả</span>
+                                <span className="sm:hidden">Xem</span>
+                                <ArrowRight size={14} />
+                            </ViewAllLink>
+                        </div>
+
+                        {projects.length === 0 ? (
+                            <EmptyState>
+                                <div style={{
+                                    width: 56, height: 56, borderRadius: '50%',
+                                    background: '#f1f5f9', display: 'flex',
+                                    alignItems: 'center', justifyContent: 'center', marginBottom: 12
+                                }}>
+                                    <FolderKanban size={24} className="text-gray-400" />
+                                </div>
+                                <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Chưa có dự án nào</p>
+                                <Link to="/admin/create-project" className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                                    <Zap size={14} /> Tạo dự án mới
+                                </Link>
+                            </EmptyState>
+                        ) : (
+                            <div className="space-y-3">
+                                {projects.map(project => (
+                                    <ProjectItem key={project.id} project={project} />
+                                ))}
+                            </div>
+                        )}
+                    </ProjectsCard>
+                </DashboardContainer>
+            </motion.div>
+        </>
     );
 };
 

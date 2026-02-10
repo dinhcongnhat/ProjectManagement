@@ -24,45 +24,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [token, setToken] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
-    const checkSession = async () => {
+    const checkSession = async (retries = 3) => {
         const storedToken = localStorage.getItem('token');
         if (!storedToken) {
             setIsLoading(false);
             return;
         }
 
-        try {
-            // Verify token with backend
-            // usage of fetch directly to avoid circular dependency if api.ts uses AuthContext (it doesn't, but keeps it clean)
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://jtscapi.duckdns.org/api'}/users/profile`, {
-                headers: {
-                    'Authorization': `Bearer ${storedToken}`
-                }
-            });
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://jtscapi.duckdns.org/api';
 
-            if (response.ok) {
-                const userData = await response.json();
-                // Update user data from backend (fresh info)
-                const updatedUser = {
-                    id: userData.id,
-                    username: userData.username,
-                    name: userData.name,
-                    role: userData.role
-                };
-                setUser(updatedUser);
-                setToken(storedToken);
-                localStorage.setItem('user', JSON.stringify(updatedUser)); // Update local storage
-            } else {
-                // Token invalid or expired
-                logout();
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout per attempt
+
+                const response = await fetch(`${apiUrl}/users/profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${storedToken}`
+                    },
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const userData = await response.json();
+                    const updatedUser = {
+                        id: userData.id,
+                        username: userData.username,
+                        name: userData.name,
+                        role: userData.role
+                    };
+                    setUser(updatedUser);
+                    setToken(storedToken);
+                    localStorage.setItem('user', JSON.stringify(updatedUser));
+                    setIsLoading(false);
+                    return;
+                } else {
+                    // Token invalid or expired
+                    logout();
+                    return;
+                }
+            } catch (error: any) {
+                console.error(`[Auth] Session check attempt ${attempt + 1}/${retries} failed:`, error?.message || error);
+                if (attempt < retries - 1) {
+                    // Wait with exponential backoff before retrying
+                    await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+                }
             }
-        } catch (error) {
-            console.error('Session check failed:', error);
-            // Don't logout immediately on network error, allows offline mode if needed
-            // But if 401 it will be caught above
-        } finally {
-            setIsLoading(false);
         }
+
+        // After all retries failed, still allow the app to load with cached user data
+        // This prevents permanent "Loading..." when backend is temporarily unreachable
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            try {
+                const cachedUser = JSON.parse(storedUser);
+                setUser(cachedUser);
+                setToken(storedToken);
+                console.warn('[Auth] Using cached user data - backend may be unreachable');
+            } catch {
+                logout();
+                return;
+            }
+        }
+        setIsLoading(false);
     };
 
     useEffect(() => {

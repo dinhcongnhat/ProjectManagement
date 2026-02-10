@@ -325,6 +325,23 @@ export const notifyProjectDiscussion = async (
 ) => {
     const recipients = recipientIds.filter(id => id !== senderId);
 
+    // Save to DB for bell icon
+    if (recipients.length > 0) {
+        try {
+            await prisma.notification.createMany({
+                data: recipients.map(userId => ({
+                    userId,
+                    type: 'PROJECT_DISCUSSION',
+                    title: `Thảo luận: ${projectName}`,
+                    message: `${senderName}: ${messagePreview}`,
+                    projectId
+                }))
+            });
+        } catch (error) {
+            console.error('[PushService] Error saving discussion notification to DB:', error);
+        }
+    }
+
     const payload: PushPayload = {
         title: `Thảo luận: ${projectName}`,
         body: `${senderName}: ${messagePreview}`,
@@ -350,6 +367,21 @@ export const notifyMention = async (
     contextName: string,
     messagePreview: string
 ) => {
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId: mentionedUserId,
+                type: 'MENTION',
+                title: `${mentionerName} đã nhắc đến bạn`,
+                message: messagePreview,
+                projectId: context === 'discussion' ? contextId : null
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving mention notification to DB:', error);
+    }
+
     const data: PushPayload['data'] = {
         type: 'mention',
         url: context === 'chat' ? '/' : `/projects/${contextId}`
@@ -379,9 +411,27 @@ export const notifyTaskAssignment = async (
     taskTitle: string,
     assignerName: string
 ) => {
+    const title = 'Công việc mới được giao';
+    const body = `${assignerName} đã giao cho bạn công việc "${taskTitle}"`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'TASK_ASSIGNED',
+                title,
+                message: body,
+                taskId
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving task notification to DB:', error);
+    }
+
     const payload: PushPayload = {
-        title: 'Công việc mới được giao',
-        body: `${assignerName} đã giao cho bạn công việc "${taskTitle}"`,
+        title,
+        body,
         tag: `task-${taskId}`,
         data: {
             type: 'task',
@@ -404,6 +454,23 @@ export const notifyProjectUpdate = async (
     updateDescription: string
 ) => {
     const recipients = recipientIds.filter(id => id !== updaterId);
+
+    // Save to DB for bell icon
+    if (recipients.length > 0) {
+        try {
+            await prisma.notification.createMany({
+                data: recipients.map(userId => ({
+                    userId,
+                    type: 'PROJECT_UPDATED',
+                    title: `Cập nhật: ${projectName}`,
+                    message: `${updaterName} ${updateDescription}`,
+                    projectId
+                }))
+            });
+        } catch (error) {
+            console.error('[PushService] Error saving project update notification to DB:', error);
+        }
+    }
 
     const payload: PushPayload = {
         title: `Cập nhật: ${projectName}`,
@@ -428,11 +495,31 @@ export const notifyProjectDeadlineOverdue = async (
     projectName: string,
     daysOverdue: number
 ) => {
+    const title = '⚠️ Dự án quá hạn!';
+    const body = daysOverdue === 0
+        ? `Dự án "${projectName}" đã đến hạn hoàn thành hôm nay!`
+        : `Dự án "${projectName}" đã quá hạn ${daysOverdue} ngày!`;
+
+    // Save to DB for bell icon
+    if (userIds.length > 0) {
+        try {
+            await prisma.notification.createMany({
+                data: userIds.map(userId => ({
+                    userId,
+                    type: 'DEADLINE_OVERDUE',
+                    title,
+                    message: body,
+                    projectId
+                }))
+            });
+        } catch (error) {
+            console.error('[PushService] Error saving deadline notification to DB:', error);
+        }
+    }
+
     const payload: PushPayload = {
-        title: '⚠️ Dự án quá hạn!',
-        body: daysOverdue === 0
-            ? `Dự án "${projectName}" đã đến hạn hoàn thành hôm nay!`
-            : `Dự án "${projectName}" đã quá hạn ${daysOverdue} ngày!`,
+        title,
+        body,
         tag: `project-deadline-${projectId}`,
         data: {
             type: 'project',
@@ -453,11 +540,31 @@ export const notifyProjectDeadlineUpcoming = async (
     projectName: string,
     daysUntilDeadline: number
 ) => {
+    const title = '📅 Nhắc nhở deadline dự án';
+    const body = daysUntilDeadline === 1
+        ? `Dự án "${projectName}" sẽ đến hạn vào ngày mai!`
+        : `Dự án "${projectName}" sẽ đến hạn trong ${daysUntilDeadline} ngày nữa.`;
+
+    // Save to DB for bell icon
+    if (userIds.length > 0) {
+        try {
+            await prisma.notification.createMany({
+                data: userIds.map(userId => ({
+                    userId,
+                    type: 'DEADLINE_UPCOMING',
+                    title,
+                    message: body,
+                    projectId
+                }))
+            });
+        } catch (error) {
+            console.error('[PushService] Error saving deadline reminder to DB:', error);
+        }
+    }
+
     const payload: PushPayload = {
-        title: '📅 Nhắc nhở deadline dự án',
-        body: daysUntilDeadline === 1
-            ? `Dự án "${projectName}" sẽ đến hạn vào ngày mai!`
-            : `Dự án "${projectName}" sẽ đến hạn trong ${daysUntilDeadline} ngày nữa.`,
+        title,
+        body,
         tag: `project-deadline-reminder-${projectId}`,
         data: {
             type: 'project',
@@ -477,11 +584,29 @@ export const notifyTaskDeadlineOverdue = async (
     taskTitle: string,
     daysOverdue: number
 ) => {
+    const title = '⚠️ Công việc quá hạn!';
+    const body = daysOverdue === 0
+        ? `Công việc "${taskTitle}" đã đến hạn hoàn thành hôm nay!`
+        : `Công việc "${taskTitle}" đã quá hạn ${daysOverdue} ngày!`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'TASK_DEADLINE_OVERDUE',
+                title,
+                message: body,
+                taskId
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving task deadline notification to DB:', error);
+    }
+
     const payload: PushPayload = {
-        title: '⚠️ Công việc quá hạn!',
-        body: daysOverdue === 0
-            ? `Công việc "${taskTitle}" đã đến hạn hoàn thành hôm nay!`
-            : `Công việc "${taskTitle}" đã quá hạn ${daysOverdue} ngày!`,
+        title,
+        body,
         tag: `task-deadline-${taskId}`,
         data: {
             type: 'task',
@@ -502,11 +627,29 @@ export const notifyTaskDeadlineUpcoming = async (
     taskTitle: string,
     daysUntilDeadline: number
 ) => {
+    const title = '📅 Nhắc nhở công việc';
+    const body = daysUntilDeadline === 1
+        ? `Công việc "${taskTitle}" sẽ đến hạn vào ngày mai!`
+        : `Công việc "${taskTitle}" sẽ đến hạn trong ${daysUntilDeadline} ngày nữa.`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'TASK_DEADLINE_UPCOMING',
+                title,
+                message: body,
+                taskId
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving task deadline reminder to DB:', error);
+    }
+
     const payload: PushPayload = {
-        title: '📅 Nhắc nhở công việc',
-        body: daysUntilDeadline === 1
-            ? `Công việc "${taskTitle}" sẽ đến hạn vào ngày mai!`
-            : `Công việc "${taskTitle}" sẽ đến hạn trong ${daysUntilDeadline} ngày nữa.`,
+        title,
+        body,
         tag: `task-deadline-reminder-${taskId}`,
         data: {
             type: 'task',
@@ -527,10 +670,27 @@ export const notifyTaskReminder = async (
     reminderAt: Date
 ) => {
     const timeStr = reminderAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const title = '🔔 Nhắc nhở công việc';
+    const body = `Đã đến giờ cho công việc "${taskTitle}" (${timeStr})`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'TASK_REMINDER',
+                title,
+                message: body,
+                taskId
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving task reminder to DB:', error);
+    }
 
     const payload: PushPayload = {
-        title: '🔔 Nhắc nhở công việc',
-        body: `Đã đến giờ cho công việc "${taskTitle}" (${timeStr})`,
+        title,
+        body,
         tag: `task-reminder-${taskId}`,
         data: {
             type: 'task',
@@ -542,6 +702,311 @@ export const notifyTaskReminder = async (
     };
 
     return sendPushToUser(userId, payload);
+};
+
+// Notify kanban daily reminder (consolidated for one user)
+export const notifyKanbanDailyReminder = async (
+    userId: number,
+    boardName: string,
+    cardTitles: string[],
+    totalCards: number
+) => {
+    const title = '📋 Nhắc nhở công việc Kanban hàng ngày';
+    const body = totalCards <= 3
+        ? `Bạn có ${totalCards} đầu việc chưa hoàn thành trong "${boardName}": ${cardTitles.join(', ')}`
+        : `Bạn có ${totalCards} đầu việc chưa hoàn thành trong "${boardName}": ${cardTitles.slice(0, 3).join(', ')} và ${totalCards - 3} việc khác`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'KANBAN_DAILY_REMINDER',
+                title,
+                message: body
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving kanban reminder to DB:', error);
+    }
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-daily-reminder-${userId}`,
+        data: {
+            type: 'activity',
+            url: '/'
+        },
+        requireInteraction: true,
+        vibrate: [200, 100, 200]
+    };
+
+    return sendPushToUser(userId, payload);
+};
+
+// ==================== KANBAN ACTIVITY NOTIFICATIONS ====================
+
+// Notify when a new card is created on a kanban board
+export const notifyKanbanCardCreated = async (
+    recipientIds: number[],
+    creatorId: number,
+    creatorName: string,
+    boardId: number,
+    boardName: string,
+    cardTitle: string,
+    listTitle: string
+) => {
+    const recipients = recipientIds.filter(id => id !== creatorId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '📋 Thẻ mới trong Kanban';
+    const body = `${creatorName} đã tạo thẻ "${cardTitle}" trong danh sách "${listTitle}"`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.createMany({
+            data: recipients.map(userId => ({
+                userId,
+                type: 'KANBAN_CARD_CREATED',
+                title,
+                message: body
+            }))
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving kanban card notification to DB:', error);
+    }
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-card-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        }
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+// Notify when a comment is added to a kanban card
+export const notifyKanbanComment = async (
+    recipientIds: number[],
+    commenterId: number,
+    commenterName: string,
+    boardId: number,
+    cardTitle: string,
+    commentPreview: string
+) => {
+    const recipients = recipientIds.filter(id => id !== commenterId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '💬 Bình luận mới trên Kanban';
+    const body = `${commenterName} đã bình luận trên "${cardTitle}": ${commentPreview.substring(0, 80)}`;
+
+    // Save to DB for bell icon is already done in kanbanController
+    // Only send push notification here
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-comment-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        }
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+// Notify when a checklist item is added to a kanban card
+export const notifyKanbanChecklist = async (
+    recipientIds: number[],
+    userId: number,
+    userName: string,
+    boardId: number,
+    cardTitle: string,
+    checklistTitle: string
+) => {
+    const recipients = recipientIds.filter(id => id !== userId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '✅ Công việc mới trong Kanban';
+    const body = `${userName} đã thêm "${checklistTitle}" vào danh sách công việc của "${cardTitle}"`;
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-checklist-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        }
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+// Notify when a user is invited to a kanban board
+export const notifyKanbanInvite = async (
+    invitedUserIds: number[],
+    inviterId: number,
+    inviterName: string,
+    boardId: number,
+    boardName: string
+) => {
+    const recipients = invitedUserIds.filter(id => id !== inviterId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '👥 Mời vào bảng Kanban';
+    const body = `${inviterName} đã mời bạn vào bảng làm việc nhóm "${boardName}"`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.createMany({
+            data: recipients.map(userId => ({
+                userId,
+                type: 'KANBAN_INVITE',
+                title,
+                message: body
+            }))
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving kanban invite notification to DB:', error);
+    }
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-invite-${boardId}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        },
+        requireInteraction: true
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+// Notify when a card is moved between lists
+export const notifyKanbanCardMoved = async (
+    recipientIds: number[],
+    moverId: number,
+    moverName: string,
+    boardId: number,
+    cardTitle: string,
+    fromList: string,
+    toList: string
+) => {
+    const recipients = recipientIds.filter(id => id !== moverId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '🔄 Thẻ được di chuyển';
+    const body = `${moverName} đã chuyển "${cardTitle}" từ "${fromList}" sang "${toList}"`;
+
+    // bell notification is already saved in kanbanController
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-move-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        }
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+// Notify when a card is approved
+export const notifyKanbanCardApproved = async (
+    recipientIds: number[],
+    approverId: number,
+    approverName: string,
+    boardId: number,
+    cardTitle: string
+) => {
+    const recipients = recipientIds.filter(id => id !== approverId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '✅ Công việc đã được duyệt';
+    const body = `"${cardTitle}" đã được duyệt bởi ${approverName}. Có thể chuyển sang Hoàn thành.`;
+
+    // bell notification is already saved in kanbanController
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-approve-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        },
+        requireInteraction: true
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+export const notifyKanbanAttachment = async (
+    recipientIds: number[],
+    uploaderId: number,
+    uploaderName: string,
+    boardId: number,
+    cardTitle: string,
+    fileName: string
+) => {
+    const recipients = recipientIds.filter(id => id !== uploaderId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = '📎 File đính kèm mới trong Kanban';
+    const body = `${uploaderName} đã đính kèm "${fileName}" vào thẻ "${cardTitle}"`;
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-attachment-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        },
+        requireInteraction: false
+    };
+
+    return sendPushToUsers(recipients, payload);
+};
+
+export const notifyKanbanChecklistToggle = async (
+    recipientIds: number[],
+    togglerId: number,
+    togglerName: string,
+    boardId: number,
+    cardTitle: string,
+    itemTitle: string,
+    checked: boolean
+) => {
+    const recipients = recipientIds.filter(id => id !== togglerId);
+    if (recipients.length === 0) return { success: 0, failed: 0 };
+
+    const title = checked ? '✅ Công việc hoàn thành' : '🔄 Công việc mở lại';
+    const body = `${togglerName} đã ${checked ? 'hoàn thành' : 'mở lại'} "${itemTitle}" trong thẻ "${cardTitle}"`;
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-checklist-toggle-${boardId}-${Date.now()}`,
+        data: {
+            type: 'activity',
+            url: '/kanban'
+        },
+        requireInteraction: false
+    };
+
+    return sendPushToUsers(recipients, payload);
 };
 
 export default {
@@ -560,5 +1025,14 @@ export default {
     notifyProjectDeadlineUpcoming,
     notifyTaskDeadlineOverdue,
     notifyTaskDeadlineUpcoming,
-    notifyTaskReminder
+    notifyTaskReminder,
+    notifyKanbanDailyReminder,
+    notifyKanbanCardCreated,
+    notifyKanbanComment,
+    notifyKanbanChecklist,
+    notifyKanbanInvite,
+    notifyKanbanCardMoved,
+    notifyKanbanCardApproved,
+    notifyKanbanAttachment,
+    notifyKanbanChecklistToggle
 };

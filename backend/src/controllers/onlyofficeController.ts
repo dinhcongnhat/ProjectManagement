@@ -1528,3 +1528,132 @@ export const downloadChatFileForOnlyOffice = async (req: Request, res: Response)
         res.status(500).json({ message: 'Server error' });
     }
 };
+
+// ==================== KANBAN ATTACHMENT ONLYOFFICE ====================
+
+export const checkKanbanOnlyOfficeSupport = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const attachment = await prisma.kanbanAttachment.findUnique({
+            where: { id: Number(id) },
+        });
+
+        if (!attachment) {
+            return res.status(404).json({
+                supported: false,
+                message: 'Attachment not found'
+            });
+        }
+
+        const supported = isOfficeFile(attachment.fileName);
+        res.json({
+            supported,
+            fileName: attachment.fileName,
+            documentType: supported ? getDocumentType(attachment.fileName) : null,
+            onlyofficeUrl: ONLYOFFICE_URL,
+        });
+    } catch (error) {
+        console.error('Error checking Kanban OnlyOffice support:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const getKanbanOnlyOfficeConfig = async (req: AuthRequest, res: Response) => {
+    try {
+        const { id } = req.params;
+        const userId = req.user?.id;
+
+        const attachment = await prisma.kanbanAttachment.findUnique({
+            where: { id: Number(id) },
+            include: {
+                card: {
+                    include: {
+                        list: {
+                            include: {
+                                board: { include: { members: true } }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        if (!attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        if (!isOfficeFile(attachment.fileName)) {
+            return res.status(400).json({ message: 'File is not an Office document' });
+        }
+
+        // Check board membership
+        const board = attachment.card.list.board;
+        const isMember = board.members.some(m => m.userId === userId) || board.ownerId === userId;
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const fileUrl = `${BACKEND_URL}/onlyoffice/kanban/download/${attachment.id}`;
+        const originalName = attachment.fileName;
+        const documentType = getDocumentType(originalName);
+        const fileType = getFileType(originalName);
+        const documentKey = `kanban_${attachment.id}_${attachment.createdAt.getTime()}`;
+
+        const jwtPayload = {
+            document: {
+                fileType,
+                key: documentKey,
+                title: originalName,
+                url: fileUrl,
+                permissions: {
+                    download: true,
+                    edit: false,
+                    print: true,
+                    review: false,
+                    comment: false,
+                    copy: true,
+                },
+            },
+            editorConfig: {
+                lang: 'vi',
+                mode: 'view',
+                user: {
+                    id: userId?.toString() || 'anonymous',
+                    name: 'User',
+                },
+                customization: {
+                    autosave: false,
+                    forcesave: false,
+                    compactHeader: true,
+                    compactToolbar: true,
+                    toolbarNoTabs: true,
+                    toolbarHideFileName: true,
+                    hideRightMenu: true,
+                    help: false,
+                    feedback: false,
+                    goback: false,
+                },
+            },
+        };
+
+        const token = signOnlyOfficeConfig(jwtPayload);
+
+        const signedConfig = {
+            ...jwtPayload,
+            documentType,
+            height: '100%',
+            width: '100%',
+            type: 'desktop',
+            token
+        };
+
+        res.json({
+            config: signedConfig,
+            onlyofficeUrl: ONLYOFFICE_URL,
+            canEdit: false,
+        });
+    } catch (error) {
+        console.error('Error getting Kanban OnlyOffice config:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};

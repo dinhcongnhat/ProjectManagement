@@ -1052,6 +1052,7 @@ header {
 @supports (padding-top: env(safe-area-inset-top)) {
   header {
     padding-top: env(safe-area-inset-top, 0px);
+    box-sizing: border-box;
   }
 
   .pwa-safe-bottom {
@@ -1248,65 +1249,11 @@ body {
   @supports (-webkit-touch-callout: none) {
     @media (display-mode: standalone) {
 
-      /* Fix for iPhone X/XS/11/12/13/14 (notch devices, ~47px safe area) */
-      @media screen and (max-width: 428px) and (min-height: 700px) {
-
-        header,
-        .header,
-        .chat-header,
-        [role="banner"] {
-          padding-top: env(safe-area-inset-top, 47px);
-          min-height: calc(3.5rem + env(safe-area-inset-top, 47px));
-          box-sizing: border-box;
-        }
-
-        /* Full screen modals should respect safe area */
-        .fixed.inset-0.z-50,
-        .fixed.inset-0.z-\[50\] {
-          padding-top: env(safe-area-inset-top, 47px);
-        }
-      }
-
-      /* iPhone 14 Pro / 15 / 16 series with Dynamic Island (~59px safe area) */
-      @media screen and (min-width: 390px) and (max-width: 450px) and (min-height: 800px) {
-
-        header,
-        .header,
-        .chat-header,
-        [role="banner"] {
-          padding-top: env(safe-area-inset-top, 59px);
-          min-height: calc(3.5rem + env(safe-area-inset-top, 59px));
-          box-sizing: border-box;
-        }
-
-        /* Full screen modals should respect safe area */
-        .fixed.inset-0.z-50,
-        .fixed.inset-0.z-\[50\] {
-          padding-top: env(safe-area-inset-top, 59px);
-        }
-      }
-
-      /* iPhone 16 Pro Max specific (430-440px logical width) */
-      @media screen and (min-width: 428px) and (max-width: 440px) and (min-height: 900px) {
-
-        header,
-        .header,
-        .chat-header,
-        [role="banner"] {
-          padding-top: env(safe-area-inset-top, 59px);
-          min-height: calc(3.5rem + env(safe-area-inset-top, 59px));
-          box-sizing: border-box;
-        }
-
-        body {
-          padding-bottom: env(safe-area-inset-bottom, 34px);
-        }
-
-        /* Full screen modals should respect safe area */
-        .fixed.inset-0.z-50,
-        .fixed.inset-0.z-\[50\] {
-          padding-top: env(safe-area-inset-top, 59px);
-        }
+      /* Safe area is already handled by the @supports(padding-top: env(safe-area-inset-top)) rule above */
+      /* Full screen modals should respect safe area */
+      .fixed.inset-0.z-50,
+      .fixed.inset-0.z-\[50\] {
+        padding-top: env(safe-area-inset-top, 0px);
       }
     }
   }

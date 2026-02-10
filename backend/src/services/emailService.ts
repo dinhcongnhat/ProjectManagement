@@ -604,9 +604,128 @@ export const sendTaskReminderEmail = async (
     }
 };
 
+// Send kanban daily reminder email (consolidated - one email per member)
+export const sendKanbanDailyReminderEmail = async (
+    toEmail: string,
+    userName: string,
+    boards: { boardName: string; cards: { title: string; listName: string; dueDate: string | null }[] }[]
+): Promise<boolean> => {
+    if (!toEmail) return false;
+
+    try {
+        const totalCards = boards.reduce((sum, b) => sum + b.cards.length, 0);
+        const boardListHtml = boards.map(b => `
+            <div style="margin-bottom: 20px;">
+                <h3 style="color: #1e293b; font-size: 16px; margin: 0 0 10px; font-weight: 600;">
+                    📌 ${b.boardName} (${b.cards.length} việc)
+                </h3>
+                <table cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse: collapse;">
+                    ${b.cards.map((c, i) => `
+                        <tr style="background-color: ${i % 2 === 0 ? '#f8fafc' : '#ffffff'};">
+                            <td style="padding: 8px 12px; font-size: 14px; color: #334155; border-bottom: 1px solid #e2e8f0;">
+                                ${c.title}
+                            </td>
+                            <td style="padding: 8px 12px; font-size: 13px; color: #64748b; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">
+                                ${c.listName}
+                            </td>
+                            <td style="padding: 8px 12px; font-size: 13px; color: ${c.dueDate && new Date(c.dueDate) < new Date() ? '#dc2626' : '#64748b'}; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">
+                                ${c.dueDate ? new Date(c.dueDate).toLocaleDateString('vi-VN') : '-'}
+                            </td>
+                        </tr>
+                    `).join('')}
+                </table>
+            </div>
+        `).join('');
+
+        const { error } = await resend.emails.send({
+            from: FROM_EMAIL,
+            to: toEmail,
+            subject: `[NHẮC NHỞ] Bạn có ${totalCards} đầu việc Kanban chưa hoàn thành`,
+            html: `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nhắc nhở Kanban hàng ngày</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5;">
+    <table cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #f0f2f5; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table cellpadding="0" cellspacing="0" border="0" width="600" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); padding: 35px 40px; text-align: center;">
+                            <img src="${LOGO_URL}" alt="JTSC Logo" style="height: 50px; margin-bottom: 15px;">
+                            <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.5px;">
+                                📋 NHẮC NHỞ CÔNG VIỆC KANBAN
+                            </h1>
+                        </td>
+                    </tr>
+                    
+                    <!-- Content -->
+                    <tr>
+                        <td style="padding: 40px 45px;">
+                            <p style="color: #1e293b; font-size: 16px; line-height: 1.7; margin: 0 0 25px;">
+                                Kính gửi <strong>${userName}</strong>,
+                            </p>
+                            
+                            <p style="color: #475569; font-size: 15px; line-height: 1.7; margin: 0 0 25px;">
+                                Bạn hiện có <strong style="color: #7c3aed;">${totalCards} đầu việc</strong> chưa hoàn thành trên bảng Kanban. Dưới đây là danh sách chi tiết:
+                            </p>
+                            
+                            <div style="background-color: #faf5ff; border-radius: 12px; padding: 20px; border-left: 5px solid #7c3aed; margin-bottom: 25px;">
+                                ${boardListHtml}
+                            </div>
+                            
+                            <!-- CTA Button -->
+                            <div style="text-align: center;">
+                                <a href="${FRONTEND_URL}" style="display: inline-block; padding: 14px 35px; background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%); color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 14px; letter-spacing: 0.5px; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);">
+                                    XEM BẢNG KANBAN →
+                                </a>
+                            </div>
+                            
+                            <p style="color: #94a3b8; font-size: 13px; line-height: 1.6; margin: 30px 0 0; text-align: center;">
+                                Thông báo này được gửi tự động lúc 8:00 AM mỗi ngày.
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #1e293b; padding: 25px 35px; text-align: center;">
+                            <p style="color: #64748b; font-size: 11px; margin: 0;">
+                                © ${new Date().getFullYear()} JTSC. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+            `
+        });
+
+        if (error) {
+            console.error('[EmailService] Failed to send kanban reminder email:', error);
+            return false;
+        }
+
+        console.log(`[EmailService] Kanban reminder email sent to ${toEmail}`);
+        return true;
+    } catch (error) {
+        console.error('[EmailService] Error sending kanban reminder email:', error);
+        return false;
+    }
+};
+
 export default {
     sendProjectAssignmentEmail,
     sendDeadlineReminderEmail,
     sendTaskReminderEmail,
+    sendKanbanDailyReminderEmail,
     sendTestEmail
 };

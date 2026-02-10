@@ -1,7 +1,7 @@
 // Custom Service Worker for PWA Real-time Support
-// Version: 1.0.110
+// Version: 1.0.131
 
-const CACHE_NAME = 'pwa-cache-1768361082401';
+const CACHE_NAME = 'pwa-cache-1770706050844';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -53,6 +53,7 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/socket.io') ||
     url.pathname.startsWith('/api') ||
     url.pathname.includes('/avatar') ||
+    url.pathname.includes('/version.json') ||
     url.protocol === 'ws:' ||
     url.protocol === 'wss:' ||
     event.request.url.includes('socket.io') ||
@@ -184,7 +185,6 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
   const data = event.notification.data || {};
-  let targetUrl = '/';
   
   // Handle action buttons first
   if (event.action === 'dismiss') {
@@ -192,22 +192,32 @@ self.addEventListener('notificationclick', (event) => {
     return; // Just close notification, don't open app
   }
   
-  // Determine target URL based on notification type
+  // Build a fallback URL for when no client window is open
+  // The app will handle role-based routing on load
+  let fallbackUrl = '/';
   if (data.type === 'chat' && data.conversationId) {
-    targetUrl = `/?openChat=${data.conversationId}`;
+    fallbackUrl = `/?openChat=${data.conversationId}`;
   } else if (data.type === 'mention' && data.conversationId) {
-    targetUrl = `/?openChat=${data.conversationId}`;
-  } else if (data.type === 'project' && data.projectId) {
-    targetUrl = `/projects/${data.projectId}`;
+    fallbackUrl = `/?openChat=${data.conversationId}`;
+  } else if (data.type === 'mention' && data.projectId) {
+    fallbackUrl = `/?notificationType=mention&projectId=${data.projectId}`;
   } else if (data.type === 'discussion' && data.projectId) {
-    targetUrl = `/projects/${data.projectId}?tab=discussion`;
+    fallbackUrl = `/?notificationType=discussion&projectId=${data.projectId}`;
+  } else if (data.type === 'task' && data.projectId) {
+    fallbackUrl = `/?notificationType=task&projectId=${data.projectId}`;
   } else if (data.type === 'task' && data.taskId) {
-    targetUrl = `/my-tasks?taskId=${data.taskId}`;
-  } else if (data.url && data.url !== '/') {
-    targetUrl = data.url;
+    fallbackUrl = `/?notificationType=task&taskId=${data.taskId}`;
+  } else if (data.type === 'file' && data.projectId) {
+    fallbackUrl = `/?notificationType=file&projectId=${data.projectId}`;
+  } else if (data.type === 'result' && data.projectId) {
+    fallbackUrl = `/?notificationType=result&projectId=${data.projectId}`;
+  } else if (data.type === 'activity' && data.projectId) {
+    fallbackUrl = `/?notificationType=project&projectId=${data.projectId}`;
+  } else if (data.type === 'project' && data.projectId) {
+    fallbackUrl = `/?notificationType=project&projectId=${data.projectId}`;
   }
   
-  console.log('[SW] Target URL:', targetUrl);
+  console.log('[SW] Fallback URL:', fallbackUrl);
   
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -216,8 +226,6 @@ self.addEventListener('notificationclick', (event) => {
         
         // Try to find an existing window and focus it
         for (const client of clientList) {
-          // Check if this is a matching URL or root URL
-          const clientUrl = new URL(client.url);
           console.log('[SW] Checking client:', client.url);
           
           if ('focus' in client) {
@@ -225,17 +233,18 @@ self.addEventListener('notificationclick', (event) => {
             client.postMessage({
               type: 'NOTIFICATION_CLICK',
               data: data,
-              targetUrl: targetUrl
+              targetUrl: fallbackUrl
             });
-            console.log('[SW] Focusing existing client');
+            console.log('[SW] Focusing existing client and sending NOTIFICATION_CLICK');
             return client.focus();
           }
         }
         
-        // No window found, open new one
-        console.log('[SW] Opening new window:', targetUrl);
+        // No window found, open new one with query params
+        // The app will read these params on mount and navigate accordingly
+        console.log('[SW] Opening new window:', fallbackUrl);
         if (clients.openWindow) {
-          return clients.openWindow(targetUrl);
+          return clients.openWindow(fallbackUrl);
         }
       })
       .catch(err => console.error('[SW] Error handling notification click:', err))

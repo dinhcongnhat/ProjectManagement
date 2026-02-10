@@ -6,6 +6,8 @@ import {
     notifyTaskDeadlineUpcoming
 } from './pushNotificationService.js';
 import { sendDeadlineReminderEmail } from './emailService.js';
+import { notifyKanbanDailyReminder } from './pushNotificationService.js';
+import { sendKanbanDailyReminderEmail } from './emailService.js';
 
 // Get start of today in UTC
 const getStartOfToday = (): Date => {
@@ -259,6 +261,122 @@ export const checkUpcomingTaskDeadlines = async (): Promise<void> => {
     }
 };
 
+// Check kanban cards not completed and send daily reminder at 8AM VN time
+export const checkKanbanIncompleteCards = async (): Promise<void> => {
+    console.log('[DeadlineScheduler] Checking incomplete kanban cards...');
+
+    try {
+        // Find all boards with their members and incomplete cards
+        const boards = await prisma.kanbanBoard.findMany({
+            include: {
+                members: {
+                    include: {
+                        user: { select: { id: true, name: true, email: true } }
+                    }
+                },
+                lists: {
+                    include: {
+                        cards: {
+                            where: { completed: false },
+                            include: {
+                                assignees: { select: { id: true } }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Build a map: userId -> [{ boardName, cards: [{title, listName, dueDate}] }]
+        const userCardsMap: Map<number, {
+            userName: string;
+            email: string | null;
+            boards: Map<string, { title: string; listName: string; dueDate: string | null }[]>;
+        }> = new Map();
+
+        for (const board of boards) {
+            const doneListTitles = board.lists
+                .filter(l => l.title.toLowerCase().includes('hoàn thành') || l.title.toLowerCase() === 'done')
+                .map(l => l.id);
+
+            for (const list of board.lists) {
+                // Skip "Hoàn thành"/"Done" lists
+                if (doneListTitles.includes(list.id)) continue;
+
+                for (const card of list.cards) {
+                    // Get members who should be notified: assignees + all board members
+                    const memberIds = board.members.map(m => m.userId);
+                    // If card has assignees, only remind assignees; otherwise remind all members
+                    const notifyIds = card.assignees.length > 0
+                        ? card.assignees.map(a => a.id)
+                        : memberIds;
+
+                    for (const uid of notifyIds) {
+                        const member = board.members.find(m => m.userId === uid);
+                        if (!member) continue;
+
+                        if (!userCardsMap.has(uid)) {
+                            userCardsMap.set(uid, {
+                                userName: member.user.name,
+                                email: member.user.email ?? null,
+                                boards: new Map()
+                            });
+                        }
+
+                        const userData = userCardsMap.get(uid)!;
+                        if (!userData.boards.has(board.title)) {
+                            userData.boards.set(board.title, []);
+                        }
+                        userData.boards.get(board.title)!.push({
+                            title: card.title,
+                            listName: list.title,
+                            dueDate: card.dueDate?.toISOString() ?? null
+                        });
+                    }
+                }
+            }
+        }
+
+        console.log(`[DeadlineScheduler] Found ${userCardsMap.size} users with incomplete kanban cards`);
+
+        // Send ONE consolidated notification + email per user
+        for (const [userId, userData] of userCardsMap) {
+            const allCards: string[] = [];
+            const boardsArray: { boardName: string; cards: { title: string; listName: string; dueDate: string | null }[] }[] = [];
+
+            for (const [boardName, cards] of userData.boards) {
+                allCards.push(...cards.map(c => c.title));
+                boardsArray.push({ boardName, cards });
+            }
+
+            const totalCards = allCards.length;
+            if (totalCards === 0) continue;
+
+            // Send push notification (consolidated)
+            const firstBoard = boardsArray[0];
+            if (!firstBoard) continue;
+            const displayBoardName = boardsArray.length > 1
+                ? `${firstBoard.boardName} và ${boardsArray.length - 1} bảng khác`
+                : firstBoard.boardName;
+
+            await notifyKanbanDailyReminder(userId, displayBoardName, allCards, totalCards);
+
+            // Send ONE consolidated email
+            if (userData.email) {
+                await sendKanbanDailyReminderEmail(
+                    userData.email,
+                    userData.userName,
+                    boardsArray
+                );
+            }
+
+            console.log(`[DeadlineScheduler] Sent kanban reminder to user ${userId}: ${totalCards} cards across ${boardsArray.length} boards`);
+        }
+    } catch (error) {
+        console.error('[DeadlineScheduler] Error checking kanban incomplete cards:', error);
+    }
+};
+
 // Run all deadline checks
 export const runDeadlineChecks = async (): Promise<void> => {
     console.log('[DeadlineScheduler] ========== Running deadline checks ==========');
@@ -268,6 +386,7 @@ export const runDeadlineChecks = async (): Promise<void> => {
     await checkUpcomingProjectDeadlines();
     await checkOverdueTasks();
     await checkUpcomingTaskDeadlines();
+    await checkKanbanIncompleteCards();
 
     console.log('[DeadlineScheduler] ========== Deadline checks completed ==========');
 };
@@ -345,18 +464,22 @@ let reminderIntervalId: NodeJS.Timeout | null = null;
 export const startDeadlineScheduler = (): void => {
     console.log('[DeadlineScheduler] Starting deadline scheduler...');
 
-    // 1. Setup Daily Deadline Check (8:00 AM)
+    // 1. Setup Daily Deadline Check (8:00 AM Vietnam time = UTC+7)
     const now = new Date();
-    const next8AM = new Date();
-    next8AM.setHours(8, 0, 0, 0);
+    const vnOffset = 7 * 60; // Vietnam is UTC+7
+    const nowVN = new Date(now.getTime() + vnOffset * 60 * 1000);
+    const next8AM_VN = new Date(nowVN);
+    next8AM_VN.setHours(8, 0, 0, 0);
 
-    // If it's already past 8 AM today, schedule for tomorrow
-    if (now >= next8AM) {
-        next8AM.setDate(next8AM.getDate() + 1);
+    // If it's already past 8 AM Vietnam time today, schedule for tomorrow
+    if (nowVN >= next8AM_VN) {
+        next8AM_VN.setDate(next8AM_VN.getDate() + 1);
     }
 
-    const msUntil8AM = next8AM.getTime() - now.getTime();
-    console.log(`[DeadlineScheduler] Next daily check scheduled for ${next8AM.toISOString()}`);
+    // Convert back to UTC for scheduling
+    const next8AM_UTC = new Date(next8AM_VN.getTime() - vnOffset * 60 * 1000);
+    const msUntil8AM = next8AM_UTC.getTime() - now.getTime();
+    console.log(`[DeadlineScheduler] Next daily check scheduled for ${next8AM_UTC.toISOString()} (8:00 AM Vietnam time)`);
 
     setTimeout(() => {
         runDeadlineChecks();
@@ -392,5 +515,6 @@ export default {
     checkUpcomingProjectDeadlines,
     checkOverdueTasks,
     checkUpcomingTaskDeadlines,
-    checkTaskReminders
+    checkTaskReminders,
+    checkKanbanIncompleteCards
 };

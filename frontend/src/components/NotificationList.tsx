@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import {
     Bell, Trash2, Check, CheckCheck, X, Briefcase,
-    Clock, Loader2, BellOff
+    Clock, Loader2, BellOff, MessageSquare, AtSign, ListTodo, AlertTriangle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../config/api';
+import { useAuth } from '../context/AuthContext';
 
 interface Notification {
     id: number;
@@ -25,6 +26,7 @@ interface NotificationListProps {
 
 const NotificationList = ({ onClose }: NotificationListProps) => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -100,8 +102,47 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
             handleMarkAsRead(notification.id);
         }
 
-        if (notification.projectId) {
-            navigate(`/projects/${notification.projectId}`);
+        const isAdmin = user?.role === 'ADMIN';
+        const prefix = isAdmin ? '/admin' : '';
+        const type = notification.type;
+
+        // Map notification type → correct project tab or page
+        if (type === 'PROJECT_DISCUSSION' && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=discussion`);
+            onClose();
+        } else if (type === 'MENTION' && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=discussion`);
+            onClose();
+        } else if (type === 'MENTION' && !notification.projectId) {
+            onClose();
+        } else if ((type === 'TASK_ASSIGNED' || type === 'TASK_REMINDER') && notification.projectId) {
+            // Task notifications with project → go to project tasks tab
+            navigate(`${prefix}/projects/${notification.projectId}?tab=tasks`);
+            onClose();
+        } else if ((type === 'TASK_DEADLINE_OVERDUE' || type === 'TASK_DEADLINE_UPCOMING') && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=tasks`);
+            onClose();
+        } else if (type === 'RESULT_REPORT_UPLOAD' && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=results`);
+            onClose();
+        } else if (type === 'FILE_UPLOAD' && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=attachments`);
+            onClose();
+        } else if (type === 'PROJECT_SUBMITTED' && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=overview`);
+            onClose();
+        } else if ((type === 'PROJECT_ASSIGNED' || type === 'PROJECT_UPDATED') && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}`);
+            onClose();
+        } else if ((type === 'DEADLINE' || type === 'DEADLINE_OVERDUE' || type === 'DEADLINE_UPCOMING') && notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}?tab=overview`);
+            onClose();
+        } else if (notification.taskId && !notification.projectId) {
+            // Task notification without project → go to my-tasks
+            navigate(`${prefix}/my-tasks`);
+            onClose();
+        } else if (notification.projectId) {
+            navigate(`${prefix}/projects/${notification.projectId}`);
             onClose();
         }
     };
@@ -111,7 +152,19 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
             case 'PROJECT_ASSIGNED':
             case 'PROJECT_UPDATED':
                 return <Briefcase size={18} className="text-blue-500" />;
+            case 'PROJECT_DISCUSSION':
+                return <MessageSquare size={18} className="text-emerald-500" />;
+            case 'MENTION':
+                return <AtSign size={18} className="text-purple-500" />;
+            case 'TASK_ASSIGNED':
+            case 'TASK_REMINDER':
+                return <ListTodo size={18} className="text-indigo-500" />;
+            case 'TASK_DEADLINE_OVERDUE':
+            case 'TASK_DEADLINE_UPCOMING':
+                return <AlertTriangle size={18} className="text-orange-500" />;
             case 'DEADLINE':
+            case 'DEADLINE_OVERDUE':
+            case 'DEADLINE_UPCOMING':
                 return <Clock size={18} className="text-orange-500" />;
             case 'RESULT_REPORT_UPLOAD':
                 return <span className="text-lg">📊</span>;
@@ -243,15 +296,15 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                                         </div>
                                     </div>
 
-                                    {/* Actions */}
-                                    <div className="flex-shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Actions - always visible on mobile, hover on desktop */}
+                                    <div className="flex-shrink-0 flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                         {!notification.isRead && (
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     handleMarkAsRead(notification.id);
                                                 }}
-                                                className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-blue-600 dark:text-blue-400"
+                                                className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/50 active:bg-blue-200 rounded-lg text-blue-600 dark:text-blue-400"
                                                 title="Đánh dấu đã đọc"
                                             >
                                                 <Check size={16} />
@@ -260,7 +313,7 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                                         <button
                                             onClick={(e) => handleDelete(notification.id, e)}
                                             disabled={deleting === notification.id}
-                                            className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/50 rounded-lg text-red-500 dark:text-red-400"
+                                            className="p-2 hover:bg-red-100 dark:hover:bg-red-900/50 active:bg-red-200 rounded-lg text-red-500 dark:text-red-400"
                                             title="Xóa"
                                         >
                                             {deleting === notification.id ? (

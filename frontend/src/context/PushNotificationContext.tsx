@@ -170,31 +170,46 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
             
             if (event.data?.type === 'NOTIFICATION_CLICK') {
                 const data = event.data.data;
-                const targetUrl = event.data.targetUrl;
                 
-                // Handle different notification types
-                if (data.type === 'chat' && data.conversationId) {
-                    // Dispatch custom event to open chat
-                    window.dispatchEvent(new CustomEvent('openChatFromNotification', {
-                        detail: { conversationId: data.conversationId }
-                    }));
-                } else if (data.type === 'mention' && data.conversationId) {
-                    // Mention in chat - open chat
+                // Handle different notification types using custom events
+                // This allows the app to use React Router navigation + role-aware paths
+                if ((data.type === 'chat' || (data.type === 'mention' && data.conversationId)) && data.conversationId) {
+                    // Chat/mention in chat - open chat popup
                     window.dispatchEvent(new CustomEvent('openChatFromNotification', {
                         detail: { conversationId: data.conversationId }
                     }));
                 } else if (data.type === 'discussion' && data.projectId) {
-                    // Discussion in project - navigate to project
-                    window.location.href = `/projects/${data.projectId}`;
-                } else if (data.type === 'project' && data.projectId) {
-                    // Project notification - navigate to project
-                    window.location.href = `/projects/${data.projectId}`;
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'project', projectId: data.projectId, tab: 'discussion' }
+                    }));
+                } else if (data.type === 'mention' && data.projectId) {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'project', projectId: data.projectId, tab: 'discussion' }
+                    }));
+                } else if (data.type === 'task' && data.projectId) {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'task', projectId: data.projectId }
+                    }));
                 } else if (data.type === 'task' && data.taskId) {
-                    // Task notification - navigate to task
-                    window.location.href = `/my-tasks`;
-                } else if (targetUrl && targetUrl !== '/') {
-                    // Fallback to URL if provided
-                    window.location.href = targetUrl;
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'task', taskId: data.taskId }
+                    }));
+                } else if (data.type === 'file' && data.projectId) {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'file', projectId: data.projectId }
+                    }));
+                } else if (data.type === 'result' && data.projectId) {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'result', projectId: data.projectId }
+                    }));
+                } else if (data.projectId) {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'project', projectId: data.projectId }
+                    }));
+                } else if (data.taskId) {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'task', taskId: data.taskId }
+                    }));
                 }
             }
         };

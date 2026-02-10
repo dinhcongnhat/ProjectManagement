@@ -111,6 +111,14 @@ model User {
   // Google Drive
   googleIntegration GoogleIntegration?
   driveLinks        ProjectDriveLink[] @relation("DriveLinkAdder")
+
+  // Kanban
+  kanbanBoards       KanbanBoard[]       @relation("BoardOwner")
+  kanbanBoardMembers KanbanBoardMember[]
+  kanbanCardAssignees KanbanCard[]       @relation("CardAssignees")
+  kanbanCardCreator  KanbanCard[]        @relation("CardCreator")
+  kanbanComments     KanbanComment[]     @relation("CommentAuthor")
+  kanbanAttachments  KanbanAttachment[]  @relation("KanbanAttachmentUploader")
 }
 
 model Task {
@@ -534,4 +542,153 @@ model ProjectDriveLink {
 
   @@index([projectId])
   @@index([addedByUserId])
+}
+
+// ==================== KANBAN BOARD SYSTEM ====================
+
+model KanbanBoard {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  background  String?  // Background color or image URL
+  isProjectBoard Boolean @default(false) // Auto-created for project task tracking
+  projectId  Int?      // Linked project
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId Int
+  owner   User @relation("BoardOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  lists   KanbanList[]
+  members KanbanBoardMember[]
+  labels  KanbanLabel[]
+
+  @@index([ownerId])
+  @@index([projectId])
+}
+
+model KanbanBoardMember {
+  id        Int      @id @default(autoincrement())
+  role      String   @default("MEMBER") // ADMIN, MEMBER
+  joinedAt  DateTime @default(now())
+
+  boardId Int
+  board   KanbanBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, userId])
+  @@index([userId])
+}
+
+model KanbanList {
+  id        Int      @id @default(autoincrement())
+  title     String
+  position  Int      // Order of the list on the board
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  boardId Int
+  board   KanbanBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  cards KanbanCard[]
+
+  @@index([boardId])
+}
+
+model KanbanLabel {
+  id    Int     @id @default(autoincrement())
+  name  String?
+  color String  // hex color
+
+  boardId Int
+  board   KanbanBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  cards KanbanCard[] @relation("CardLabels")
+
+  @@index([boardId])
+}
+
+model KanbanCard {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String?
+  position    Int       // Order of the card in the list
+  dueDate     DateTime?
+  completed   Boolean   @default(false)
+  approved    Boolean   @default(false)  // Manager/reviewer approved this card
+  approvedById Int?     // Who approved
+  approvedAt DateTime?  // When approved
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Link to Task system (auto-created cards from task assignments)
+  taskId     Int?       @unique
+  // Link to Project (for project-based boards)
+  projectId  Int?
+
+  listId Int
+  list   KanbanList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  creatorId Int
+  creator   User @relation("CardCreator", fields: [creatorId], references: [id])
+
+  assignees User[]         @relation("CardAssignees")
+  labels    KanbanLabel[]  @relation("CardLabels")
+  comments  KanbanComment[]
+  checklist KanbanChecklist[]
+  attachments KanbanAttachment[]
+
+  @@index([listId])
+  @@index([creatorId])
+  @@index([taskId])
+  @@index([projectId])
+}
+
+model KanbanComment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cardId Int
+  card   KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  authorId Int
+  author   User @relation("CommentAuthor", fields: [authorId], references: [id])
+
+  @@index([cardId])
+}
+
+model KanbanChecklist {
+  id        Int      @id @default(autoincrement())
+  title     String
+  checked   Boolean  @default(false)
+  position  Int
+
+  cardId Int
+  card   KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+}
+
+model KanbanAttachment {
+  id        Int      @id @default(autoincrement())
+  fileName  String
+  fileSize  Int
+  mimeType  String
+  minioPath String   // Path in MinIO storage
+  source    String   @default("upload") // "upload", "folder", "google-drive"
+  googleDriveFileId String? // For Google Drive files
+  googleDriveLink   String? // Web view link for Google Drive files
+  createdAt DateTime @default(now())
+
+  cardId Int
+  card   KanbanCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  uploadedById Int
+  uploadedBy   User @relation("KanbanAttachmentUploader", fields: [uploadedById], references: [id])
+
+  @@index([cardId])
 }

@@ -76,6 +76,7 @@ import folderRoutes from './routes/folderRoutes.js';
 import projectImportExportRoutes from './routes/projectImportExportRoutes.js';
 import workflowRoutes from './routes/workflowRoutes.js';
 import googleDriveRoutes from './routes/googleDriveRoutes.js';
+import kanbanRoutes from './routes/kanbanRoutes.js';
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -206,6 +207,63 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
         fileStream.pipe(res);
     } catch (error: any) {
         console.error('[OnlyOffice Download] Error:', error?.message, error?.stack);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// OnlyOffice download route for Kanban attachments (NO AUTH - OnlyOffice server needs direct access)
+app.get('/api/onlyoffice/kanban/download/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('[OnlyOffice Kanban Download] Attachment ID:', id);
+
+        const attachment = await prisma.kanbanAttachment.findUnique({
+            where: { id: Number(id) },
+        });
+
+        if (!attachment || !attachment.minioPath) {
+            console.log('[OnlyOffice Kanban Download] Attachment not found');
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        console.log('[OnlyOffice Kanban Download] Found attachment:', attachment.minioPath);
+
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+
+        let fileStats;
+        try {
+            fileStats = await getFileStats(attachment.minioPath);
+        } catch (statsError: any) {
+            console.error('[OnlyOffice Kanban Download] Failed to get file stats:', statsError?.message);
+            return res.status(404).json({ message: 'File not found in storage' });
+        }
+
+        let fileStream;
+        try {
+            fileStream = await getFileStream(attachment.minioPath);
+        } catch (streamError: any) {
+            console.error('[OnlyOffice Kanban Download] Failed to get file stream:', streamError?.message);
+            return res.status(500).json({ message: 'Cannot read file from storage' });
+        }
+
+        const originalName = attachment.fileName;
+        const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
+        const asciiFilename = originalName.replace(/[^\x00-\x7F]/g, '_');
+
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
+        res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
+
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Kanban Download] Error:', error?.message, error?.stack);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -618,6 +676,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api', workflowRoutes);
 app.use('/api/drive', googleDriveRoutes);
+app.use('/api/kanban', kanbanRoutes);
 
 app.get('/', (req, res) => {
     res.send('JTSC Project Management API');
@@ -867,15 +926,34 @@ app.get('/api/ping', (req, res) => {
 });
 
 // Keep alive / Pulse check for terminal health
-// This helps the user know if the terminal is "paused" (Windows QuickEdit mode)
+// IMPORTANT: Using process.stderr.write instead of console.log to avoid
+// Windows QuickEdit mode freezing the entire Node.js event loop.
+// When QuickEdit is enabled and user clicks the terminal, stdout gets blocked,
+// which blocks console.log, which blocks the event loop, which freezes the server.
 setInterval(() => {
     const timestamp = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-    // Use process.stdout.write to be less intrusive but visible
-    // console.log(`[${timestamp}] System Active - Press Enter if stuck`);
-    // We print to ensure the user sees the process is ALIVE.
-    // If this stops printing, the user knows to press Enter.
-    console.log(`[${timestamp}] ⚡ Server Heartbeat | Active`);
-}, 30000);
+    // Use stderr which is less likely to block on Windows QuickEdit
+    try {
+        process.stderr.write(`[${timestamp}] ⚡ Server Heartbeat | Active\n`);
+    } catch {
+        // Ignore write errors - don't let terminal issues crash the server
+    }
+}, 60000);
+
+// Resume stdin to prevent Windows QuickEdit from blocking the event loop
+// This is critical for Windows terminals where selecting text freezes the process
+if (process.platform === 'win32') {
+    try {
+        if (process.stdin.isTTY) {
+            process.stdin.resume();
+            process.stdin.setRawMode?.(false);
+        }
+        console.log('[Windows] Terminal input handling configured to prevent QuickEdit freezing');
+        console.log('[Windows] TIP: Right-click terminal title bar → Properties → Uncheck "QuickEdit Mode" to prevent freezing');
+    } catch (e) {
+        // Ignore errors if stdin is not available
+    }
+}
 
 // Explicit Database Connection Check on Startup
 // This ensures we fail fast or confirm connection immediately
