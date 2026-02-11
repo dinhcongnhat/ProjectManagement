@@ -12,15 +12,15 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['Icon.jpg', 'Logo.png', 'icons/*.png'],
+      includeAssets: ['Icon.jpg', 'Logo.png', 'icons/icon-*.png'],
       manifest: false, // We're using our own manifest.json
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg,webp,woff,woff2}'],
+        globPatterns: ['**/*.{js,css,html,ico,svg,jpg,jpeg,webp,woff,woff2}', 'icons/icon-*.png'],
         // Don't include these in precache
-        globIgnores: ['**/node_modules/**/*']
+        globIgnores: ['**/node_modules/**/*', 'icons/icon.png']
       },
       devOptions: {
         enabled: true
