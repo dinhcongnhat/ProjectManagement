@@ -736,13 +736,45 @@ const ChatPopup: React.FC = () => {
         }
     };
 
+    // Helper: wait for a DOM element to appear with polling (avoids fixed timeout issues on mobile)
+    const waitForElement = (id: string, maxWaitMs = 3000): Promise<HTMLElement | null> => {
+        return new Promise((resolve) => {
+            const existing = document.getElementById(id);
+            if (existing) return resolve(existing);
+
+            const interval = 100;
+            let elapsed = 0;
+            const timer = setInterval(() => {
+                elapsed += interval;
+                const el = document.getElementById(id);
+                if (el) {
+                    clearInterval(timer);
+                    resolve(el);
+                } else if (elapsed >= maxWaitMs) {
+                    clearInterval(timer);
+                    resolve(null);
+                }
+            }, interval);
+        });
+    };
+
+    // Helper: highlight a message element safely using data attribute instead of direct class mutation
+    const highlightMessage = (el: HTMLElement) => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.setAttribute('data-highlight', 'true');
+        el.style.transition = 'background-color 0.3s ease';
+        el.style.backgroundColor = 'rgba(191, 219, 254, 0.6)';
+        setTimeout(() => {
+            el.style.backgroundColor = '';
+            el.removeAttribute('data-highlight');
+        }, 2000);
+    };
+
     const jumpToMessage = async (messageId: number, conversationId: number) => {
         // Try to find the message in the DOM
         const el = document.getElementById(`msg-${messageId}`);
         if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            el.classList.add('bg-blue-100');
-            setTimeout(() => el.classList.remove('bg-blue-100'), 2000);
+            highlightMessage(el);
             return;
         }
 
@@ -761,19 +793,13 @@ const ChatPopup: React.FC = () => {
                     setChatWindows(prev => prev.map(w => w.id === conversationId ? { ...w, messages: newMessages } : w));
                 }
 
-                // Wait for render then scroll
-                setTimeout(() => {
-                    const el = document.getElementById(`msg-${messageId}`);
-                    if (el) {
-                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        el.classList.add('bg-blue-100');
-                        setTimeout(() => el.classList.remove('bg-blue-100'), 2000);
-                    } else {
-                        // It's possible the DOM is still updating or message is hidden.
-                        // But we've done our best.
-                        showWarning('Không thể cuộn đến tin nhắn (DOM issue)');
-                    }
-                }, 800); // Give React slightly more time to render
+                // Poll for the element instead of fixed timeout (more reliable on mobile)
+                const targetEl = await waitForElement(`msg-${messageId}`, 3000);
+                if (targetEl) {
+                    highlightMessage(targetEl);
+                } else {
+                    showWarning('Không tìm thấy tin nhắn trong danh sách');
+                }
             } else {
                 showWarning('Không tìm thấy nội dung tin nhắn cũ');
             }
@@ -2464,16 +2490,37 @@ const ChatPopup: React.FC = () => {
 
                 // Check if file is a video
                 if (isVideoFile(filename) && resolvedAttachmentUrl) {
+                    const ext = filename.split('.').pop()?.toLowerCase() || '';
+                    // Correct MIME type mapping
+                    const videoMimeMap: Record<string, string> = {
+                        'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+                        'mov': 'video/quicktime', 'avi': 'video/x-msvideo',
+                        'mkv': 'video/x-matroska', 'm4v': 'video/x-m4v', '3gp': 'video/3gpp'
+                    };
+                    const videoMime = videoMimeMap[ext] || `video/${ext}`;
                     return (
                         <div className="max-w-[300px]">
                             {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>}
                             <video
                                 controls
+                                playsInline
                                 className="rounded-lg max-w-full"
                                 style={{ maxHeight: '250px' }}
                                 preload="metadata"
+                                onError={(e) => {
+                                    // On error, replace video with download link
+                                    const container = (e.target as HTMLVideoElement).parentElement;
+                                    if (container) {
+                                        const link = document.createElement('a');
+                                        link.href = resolvedAttachmentUrl!;
+                                        link.target = '_blank';
+                                        link.className = `flex items-center gap-2 p-2.5 rounded-xl ${isOwn ? 'bg-white/10 text-white' : 'bg-gray-100 text-blue-500'}`;
+                                        link.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Tải video để xem</span>`;
+                                        (e.target as HTMLVideoElement).replaceWith(link);
+                                    }
+                                }}
                             >
-                                <source src={resolvedAttachmentUrl} type={`video/${filename.split('.').pop()?.toLowerCase()}`} />
+                                <source src={resolvedAttachmentUrl} type={videoMime} />
                                 Trình duyệt của bạn không hỗ trợ video.
                             </video>
                         </div>
@@ -3900,7 +3947,7 @@ const ChatPopup: React.FC = () => {
                                                         <div key={msg.id}
                                                             onClick={() => {
                                                                 setMobileShowInfo(false);
-                                                                setTimeout(() => jumpToMessage(msg.id, conversationId), 300);
+                                                                setTimeout(() => jumpToMessage(msg.id, conversationId), 500);
                                                             }}
                                                             className={`p-3 rounded-xl cursor-pointer border border-transparent transition-colors ${isDark ? 'bg-gray-800 active:bg-gray-700' : 'bg-gray-50 active:bg-blue-50'}`}
                                                         >
@@ -3929,7 +3976,7 @@ const ChatPopup: React.FC = () => {
                                                 <div key={msg.id}
                                                     onClick={() => {
                                                         setMobileShowInfo(false);
-                                                        setTimeout(() => jumpToMessage(msg.id, conversationId), 300);
+                                                        setTimeout(() => jumpToMessage(msg.id, conversationId), 500);
                                                     }}
                                                     className={`aspect-square relative group overflow-hidden active:opacity-80 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}
                                                 >
@@ -3955,7 +4002,7 @@ const ChatPopup: React.FC = () => {
                                                 <div key={msg.id}
                                                     onClick={() => {
                                                         setMobileShowInfo(false);
-                                                        setTimeout(() => jumpToMessage(msg.id, conversationId), 300);
+                                                        setTimeout(() => jumpToMessage(msg.id, conversationId), 500);
                                                     }}
                                                     className={`flex items-center gap-3 p-3 rounded-xl border ${isDark ? 'bg-gray-800 active:bg-gray-700 border-gray-700' : 'bg-gray-50 active:bg-gray-100 border-gray-100'}`}
                                                 >

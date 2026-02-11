@@ -13,17 +13,17 @@ const isStandalonePWA = window.matchMedia('(display-mode: standalone)').matches 
 // Register service worker for PWA
 const updateSW = registerSW({
   onNeedRefresh() {
-    if (confirm('Có phiên bản mới! Bạn có muốn cập nhật không?')) {
-      // Clear all caches before update
-      if ('caches' in window) {
-        caches.keys().then((names) => {
-          names.forEach((name) => {
-            caches.delete(name);
-          });
+    console.log('[SW] New version available, auto-updating...');
+    // Auto-update without user confirmation - clear caches and apply
+    if ('caches' in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => {
+          caches.delete(name);
         });
-      }
-      updateSW(true)
+      });
     }
+    // Auto-apply the update
+    updateSW(true);
   },
   onOfflineReady() {
     console.log('Ứng dụng đã sẵn sàng hoạt động offline')
@@ -31,11 +31,13 @@ const updateSW = registerSW({
   onRegistered(registration) {
     console.log('SW registered:', registration)
 
-    // For installed PWA, check for updates less frequently to avoid reload loop
-    if (isStandalonePWA && registration) {
+    // Check for updates periodically
+    if (registration) {
+      // For PWA: check every 2 minutes, for browser: every 5 minutes
+      const interval = isStandalonePWA ? 2 * 60 * 1000 : 5 * 60 * 1000;
       setInterval(() => {
         registration.update()
-      }, 5 * 60 * 1000) // Check every 5 minutes instead of 1 minute
+      }, interval)
     }
   },
   onRegisterError(error) {

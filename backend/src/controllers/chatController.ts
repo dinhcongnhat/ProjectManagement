@@ -1581,23 +1581,46 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
             console.log('[serveMessageAttachment] Getting file stats...');
             const fileStats = await getFileStats(message.attachment!);
             const fileSize = fileStats.size;
-            const contentType = fileStats.metaData?.['content-type'] || 'application/octet-stream';
+            let contentType = fileStats.metaData?.['content-type'] || 'application/octet-stream';
+
+            // Fallback: detect content-type from filename extension if stored as octet-stream
+            if (contentType === 'application/octet-stream' && message.attachment) {
+                const ext = message.attachment.split('.').pop()?.toLowerCase();
+                const mimeMap: Record<string, string> = {
+                    'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+                    'mov': 'video/quicktime', 'avi': 'video/x-msvideo', 'mkv': 'video/x-matroska',
+                    'm4v': 'video/x-m4v', '3gp': 'video/3gpp',
+                    'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'flac': 'audio/flac',
+                    'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+                    'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml',
+                    'pdf': 'application/pdf',
+                };
+                if (ext && mimeMap[ext]) {
+                    contentType = mimeMap[ext];
+                }
+            }
 
             // Handle Range Request (Video Streaming)
             const range = req.headers.range;
             if (range && fileSize > 0) {
+                const MAX_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB max chunk for streaming
                 const parts = range.replace(/bytes=/, "").split("-");
                 const start = parseInt(parts[0] || '0', 10);
-                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+                // If no end specified, cap to MAX_CHUNK_SIZE to enable progressive streaming
+                let end = parts[1] && parts[1].length > 0
+                    ? parseInt(parts[1], 10)
+                    : Math.min(start + MAX_CHUNK_SIZE - 1, fileSize - 1);
+                // Ensure end does not exceed file size
+                end = Math.min(end, fileSize - 1);
 
                 // Validate range
-                if (start >= fileSize || end >= fileSize) {
+                if (start >= fileSize) {
                     res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
                     return res.end();
                 }
 
                 const chunksize = (end - start) + 1;
-                console.log(`[serveMessageAttachment] Serving range ${start}-${end}/${fileSize} for ${messageId}`);
+                console.log(`[serveMessageAttachment] Serving range ${start}-${end}/${fileSize} (chunk: ${(chunksize / 1024 / 1024).toFixed(1)}MB) for ${messageId}`);
 
                 const fileStream = await getPartialFileStream(message.attachment!, start, end);
 

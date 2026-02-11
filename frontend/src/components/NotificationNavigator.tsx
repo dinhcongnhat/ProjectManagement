@@ -40,6 +40,14 @@ const NotificationNavigator = () => {
                 navigate(`${prefix}/projects/${detail.projectId}?tab=attachments`);
             } else if (detail.type === 'result' && detail.projectId) {
                 navigate(`${prefix}/projects/${detail.projectId}?tab=results`);
+            } else if (detail.type === 'activity') {
+                // Kanban and other activity notifications → kanban page
+                navigate(`${prefix}/kanban`);
+            } else if (detail.type === 'mention' && detail.projectId) {
+                navigate(`${prefix}/projects/${detail.projectId}?tab=discussion`);
+            } else if (detail.type === 'chat') {
+                // Chat notifications → home (chat is a popup)
+                navigate(`${prefix}/`);
             }
         };
 
@@ -86,6 +94,12 @@ const NotificationNavigator = () => {
                 navigate(`${prefix}/projects/${projectId}?tab=attachments`, { replace: true });
             } else if (notificationType === 'result' && projectId) {
                 navigate(`${prefix}/projects/${projectId}?tab=results`, { replace: true });
+            } else if (notificationType === 'activity') {
+                // Kanban and other activity notifications → kanban page
+                navigate(`${prefix}/kanban`, { replace: true });
+            } else if (notificationType === 'chat') {
+                // Chat notifications → home
+                navigate(`${prefix}/`, { replace: true });
             }
         }, 300);
     }, [user, searchParams]);

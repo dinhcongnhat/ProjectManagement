@@ -59,7 +59,7 @@ interface Message {
 export default function CompanyChat() {
     const { user, token } = useAuth();
     const { socketRef, connected } = useWebSocket(token);
-    
+
     // State
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -69,10 +69,10 @@ export default function CompanyChat() {
     const [loadingMessages, setLoadingMessages] = useState(false);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [typingUsers, setTypingUsers] = useState<{[key: number]: string}>({});
+    const [typingUsers, setTypingUsers] = useState<{ [key: number]: string }>({});
     const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768);
     const [showConversationList, setShowConversationList] = useState(true);
-    
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -146,7 +146,7 @@ export default function CompanyChat() {
                 setMessages(prev => [...prev, data.message]);
                 scrollToBottom();
             }
-            
+
             // Update conversation list
             setConversations(prev => {
                 const updated = prev.map(conv => {
@@ -154,15 +154,15 @@ export default function CompanyChat() {
                         return {
                             ...conv,
                             lastMessage: data.message,
-                            unreadCount: selectedConversation?.id === data.conversationId 
-                                ? 0 
+                            unreadCount: selectedConversation?.id === data.conversationId
+                                ? 0
                                 : conv.unreadCount + 1
                         };
                     }
                     return conv;
                 });
                 // Sort by latest message
-                return updated.sort((a, b) => 
+                return updated.sort((a, b) =>
                     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
                 );
             });
@@ -208,7 +208,7 @@ export default function CompanyChat() {
     const handleTyping = () => {
         const socket = socketRef.current;
         if (!socket || !selectedConversation) return;
-        
+
         socket.emit('chat_typing', {
             conversationId: selectedConversation.id,
             userName: user?.name || 'Unknown'
@@ -245,7 +245,7 @@ export default function CompanyChat() {
             }
 
             setInputMessage('');
-            
+
             // Stop typing
             if (socket) {
                 socket.emit('chat_stop_typing', {
@@ -291,7 +291,7 @@ export default function CompanyChat() {
             setShowConversationList(false);
         }
         // Reset unread count
-        setConversations(prev => prev.map(c => 
+        setConversations(prev => prev.map(c =>
             c.id === conv.id ? { ...c, unreadCount: 0 } : c
         ));
     };
@@ -301,7 +301,7 @@ export default function CompanyChat() {
         const date = new Date(dateString);
         const now = new Date();
         const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays === 0) {
             return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
         } else if (diffDays === 1) {
@@ -325,25 +325,25 @@ export default function CompanyChat() {
     });
 
     return (
-        <div className="h-[calc(100vh-64px)] flex bg-gray-50">
+        <div style={{ height: 'calc(100dvh - 56px - env(safe-area-inset-top, 0px))' }} className="flex bg-gray-50 md:h-[calc(100dvh-64px)]">
             {/* Conversation List */}
             <div className={`
-                ${isMobileView ? 'absolute inset-0 z-10' : 'w-80 border-r'}
+                ${isMobileView ? 'fixed inset-0 z-[45] pt-[calc(56px+env(safe-area-inset-top,0px))] md:pt-[64px]' : 'w-80 border-r'}
                 ${isMobileView && !showConversationList ? 'hidden' : ''}
                 bg-white flex flex-col
             `}>
                 {/* Header */}
-                <div className="p-4 border-b">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-bold text-gray-800">Tin nhắn</h2>
+                <div className="p-2 md:p-4 border-b">
+                    <div className="flex items-center justify-between mb-2 md:mb-4">
+                        <h2 className="text-lg md:text-xl font-bold text-gray-800">Tin nhắn</h2>
                         <button
                             onClick={() => setShowCreateModal(true)}
-                            className="p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
+                            className="p-1.5 md:p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors"
                         >
-                            <Plus className="h-5 w-5" />
+                            <Plus className="h-4 w-4 md:h-5 md:w-5" />
                         </button>
                     </div>
-                    
+
                     {/* Search */}
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -412,9 +412,9 @@ export default function CompanyChat() {
                                     <p className="text-sm text-gray-500 truncate">
                                         {conv.lastMessage ? (
                                             conv.lastMessage.messageType === 'IMAGE' ? '📷 Hình ảnh' :
-                                            conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
-                                            conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
-                                            conv.lastMessage.content
+                                                conv.lastMessage.messageType === 'FILE' ? '📎 Tệp đính kèm' :
+                                                    conv.lastMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại' :
+                                                        conv.lastMessage.content
                                         ) : 'Chưa có tin nhắn'}
                                     </p>
                                 </div>
@@ -432,7 +432,7 @@ export default function CompanyChat() {
                 {selectedConversation ? (
                     <>
                         {/* Chat Header */}
-                        <div className="p-4 border-b flex items-center gap-3">
+                        <div className="p-2 md:p-4 border-b flex items-center gap-2 md:gap-3">
                             {isMobileView && (
                                 <button
                                     onClick={() => setShowConversationList(true)}
@@ -441,7 +441,7 @@ export default function CompanyChat() {
                                     <ArrowLeft className="h-6 w-6" />
                                 </button>
                             )}
-                            
+
                             {(selectedConversation.avatarUrl || selectedConversation.displayAvatar) ? (
                                 <img
                                     src={resolveUrl(selectedConversation.avatarUrl || selectedConversation.displayAvatar) || ''}
@@ -485,9 +485,9 @@ export default function CompanyChat() {
                             ) : (
                                 messages.map((msg, idx) => {
                                     const isMe = msg.senderId === user?.id;
-                                    const showAvatar = idx === 0 || 
+                                    const showAvatar = idx === 0 ||
                                         messages[idx - 1].senderId !== msg.senderId;
-                                    
+
                                     return (
                                         <div
                                             key={msg.id}
@@ -515,11 +515,11 @@ export default function CompanyChat() {
                                                             {msg.sender.name}
                                                         </p>
                                                     )}
-                                                    
+
                                                     <div className={`
                                                         px-4 py-2 rounded-2xl
-                                                        ${isMe 
-                                                            ? 'bg-blue-500 text-white' 
+                                                        ${isMe
+                                                            ? 'bg-blue-500 text-white'
                                                             : 'bg-gray-100 text-gray-800'
                                                         }
                                                     `}>
@@ -529,7 +529,7 @@ export default function CompanyChat() {
                                                                 {msg.content}
                                                             </p>
                                                         )}
-                                                        
+
                                                         {/* Image */}
                                                         {msg.messageType === 'IMAGE' && msg.attachmentUrl && (
                                                             <img
@@ -539,20 +539,53 @@ export default function CompanyChat() {
                                                                 onClick={() => window.open(resolveUrl(msg.attachmentUrl)!, '_blank')}
                                                             />
                                                         )}
-                                                        
-                                                        {/* File */}
-                                                        {msg.messageType === 'FILE' && msg.attachmentUrl && (
-                                                            <a
-                                                                href={resolveUrl(msg.attachmentUrl) || ''}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className={`flex items-center gap-2 ${isMe ? 'text-white' : 'text-blue-500'}`}
-                                                            >
-                                                                <Paperclip className="h-4 w-4" />
-                                                                <span className="underline">Tải xuống tệp</span>
-                                                            </a>
-                                                        )}
-                                                        
+
+                                                        {/* Video file detection */}
+                                                        {(msg.messageType === 'FILE' || msg.messageType === 'TEXT_WITH_FILE') && msg.attachmentUrl && (() => {
+                                                            const fname = msg.attachment?.split('/').pop() || msg.attachmentUrl?.split('/').pop() || '';
+                                                            const ext = fname.split('.').pop()?.toLowerCase() || '';
+                                                            const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v', '3gp'];
+                                                            if (videoExts.includes(ext)) {
+                                                                const mimeMap: Record<string, string> = {
+                                                                    'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+                                                                    'mov': 'video/quicktime', 'avi': 'video/x-msvideo',
+                                                                    'mkv': 'video/x-matroska', 'm4v': 'video/x-m4v', '3gp': 'video/3gpp'
+                                                                };
+                                                                return (
+                                                                    <video
+                                                                        controls
+                                                                        playsInline
+                                                                        className="max-w-full rounded-lg"
+                                                                        style={{ maxHeight: '300px' }}
+                                                                        preload="metadata"
+                                                                    >
+                                                                        <source src={resolveUrl(msg.attachmentUrl) || ''} type={mimeMap[ext] || `video/${ext}`} />
+                                                                        Trình duyệt không hỗ trợ video.
+                                                                    </video>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
+
+                                                        {/* File (non-video) */}
+                                                        {msg.messageType === 'FILE' && msg.attachmentUrl && (() => {
+                                                            const fname = msg.attachment?.split('/').pop() || msg.attachmentUrl?.split('/').pop() || '';
+                                                            const ext = fname.split('.').pop()?.toLowerCase() || '';
+                                                            const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v', '3gp'];
+                                                            if (videoExts.includes(ext)) return null; // Already rendered as video above
+                                                            return (
+                                                                <a
+                                                                    href={resolveUrl(msg.attachmentUrl) || ''}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className={`flex items-center gap-2 ${isMe ? 'text-white' : 'text-blue-500'}`}
+                                                                >
+                                                                    <Paperclip className="h-4 w-4" />
+                                                                    <span className="underline">Tải xuống tệp</span>
+                                                                </a>
+                                                            );
+                                                        })()}
+
                                                         {/* Voice */}
                                                         {msg.messageType === 'VOICE' && msg.attachmentUrl && (
                                                             <audio controls className="max-w-full">
@@ -560,7 +593,7 @@ export default function CompanyChat() {
                                                             </audio>
                                                         )}
                                                     </div>
-                                                    
+
                                                     <p className={`text-xs text-gray-400 mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
                                                         {formatTime(msg.createdAt)}
                                                     </p>
@@ -570,19 +603,19 @@ export default function CompanyChat() {
                                     );
                                 })
                             )}
-                            
+
                             {/* Typing indicator */}
                             {typingText && (
                                 <div className="text-sm text-gray-500 italic">
                                     {typingText}
                                 </div>
                             )}
-                            
+
                             <div ref={messagesEndRef} />
                         </div>
 
                         {/* Input */}
-                        <div className="p-4 border-t">
+                        <div className="p-2 md:p-4 border-t" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))' }}>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="file"
@@ -595,14 +628,14 @@ export default function CompanyChat() {
                                         }
                                     }}
                                 />
-                                
+
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
                                     className="p-2 text-gray-500 hover:bg-gray-100 rounded-full"
                                 >
                                     <Paperclip className="h-5 w-5" />
                                 </button>
-                                
+
                                 <button
                                     onClick={() => {
                                         const input = document.createElement('input');
@@ -848,7 +881,7 @@ function CreateConversationModal({ onClose, onCreated }: CreateConversationModal
                                                 <UserCircle className="h-6 w-6 text-gray-500" />
                                             </div>
                                         )}
-                                        
+
                                         <div className="flex-1">
                                             <p className="font-medium">{u.name}</p>
                                             {u.position && (
@@ -873,7 +906,7 @@ function CreateConversationModal({ onClose, onCreated }: CreateConversationModal
                         disabled={selectedUsers.length === 0 || loading}
                         className="w-full py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? 'Đang tạo...' : 
+                        {loading ? 'Đang tạo...' :
                             selectedUsers.length > 1 ? 'Tạo nhóm chat' : 'Bắt đầu trò chuyện'
                         }
                     </button>

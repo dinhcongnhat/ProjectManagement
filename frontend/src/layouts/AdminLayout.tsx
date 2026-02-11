@@ -78,7 +78,7 @@ const HeaderBar = styled.header`
 const MainContentStyled = styled.main`
   flex: 1; overflow-y: auto; overflow-x: hidden;
   padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   @media (min-width: 768px) { padding: 24px; padding-bottom: 24px; }
   @media (min-width: 1024px) { padding: 32px; padding-bottom: 32px; }
 `;

@@ -137,6 +137,9 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             include: {
                 parent: { select: { id: true, name: true, code: true } },
                 children: { select: { id: true, name: true, code: true, progress: true, status: true } },
+                manager: { select: { id: true, name: true } },
+                implementers: { select: { id: true, name: true } },
+                followers: { select: { id: true, name: true } },
                 cooperators: { select: { id: true, name: true } },
                 workflow: true,
             },
@@ -155,7 +158,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             }
 
             // Helper function to send notification and email
-            const notifyAndEmail = async (userId: number, role: 'manager' | 'implementer' | 'follower') => {
+            const notifyAndEmail = async (userId: number, role: 'manager' | 'implementer' | 'follower' | 'cooperator') => {
                 // Get user info for email
                 const user = await prisma.user.findUnique({
                     where: { id: userId },
@@ -210,6 +213,15 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                     }
                 }
             }
+
+            // Notify cooperators
+            if (Array.isArray(cooperatorIds)) {
+                for (const coopId of cooperatorIds) {
+                    if (Number(coopId) !== req.user?.id) {
+                        await notifyAndEmail(Number(coopId), 'cooperator');
+                    }
+                }
+            }
         } catch (pushError) {
             console.error('[createProject] Notification/Email error:', pushError);
         }
@@ -225,7 +237,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                         if (!board.members.some(m => m.userId === uid)) {
                             await prisma.kanbanBoardMember.create({
                                 data: { boardId: board.id, userId: uid, role: 'MEMBER' }
-                            }).catch(() => {});
+                            }).catch(() => { });
                         }
                     }
                     // Add followers as board members too
@@ -235,7 +247,18 @@ export const createProject = async (req: AuthRequest, res: Response) => {
                             if (!board.members.some(m => m.userId === uid)) {
                                 await prisma.kanbanBoardMember.create({
                                     data: { boardId: board.id, userId: uid, role: 'ADMIN' }
-                                }).catch(() => {});
+                                }).catch(() => { });
+                            }
+                        }
+                    }
+                    // Add cooperators as board members too
+                    if (Array.isArray(cooperatorIds)) {
+                        for (const cId of cooperatorIds) {
+                            const uid = Number(cId);
+                            if (!board.members.some(m => m.userId === uid)) {
+                                await prisma.kanbanBoardMember.create({
+                                    data: { boardId: board.id, userId: uid, role: 'MEMBER' }
+                                }).catch(() => { });
                             }
                         }
                     }

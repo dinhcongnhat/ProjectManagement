@@ -4,10 +4,14 @@ import { RefreshCw, Download } from 'lucide-react';
 // Store the version at load time
 let INITIAL_VERSION: string | null = null;
 
+const AUTO_UPDATE_DELAY = 8; // seconds before auto-update
+
 const UpdateChecker = () => {
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [updating, setUpdating] = useState(false);
+    const [countdown, setCountdown] = useState(AUTO_UPDATE_DELAY);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const hasCheckedRef = useRef(false);
 
     const checkVersion = useCallback(async () => {
@@ -76,11 +80,40 @@ const UpdateChecker = () => {
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, [checkVersion, updateAvailable]);
 
+    // Auto-update countdown when update is detected
+    useEffect(() => {
+        if (!updateAvailable || updating) return;
+
+        setCountdown(AUTO_UPDATE_DELAY);
+        countdownRef.current = setInterval(() => {
+            setCountdown(prev => {
+                if (prev <= 1) {
+                    // Time's up, auto-update
+                    if (countdownRef.current) clearInterval(countdownRef.current);
+                    handleUpdate();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => {
+            if (countdownRef.current) clearInterval(countdownRef.current);
+        };
+    }, [updateAvailable, updating]);
+
     const handleUpdate = async () => {
         setUpdating(true);
 
         try {
-            // 1. Unregister all service workers
+            // 1. Tell SW to clear icon cache before unregistering
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_ICON_CACHE' });
+                // Small delay to let the SW process the message
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+
+            // 2. Unregister all service workers
             if ('serviceWorker' in navigator) {
                 const registrations = await navigator.serviceWorker.getRegistrations();
                 for (const registration of registrations) {
@@ -89,19 +122,19 @@ const UpdateChecker = () => {
                 console.log('[UpdateChecker] Service workers unregistered');
             }
 
-            // 2. Clear all caches
+            // 3. Clear all caches (including icon caches)
             if ('caches' in window) {
                 const cacheNames = await caches.keys();
                 for (const cacheName of cacheNames) {
                     await caches.delete(cacheName);
                 }
-                console.log('[UpdateChecker] Caches cleared');
+                console.log('[UpdateChecker] All caches cleared (including icon caches)');
             }
 
-            // 3. Clear localStorage version markers
+            // 4. Clear localStorage version markers
             localStorage.removeItem('app_version');
 
-            // 4. Hard reload - works on both desktop and mobile
+            // 5. Hard reload - works on both desktop and mobile
             // Using location.replace with cache-busting to force fresh load
             const url = new URL(window.location.href);
             url.searchParams.set('_updated', Date.now().toString());
@@ -128,6 +161,9 @@ const UpdateChecker = () => {
                     </div>
                     <h2 className="text-xl font-bold text-white">Cập nhật phần mềm</h2>
                     <p className="text-blue-100 text-sm mt-1">Phiên bản mới đã sẵn sàng</p>
+                    {!updating && countdown > 0 && (
+                        <p className="text-blue-200 text-xs mt-1">Tự động cập nhật sau {countdown}s</p>
+                    )}
                 </div>
 
                 {/* Body */}
@@ -158,7 +194,10 @@ const UpdateChecker = () => {
 
                     {/* Dismiss - subtle */}
                     <button
-                        onClick={() => setUpdateAvailable(false)}
+                        onClick={() => {
+                            if (countdownRef.current) clearInterval(countdownRef.current);
+                            setUpdateAvailable(false);
+                        }}
                         className="w-full mt-2 py-2 text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                     >
                         Để sau

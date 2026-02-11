@@ -114,13 +114,23 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
             navigate(`${prefix}/projects/${notification.projectId}?tab=discussion`);
             onClose();
         } else if (type === 'MENTION' && !notification.projectId) {
+            // Chat mention → go to home (chat is a popup accessible from there)
+            navigate(`${prefix}/`);
             onClose();
         } else if ((type === 'TASK_ASSIGNED' || type === 'TASK_REMINDER') && notification.projectId) {
             // Task notifications with project → go to project tasks tab
             navigate(`${prefix}/projects/${notification.projectId}?tab=tasks`);
             onClose();
+        } else if ((type === 'TASK_ASSIGNED' || type === 'TASK_REMINDER') && !notification.projectId) {
+            // Personal task notifications → go to my-tasks
+            navigate(`${prefix}/my-tasks`);
+            onClose();
         } else if ((type === 'TASK_DEADLINE_OVERDUE' || type === 'TASK_DEADLINE_UPCOMING') && notification.projectId) {
             navigate(`${prefix}/projects/${notification.projectId}?tab=tasks`);
+            onClose();
+        } else if ((type === 'TASK_DEADLINE_OVERDUE' || type === 'TASK_DEADLINE_UPCOMING') && !notification.projectId) {
+            // Personal task deadline → my-tasks
+            navigate(`${prefix}/my-tasks`);
             onClose();
         } else if (type === 'RESULT_REPORT_UPLOAD' && notification.projectId) {
             navigate(`${prefix}/projects/${notification.projectId}?tab=results`);
@@ -137,12 +147,31 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
         } else if ((type === 'DEADLINE' || type === 'DEADLINE_OVERDUE' || type === 'DEADLINE_UPCOMING') && notification.projectId) {
             navigate(`${prefix}/projects/${notification.projectId}?tab=overview`);
             onClose();
+        } else if (
+            type === 'KANBAN_CARD_CREATED' ||
+            type === 'KANBAN_INVITE' ||
+            type === 'KANBAN_DAILY_REMINDER' ||
+            type === 'KANBAN_CARD_MOVED' ||
+            type === 'KANBAN_CARD_APPROVED' ||
+            type === 'KANBAN_COMMENT' ||
+            type === 'KANBAN_CHECKLIST' ||
+            type === 'KANBAN_CHECKLIST_TOGGLE' ||
+            type === 'KANBAN_ATTACHMENT'
+        ) {
+            // All Kanban notifications → go to kanban board page
+            navigate(`${prefix}/kanban`);
+            onClose();
         } else if (notification.taskId && !notification.projectId) {
             // Task notification without project → go to my-tasks
             navigate(`${prefix}/my-tasks`);
             onClose();
         } else if (notification.projectId) {
+            // Generic project notification fallback
             navigate(`${prefix}/projects/${notification.projectId}`);
+            onClose();
+        } else {
+            // Fallback: navigate to home
+            navigate(`${prefix}/`);
             onClose();
         }
     };
@@ -172,6 +201,21 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
                 return <span className="text-lg">📎</span>;
             case 'PROJECT_SUBMITTED':
                 return <span className="text-lg">✅</span>;
+            case 'KANBAN_CARD_CREATED':
+            case 'KANBAN_CARD_MOVED':
+                return <span className="text-lg">📋</span>;
+            case 'KANBAN_INVITE':
+                return <span className="text-lg">👥</span>;
+            case 'KANBAN_DAILY_REMINDER':
+                return <span className="text-lg">📋</span>;
+            case 'KANBAN_CARD_APPROVED':
+            case 'KANBAN_CHECKLIST':
+            case 'KANBAN_CHECKLIST_TOGGLE':
+                return <span className="text-lg">✅</span>;
+            case 'KANBAN_COMMENT':
+                return <MessageSquare size={18} className="text-teal-500" />;
+            case 'KANBAN_ATTACHMENT':
+                return <span className="text-lg">📎</span>;
             default:
                 return <Bell size={18} className="text-gray-500" />;
         }
