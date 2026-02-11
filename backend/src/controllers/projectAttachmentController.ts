@@ -639,7 +639,7 @@ export const getAttachmentPresignedUrl = async (req: AuthRequest, res: Response)
         }
 
         // Use backend download endpoint instead of presigned URL (MinIO might be internal)
-        const url = `${process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api'}/projects/attachments/${attachmentId}/download`;
+        const url = `${process.env.BACKEND_URL || 'http://localhost:3001/api'}/projects/attachments/${attachmentId}/download`;
         res.json({ url });
     } catch (error) {
         console.error('Error getting presigned URL:', error);

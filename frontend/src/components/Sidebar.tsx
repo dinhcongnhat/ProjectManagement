@@ -166,7 +166,7 @@ const SidebarContent = ({
                 <motion.img
                     src="/Logo.png"
                     alt="Logo"
-                    className="h-14 lg:h-16 w-auto object-contain"
+                    className="h-20 lg:h-24 w-auto object-contain"
                     initial={animate ? { scale: 0.8, opacity: 0 } : false}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.1 }}

@@ -17,7 +17,7 @@ console.log('[OnlyOffice] JWT Secret loaded:', ONLYOFFICE_JWT_SECRET ? `${ONLYOF
 console.log('[OnlyOffice] Using env ONLYOFFICE_JWT_SECRET:', !!process.env.ONLYOFFICE_JWT_SECRET);
 
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001/api';
 
 // Function to sign OnlyOffice config with JWT
 // OnlyOffice Document Server requires this if JWT is enabled
@@ -958,7 +958,7 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
         }
 
         const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-        const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
+        const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001/api';
 
         // Find the message with attachment
         const message = await prisma.message.findUnique({

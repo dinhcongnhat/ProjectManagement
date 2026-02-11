@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API_URL } from '../config/api';
 
 interface User {
     id: number;
@@ -31,7 +32,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
         }
 
-        const apiUrl = import.meta.env.VITE_API_URL || 'https://jtscapi.duckdns.org/api';
+        const apiUrl = API_URL;
 
         for (let attempt = 0; attempt < retries; attempt++) {
             try {

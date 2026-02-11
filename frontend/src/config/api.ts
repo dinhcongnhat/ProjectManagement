@@ -2,13 +2,6 @@
 // Backend: ai.jtsc.io.vn (port 3001)
 // Frontend: jtsc.io.vn (port 3000)
 
-const isProduction = () => {
-    return typeof window !== 'undefined' &&
-        (window.location.hostname === 'jtsc.io.vn' ||
-            window.location.hostname.endsWith('.jtsc.io.vn') ||
-            window.location.hostname === 'jtscapi.duckdns.org');
-};
-
 const isMobileApp = () => {
     // Check if running as PWA or mobile browser
     return typeof window !== 'undefined' && (
@@ -19,20 +12,10 @@ const isMobileApp = () => {
 };
 
 const getDefaultApiUrl = () => {
-    // Production - always use domain backend (ignore env vars for production)
-    if (isProduction()) {
-        return 'https://jtscapi.duckdns.org/api';
-    }
-    // Development mode - use env or IP default
     return import.meta.env.VITE_API_URL || 'https://jtscapi.duckdns.org/api';
 };
 
 const getDefaultWsUrl = () => {
-    // Production - always use domain backend
-    if (isProduction()) {
-        return 'wss://jtscapi.duckdns.org';
-    }
-    // Development mode - use env or IP default
     return import.meta.env.VITE_WS_URL || 'wss://jtscapi.duckdns.org';
 };
 

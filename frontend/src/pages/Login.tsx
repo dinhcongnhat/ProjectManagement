@@ -166,7 +166,7 @@ const Login = () => {
                     <div className="p-6 lg:p-8">
                         <div className="text-center mb-6 lg:mb-8">
                             <div className="flex justify-center mb-4">
-                                <img src="/Logo.png" alt="Logo" className="h-16 lg:h-20 w-auto" />
+                                <img src="/Logo.png" alt="Logo" className="h-24 lg:h-28 w-auto" />
                             </div>
                             <h2 className={`text-2xl lg:text-3xl font-bold bg-clip-text text-transparent mb-2 tracking-tight ${isDark
                                 ? 'bg-gradient-to-r from-orange-400 to-pink-500'

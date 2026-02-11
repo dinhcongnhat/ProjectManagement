@@ -1,21 +1,19 @@
 // Custom Service Worker for PWA Real-time Support
-// Version: 1.0.137
+// Version: 1.0.149
 
-const CACHE_NAME = 'pwa-cache-1770799670223';
+const CACHE_NAME = 'pwa-cache-1770804774967';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/Logo.png',
   '/Icon.jpg',
-  '/icons/icon-192x192.png',
-  '/icons/icon-72x72.png',
 ];
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing...');
   self.skipWaiting();
-  
+
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[SW] Caching static assets');
@@ -24,7 +22,7 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event - clean old caches
+// Activate event - clean old caches and force refresh icons
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activating...');
   event.waitUntil(
@@ -36,7 +34,29 @@ self.addEventListener('activate', (event) => {
         return Promise.all(
           cacheNames
             .filter((name) => name !== CACHE_NAME)
-            .map((name) => caches.delete(name))
+            .map((name) => {
+              console.log('[SW] Deleting old cache:', name);
+              return caches.delete(name);
+            })
+        );
+      }),
+      // Force re-cache fresh icons
+      caches.open(CACHE_NAME).then((cache) => {
+        const iconUrls = [
+          '/icons/icon-192x192.png?v=20260211',
+          '/icons/icon-72x72.png?v=20260211',
+          '/icons/icon-512x512.png?v=20260211',
+          '/icons/icon-144x144.png?v=20260211',
+          '/icons/icon-96x96.png?v=20260211',
+        ];
+        return Promise.all(
+          iconUrls.map((url) =>
+            fetch(url, { cache: 'no-store' })
+              .then((response) => {
+                if (response.ok) return cache.put(url, response);
+              })
+              .catch(() => { })
+          )
         );
       })
     ])
@@ -46,7 +66,7 @@ self.addEventListener('activate', (event) => {
 // Fetch event - handle requests
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  
+
   // CRITICAL: Never cache WebSocket, Socket.io, API requests, or avatars
   // These need to go directly to network for real-time functionality
   if (
@@ -54,12 +74,29 @@ self.addEventListener('fetch', (event) => {
     url.pathname.startsWith('/api') ||
     url.pathname.includes('/avatar') ||
     url.pathname.includes('/version.json') ||
+    url.pathname.includes('/manifest.json') ||
     url.protocol === 'ws:' ||
     url.protocol === 'wss:' ||
     event.request.url.includes('socket.io') ||
     event.request.headers.get('upgrade') === 'websocket'
   ) {
     // Don't intercept - let it pass through to network
+    return;
+  }
+
+  // Icons: network-first to ensure fresh icons after updates
+  if (url.pathname.startsWith('/icons/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 
@@ -93,11 +130,11 @@ self.addEventListener('fetch', (event) => {
               cache.put(event.request, response);
             });
           }
-        }).catch(() => {});
-        
+        }).catch(() => { });
+
         return cachedResponse;
       }
-      
+
       return fetch(event.request).then((response) => {
         // Only cache successful responses
         if (response.ok && event.request.method === 'GET') {
@@ -115,11 +152,11 @@ self.addEventListener('fetch', (event) => {
 // Message event - handle messages from main thread
 self.addEventListener('message', (event) => {
   console.log('[SW] Message received:', event.data);
-  
+
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-  
+
   if (event.data && event.data.type === 'GET_VERSION') {
     event.ports[0].postMessage({ version: '1.0.3' });
   }
@@ -128,16 +165,16 @@ self.addEventListener('message', (event) => {
 // Push notification support
 self.addEventListener('push', (event) => {
   console.log('[SW] Push received:', event);
-  
-  let data = { 
-    title: 'Thông báo mới', 
+
+  let data = {
+    title: 'Thông báo mới',
     body: 'Bạn có thông báo mới',
     icon: '/icons/icon-192x192.png',
     badge: '/icons/icon-72x72.png',
     vibrate: [200, 100, 200, 100, 200],
     data: {}
   };
-  
+
   if (event.data) {
     try {
       const pushData = event.data.json();
@@ -148,7 +185,7 @@ self.addEventListener('push', (event) => {
       data.body = event.data.text();
     }
   }
-  
+
   const options = {
     body: data.body,
     icon: data.icon || '/icons/icon-192x192.png',
@@ -166,9 +203,9 @@ self.addEventListener('push', (event) => {
     // Ensure notification shows even when app is in foreground
     timestamp: Date.now()
   };
-  
+
   console.log('[SW] Showing notification with options:', options);
-  
+
   event.waitUntil(
     self.registration.showNotification(data.title, options)
       .then(() => console.log('[SW] Notification shown successfully'))
@@ -181,17 +218,17 @@ self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification clicked:', event);
   console.log('[SW] Action:', event.action);
   console.log('[SW] Notification data:', event.notification.data);
-  
+
   event.notification.close();
-  
+
   const data = event.notification.data || {};
-  
+
   // Handle action buttons first
   if (event.action === 'dismiss') {
     console.log('[SW] Dismiss action clicked');
     return; // Just close notification, don't open app
   }
-  
+
   // Build a fallback URL for when no client window is open
   // The app will handle role-based routing on load
   let fallbackUrl = '/';
@@ -216,18 +253,18 @@ self.addEventListener('notificationclick', (event) => {
   } else if (data.type === 'project' && data.projectId) {
     fallbackUrl = `/?notificationType=project&projectId=${data.projectId}`;
   }
-  
+
   console.log('[SW] Fallback URL:', fallbackUrl);
-  
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
         console.log('[SW] Found', clientList.length, 'client(s)');
-        
+
         // Try to find an existing window and focus it
         for (const client of clientList) {
           console.log('[SW] Checking client:', client.url);
-          
+
           if ('focus' in client) {
             // Send message to the client to navigate/handle the notification
             client.postMessage({
@@ -239,7 +276,7 @@ self.addEventListener('notificationclick', (event) => {
             return client.focus();
           }
         }
-        
+
         // No window found, open new one with query params
         // The app will read these params on mount and navigate accordingly
         console.log('[SW] Opening new window:', fallbackUrl);
@@ -254,7 +291,7 @@ self.addEventListener('notificationclick', (event) => {
 // Background sync support
 self.addEventListener('sync', (event) => {
   console.log('[SW] Background sync:', event.tag);
-  
+
   if (event.tag === 'send-messages') {
     event.waitUntil(
       // Handle queued messages when back online
@@ -272,7 +309,7 @@ async function sendQueuedMessages() {
 // Periodic background sync (if supported)
 self.addEventListener('periodicsync', (event) => {
   console.log('[SW] Periodic sync:', event.tag);
-  
+
   if (event.tag === 'check-messages') {
     event.waitUntil(checkForNewMessages());
   }
