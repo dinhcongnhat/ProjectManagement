@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import * as fs from 'fs';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
-import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
+import { uploadFile, getPresignedUrl, normalizeVietnameseFilename, deleteFile } from '../services/minioService.js';
 import { getIO } from '../index.js';
 import { notifyNewChatMessage, notifyMention } from '../services/pushNotificationService.js';
 
@@ -410,6 +410,15 @@ export const getMessages = async (req: AuthRequest, res: Response) => {
                             select: { id: true, name: true }
                         }
                     }
+                },
+                replyTo: {
+                    select: {
+                        id: true,
+                        content: true,
+                        messageType: true,
+                        attachment: true,
+                        sender: { select: { id: true, name: true } }
+                    }
                 }
             },
             orderBy: { createdAt: 'desc' },
@@ -504,6 +513,18 @@ export const getMessageContext = async (req: AuthRequest, res: Response) => {
 
         const halfLimit = Math.floor(limit / 2);
 
+        const replyToInclude = {
+            replyTo: {
+                select: {
+                    id: true,
+                    content: true,
+                    messageType: true,
+                    attachment: true,
+                    sender: { select: { id: true, name: true } }
+                }
+            }
+        };
+
         const newerMessages = await (prisma.chatMessage as any).findMany({
             where: {
                 conversationId: Number(id),
@@ -511,7 +532,8 @@ export const getMessageContext = async (req: AuthRequest, res: Response) => {
             },
             include: {
                 sender: { select: { id: true, name: true, avatar: true } },
-                reactions: { include: { user: { select: { id: true, name: true } } } }
+                reactions: { include: { user: { select: { id: true, name: true } } } },
+                ...replyToInclude
             },
             orderBy: { id: 'asc' },
             take: halfLimit + 1 // +1 because 'gte' includes the target message
@@ -524,7 +546,8 @@ export const getMessageContext = async (req: AuthRequest, res: Response) => {
             },
             include: {
                 sender: { select: { id: true, name: true, avatar: true } },
-                reactions: { include: { user: { select: { id: true, name: true } } } }
+                reactions: { include: { user: { select: { id: true, name: true } } } },
+                ...replyToInclude
             },
             orderBy: { id: 'desc' },
             take: limit - newerMessages.length + 1 // Take remaining slots
@@ -576,7 +599,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'Request body is missing' });
         }
 
-        const { content, messageType, attachment } = req.body;
+        const { content, messageType, attachment, replyToId } = req.body;
 
         if ((!messageType || messageType === 'TEXT') && !content?.trim()) {
             console.log('sendMessage - Empty content. Body received:', req.body);
@@ -607,11 +630,21 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                 messageType: (messageType as any) || 'TEXT',
                 attachment: attachment || null,
                 conversationId: Number(id),
-                senderId: userId
+                senderId: userId,
+                ...(replyToId ? { replyToId: Number(replyToId) } : {})
             },
             include: {
                 sender: {
                     select: { id: true, name: true, avatar: true }
+                },
+                replyTo: {
+                    select: {
+                        id: true,
+                        content: true,
+                        messageType: true,
+                        attachment: true,
+                        sender: { select: { id: true, name: true } }
+                    }
                 }
             }
         });
@@ -650,31 +683,10 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         });
 
         if (conversationForEmit) {
-            // Get the set of socket IDs in the conversation room to avoid double-sending
-            const conversationRoom = `conversation:${id}`;
-            const socketsInRoom = await io.in(conversationRoom).fetchSockets();
-            const userIdsInRoom = new Set<number>();
-
-            // Identify which users are already in the conversation room
-            for (const socket of socketsInRoom) {
-                const socketUserId = (socket as any).data?.userId;
-                if (socketUserId) {
-                    userIdsInRoom.add(socketUserId);
-                }
-            }
-
-            // Emit to conversation room (for users who have the chat open)
-            io.to(conversationRoom).emit('chat:new_message', {
-                conversationId: Number(id),
-                message: messageWithUrls
-            });
-
-            // Emit to user rooms ONLY for members NOT in the conversation room
-            // This prevents duplicate messages for users who have the chat open
+            // Emit to each member's personal room (except sender)
+            // This avoids the dual-emit (room + user) pattern that caused double messages in groups
             conversationForEmit.members.forEach(member => {
-                // Don't send to sender (they already have the message via API response)
-                // Don't send to users already in the conversation room (they got it above)
-                if (member.userId !== userId && !userIdsInRoom.has(member.userId)) {
+                if (member.userId !== userId) {
                     io.to(`user:${member.userId}`).emit('chat:new_message', {
                         conversationId: Number(id),
                         message: messageWithUrls
@@ -856,23 +868,9 @@ export const sendFileMessage = async (req: AuthRequest, res: Response) => {
         });
 
         if (conversationForEmit) {
-            const conversationRoom = `conversation:${id}`;
-            const socketsInRoom = await io.in(conversationRoom).fetchSockets();
-            const userIdsInRoom = new Set<number>();
-            for (const socket of socketsInRoom) {
-                const socketUserId = (socket as any).data?.userId;
-                if (socketUserId) userIdsInRoom.add(socketUserId);
-            }
-
-            // Emit to conversation room
-            io.to(conversationRoom).emit('chat:new_message', {
-                conversationId: Number(id),
-                message: responseMessage
-            });
-
-            // Emit to user rooms ONLY for members NOT in the conversation room
+            // Emit to each member's personal room (except sender)
             conversationForEmit.members.forEach(member => {
-                if (member.userId !== userId && !userIdsInRoom.has(member.userId)) {
+                if (member.userId !== userId) {
                     io.to(`user:${member.userId}`).emit('chat:new_message', {
                         conversationId: Number(id),
                         message: responseMessage
@@ -964,23 +962,9 @@ export const sendVoiceMessage = async (req: AuthRequest, res: Response) => {
         });
 
         if (conversationForEmit) {
-            const conversationRoom = `conversation:${id}`;
-            const socketsInRoom = await io.in(conversationRoom).fetchSockets();
-            const userIdsInRoom = new Set<number>();
-            for (const socket of socketsInRoom) {
-                const socketUserId = (socket as any).data?.userId;
-                if (socketUserId) userIdsInRoom.add(socketUserId);
-            }
-
-            // Emit to conversation room
-            io.to(conversationRoom).emit('chat:new_message', {
-                conversationId: Number(id),
-                message: responseMessage
-            });
-
-            // Emit to user rooms ONLY for members NOT in the conversation room
+            // Emit to each member's personal room (except sender)
             conversationForEmit.members.forEach(member => {
-                if (member.userId !== userId && !userIdsInRoom.has(member.userId)) {
+                if (member.userId !== userId) {
                     io.to(`user:${member.userId}`).emit('chat:new_message', {
                         conversationId: Number(id),
                         message: responseMessage
@@ -1107,9 +1091,25 @@ export const deleteConversation = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ message: 'Conversation not found' });
         }
 
-        // For GROUP conversations, only admin can delete
-        if (conversation.type === 'GROUP' && !member.isAdmin) {
-            return res.status(403).json({ message: 'Only admin can delete group conversation' });
+        // For GROUP conversations, only system ADMIN can delete the entire conversation
+        if (conversation.type === 'GROUP' && req.user!.role !== 'ADMIN') {
+            return res.status(403).json({ message: 'Only system admin can delete group conversation' });
+        }
+
+        // Xóa file đính kèm trên MinIO cho tất cả tin nhắn trong cuộc hội thoại
+        const messagesWithAttachments = await prisma.chatMessage.findMany({
+            where: { conversationId, attachment: { not: null } },
+            select: { attachment: true }
+        });
+        for (const m of messagesWithAttachments) {
+            if (m.attachment) {
+                try {
+                    await deleteFile(m.attachment);
+                    console.log(`[Chat] Deleted MinIO file: ${m.attachment}`);
+                } catch (err) {
+                    console.error(`[Chat] Failed to delete MinIO file: ${m.attachment}`, err);
+                }
+            }
         }
 
         // Delete all messages first (including their reactions)
@@ -1287,7 +1287,7 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
                     avatar: true,
                     position: true
                 },
-                take: 20
+                orderBy: { name: 'asc' }
             });
 
             // Add avatar URLs - use relative URLs
@@ -1317,7 +1317,7 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
                 avatar: true,
                 position: true
             },
-            take: 10
+            take: 50
         });
 
         // Add avatar URLs - use relative URLs
@@ -1527,6 +1527,16 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
             return res.status(403).json({ message: 'Only message owner or admin can delete' });
         }
 
+        // Xóa file đính kèm trên MinIO nếu có
+        if (message.attachment) {
+            try {
+                await deleteFile(message.attachment);
+                console.log(`[Chat] Deleted MinIO file: ${message.attachment}`);
+            } catch (err) {
+                console.error(`[Chat] Failed to delete MinIO file: ${message.attachment}`, err);
+            }
+        }
+
         // Xóa reactions của tin nhắn trước
         await (prisma as any).chatMessageReaction.deleteMany({
             where: { messageId: Number(messageId) }
@@ -1547,6 +1557,55 @@ export const deleteMessage = async (req: AuthRequest, res: Response) => {
         res.json({ message: 'Message deleted successfully' });
     } catch (error) {
         console.error('Error deleting message:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Get presigned URL for video streaming (avoids redirect issues on iOS/mobile)
+export const getVideoStreamUrl = async (req: Request, res: Response) => {
+    try {
+        const { conversationId, messageId } = req.params;
+
+        const message = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) }
+        });
+
+        if (!message || !message.attachment) {
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        const { getPresignedUrl: getPresigned, getFileStats } = await import('../services/minioService.js');
+
+        try {
+            const fileStats = await getFileStats(message.attachment!);
+            let contentType = fileStats.metaData?.['content-type'] || 'application/octet-stream';
+
+            // Detect content type from extension if needed
+            if (contentType === 'application/octet-stream') {
+                const ext = message.attachment!.split('.').pop()?.toLowerCase();
+                const mimeMap: Record<string, string> = {
+                    'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+                    'mov': 'video/mp4', 'avi': 'video/x-msvideo', 'mkv': 'video/x-matroska',
+                    'm4v': 'video/x-m4v', '3gp': 'video/3gpp',
+                };
+                if (ext && mimeMap[ext]) contentType = mimeMap[ext];
+            }
+            // iPhone .mov files use H.264 - Chrome/Android can play if served as video/mp4
+            if (contentType === 'video/quicktime') contentType = 'video/mp4';
+
+            const presignedUrl = await getPresigned(message.attachment!, 3600);
+            return res.json({
+                url: presignedUrl,
+                contentType,
+                size: fileStats.size,
+                filename: message.attachment!.split('/').pop() || 'video'
+            });
+        } catch (error) {
+            console.error('[getVideoStreamUrl] Error:', error);
+            return res.status(500).json({ message: 'Cannot generate stream URL' });
+        }
+    } catch (error) {
+        console.error('[getVideoStreamUrl] Error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
@@ -1588,7 +1647,7 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
                 const ext = message.attachment.split('.').pop()?.toLowerCase();
                 const mimeMap: Record<string, string> = {
                     'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
-                    'mov': 'video/quicktime', 'avi': 'video/x-msvideo', 'mkv': 'video/x-matroska',
+                    'mov': 'video/mp4', 'avi': 'video/x-msvideo', 'mkv': 'video/x-matroska',
                     'm4v': 'video/x-m4v', '3gp': 'video/3gpp',
                     'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'flac': 'audio/flac',
                     'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
@@ -1599,41 +1658,58 @@ export const serveMessageAttachment = async (req: Request, res: Response) => {
                     contentType = mimeMap[ext];
                 }
             }
+            // iPhone .mov files use H.264 - Chrome/Android can play if served as video/mp4
+            if (contentType === 'video/quicktime') contentType = 'video/mp4';
+
+            // For Video files, let the client fetch the presigned URL via the /video-url endpoint
+            // and stream directly from MinIO. For direct /file requests (e.g. fallback), 
+            // serve via Range requests through our proxy instead of redirecting (redirect breaks iOS Safari).
+            if (contentType.startsWith('video/')) {
+                console.log('[serveMessageAttachment] Video file detected, serving via proxy with Range support...');
+                // Fall through to the Range request handler below instead of redirecting
+            }
 
             // Handle Range Request (Video Streaming)
             const range = req.headers.range;
             if (range && fileSize > 0) {
-                const MAX_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB max chunk for streaming
+                const MAX_CHUNK_SIZE = 2 * 1024 * 1024; // Optimize: 2MB chunks for fast playback start on Desktop
                 const parts = range.replace(/bytes=/, "").split("-");
                 const start = parseInt(parts[0] || '0', 10);
-                // If no end specified, cap to MAX_CHUNK_SIZE to enable progressive streaming
+
                 let end = parts[1] && parts[1].length > 0
                     ? parseInt(parts[1], 10)
                     : Math.min(start + MAX_CHUNK_SIZE - 1, fileSize - 1);
-                // Ensure end does not exceed file size
+
                 end = Math.min(end, fileSize - 1);
 
-                // Validate range
                 if (start >= fileSize) {
                     res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
                     return res.end();
                 }
 
                 const chunksize = (end - start) + 1;
-                console.log(`[serveMessageAttachment] Serving range ${start}-${end}/${fileSize} (chunk: ${(chunksize / 1024 / 1024).toFixed(1)}MB) for ${messageId}`);
+                console.log(`[serveMessageAttachment] Serving range ${start}-${end}/${fileSize} (chunk: ${(chunksize / 1024 / 1024).toFixed(2)}MB)`);
 
-                const fileStream = await getPartialFileStream(message.attachment!, start, end);
+                try {
+                    const fileStream = await getPartialFileStream(message.attachment!, start, end);
 
-                res.writeHead(206, {
-                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                    'Accept-Ranges': 'bytes',
-                    'Content-Length': chunksize,
-                    'Content-Type': contentType,
-                    'Access-Control-Allow-Origin': '*',
-                    'Cache-Control': 'public, max-age=31536000'
-                });
+                    res.writeHead(206, {
+                        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                        'Accept-Ranges': 'bytes',
+                        'Content-Length': chunksize,
+                        'Content-Type': contentType,
+                        'Access-Control-Allow-Origin': '*',
+                        'Cross-Origin-Resource-Policy': 'cross-origin',
+                        'Cache-Control': 'public, max-age=31536000'
+                    });
 
-                fileStream.pipe(res);
+                    fileStream.pipe(res).on('error', (err) => {
+                        console.error('[serveMessageAttachment] Stream pipe error:', err);
+                    });
+                } catch (streamError) {
+                    console.error('[serveMessageAttachment] Error getting partial stream:', streamError);
+                    if (!res.headersSent) res.status(500).end();
+                }
                 return;
             }
 
@@ -1756,6 +1832,115 @@ export const serveConversationAvatar = async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[serveConversationAvatar] Error:', error?.message || error);
         res.status(500).json({ message: 'Failed to serve avatar' });
+    }
+};
+
+// Chuyển tiếp tin nhắn sang cuộc trò chuyện khác
+export const forwardMessage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { messageId } = req.params;
+        const { targetConversationIds } = req.body;
+
+        if (!targetConversationIds || !Array.isArray(targetConversationIds) || targetConversationIds.length === 0) {
+            return res.status(400).json({ message: 'Target conversation IDs are required' });
+        }
+
+        // Lấy tin nhắn gốc
+        const originalMessage = await prisma.chatMessage.findUnique({
+            where: { id: Number(messageId) },
+            include: {
+                sender: { select: { id: true, name: true, avatar: true } },
+                conversation: { include: { members: true } }
+            }
+        });
+
+        if (!originalMessage) {
+            return res.status(404).json({ message: 'Message not found' });
+        }
+
+        // Kiểm tra user là member của conversation gốc
+        const isMember = originalMessage.conversation.members.some(m => m.userId === userId);
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        const io = getIO();
+        const forwardedMessages = [];
+
+        for (const targetConvId of targetConversationIds) {
+            // Kiểm tra user là member của conversation đích
+            const targetMember = await prisma.conversationMember.findUnique({
+                where: {
+                    conversationId_userId: {
+                        conversationId: Number(targetConvId),
+                        userId
+                    }
+                }
+            });
+
+            if (!targetMember) continue;
+
+            // Tạo tin nhắn mới trong conversation đích
+            const newMessage = await prisma.chatMessage.create({
+                data: {
+                    content: originalMessage.content,
+                    messageType: originalMessage.messageType as any,
+                    attachment: originalMessage.attachment,
+                    isForwarded: true,
+                    conversationId: Number(targetConvId),
+                    senderId: userId
+                },
+                include: {
+                    sender: { select: { id: true, name: true, avatar: true } }
+                }
+            });
+
+            // Add URLs
+            let senderAvatarUrl = null;
+            if (newMessage.sender?.avatar) {
+                senderAvatarUrl = `/api/users/${newMessage.sender.id}/avatar`;
+            }
+            let attachmentUrl = null;
+            if (newMessage.attachment) {
+                attachmentUrl = `/api/chat/conversations/${targetConvId}/messages/${newMessage.id}/file`;
+            }
+
+            const messageWithUrls = {
+                ...newMessage,
+                attachmentUrl,
+                sender: { ...newMessage.sender, avatar: senderAvatarUrl }
+            };
+
+            // Update conversation timestamp
+            await prisma.conversation.update({
+                where: { id: Number(targetConvId) },
+                data: { updatedAt: new Date() }
+            });
+
+            // Emit to each member's personal room (except sender) to avoid double messages
+            const targetConv = await prisma.conversation.findUnique({
+                where: { id: Number(targetConvId) },
+                select: { members: { select: { userId: true } } }
+            });
+            if (targetConv) {
+                targetConv.members.forEach(member => {
+                    if (member.userId !== userId) {
+                        io.to(`user:${member.userId}`).emit('chat:new_message', {
+                            conversationId: Number(targetConvId),
+                            message: messageWithUrls
+                        });
+                    }
+                });
+            }
+
+            forwardedMessages.push(messageWithUrls);
+        }
+
+        res.status(201).json({ forwarded: forwardedMessages.length, messages: forwardedMessages });
+    } catch (error) {
+        console.error('Error forwarding message:', error);
+        res.status(500).json({ message: 'Server error' });
     }
 };
 

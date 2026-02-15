@@ -33,7 +33,10 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
     cors: true,
     allowedHosts: true,
-    hmr: false
+    hmr: true,
+    headers: {
+      'Cache-Control': 'no-store',
+    },
   },
   preview: {
     host: '0.0.0.0',

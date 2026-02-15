@@ -90,8 +90,8 @@ app.use((req, res, next) => {
 });
 
 // Body parsing middleware - must be before routes
-app.use(express.json({ limit: '1gb' }));
-app.use(express.urlencoded({ extended: true, limit: '1gb' }));
+app.use(express.json({ limit: '5gb' }));
+app.use(express.urlencoded({ extended: true, limit: '5gb' }));
 
 // Ensure body is always an object for JSON requests
 app.use((req, res, next) => {
@@ -807,14 +807,8 @@ io.on('connection', async (socket) => {
         console.log(`User ${socket.data.userId} left conversation ${conversationId}`);
     });
 
-    // Send chat message
-    socket.on('send_chat_message', (data: { conversationId: number; message: any }) => {
-        // Broadcast to all users in the conversation room
-        io.to(`conversation:${data.conversationId}`).emit('new_chat_message', {
-            conversationId: data.conversationId,
-            message: data.message
-        });
-    });
+    // Note: Chat messages are sent via REST API (chatController), not socket events.
+    // The controller emits 'chat:new_message' to individual user rooms to avoid double delivery.
 
     // Chat typing indicator - Optimized for realtime
     socket.on('chat:typing', (data: { conversationId: number; userName: string; userId?: number }) => {

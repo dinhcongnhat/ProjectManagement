@@ -52,7 +52,7 @@ const Login = () => {
     };
 
     return (
-        <div className={`min-h-screen flex items-center justify-center p-4 relative overflow-hidden ${isDark
+        <div className={`fixed inset-0 overflow-y-auto flex items-center justify-center p-4 z-50 ${isDark
             ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900'
             : 'bg-gradient-to-br from-blue-50 via-white to-cyan-50'
             }`}>

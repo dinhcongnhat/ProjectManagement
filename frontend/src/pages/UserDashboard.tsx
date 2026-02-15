@@ -1,19 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import styled from '@emotion/styled';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import {
     CheckCircle, Clock, AlertCircle, Sparkles,
-    ArrowRight, Briefcase, ListTodo, Target, TrendingUp, CalendarClock
+    ArrowRight, Briefcase, ListTodo, Target, CalendarClock, Quote
 } from 'lucide-react';
+
+const MOTIVATIONAL_QUOTES = [
+    'Việc hôm nay chớ để ngày mai',
+    'Hãy suy nghĩ như một khách hàng',
+    'Chỉ hành động mới tạo ra kết quả',
+    'Đừng mong chờ kết quả mới nếu bạn lặp đi lặp lại cách làm cũ',
+    'Làm việc đừng có em tưởng, phải có lương tâm và trách nhiệm',
+];
 
 /* ── Emotion Styled Components ── */
 
 const Container = styled(motion.div)`
   display: flex; flex-direction: column; gap: 20px;
+  height: fit-content;
   @media (min-width: 640px) { gap: 24px; }
 `;
 
@@ -74,7 +83,7 @@ const ProgressTrack = styled.div`
   @media (min-width: 640px) { height: 8px; margin-top: 12px; }
 `;
 
-const ProgressFill = styled(motion.div)<{ gradient: string }>`
+const ProgressFill = styled(motion.div) <{ gradient: string }>`
   height: 100%; border-radius: 999px; background: ${(p: any) => p.gradient};
 `;
 
@@ -119,6 +128,19 @@ const UserDashboard = () => {
     const [activities, setActivities] = useState<any[]>([]);
     const [stats, setStats] = useState({ todo: 0, inProgress: 0, completed: 0 });
     const [upcomingDeadlines, setUpcomingDeadlines] = useState<any[]>([]);
+    const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
+
+    // Auto-cycle quotes every 8 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setQuoteIndex(prev => {
+                let next: number;
+                do { next = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length); } while (next === prev && MOTIVATIONAL_QUOTES.length > 1);
+                return next;
+            });
+        }, 8000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         if (user?.role === 'ADMIN') navigate('/admin', { replace: true });
@@ -163,7 +185,6 @@ const UserDashboard = () => {
     }, [token]);
 
     const totalTasks = stats.todo + stats.inProgress + stats.completed;
-    const completionRate = totalTasks > 0 ? Math.round((stats.completed / totalTasks) * 100) : 0;
 
     const formatTimeAgo = (dateString: string) => {
         const date = new Date(dateString);
@@ -269,30 +290,58 @@ const UserDashboard = () => {
             <Container variants={containerVariants} initial="hidden" animate="visible">
                 {/* Welcome Banner */}
                 <WelcomeBanner variants={itemVariants}>
-                    <div style={{ position: 'relative', zIndex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-                            <motion.div
-                                style={{ padding: 12, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', borderRadius: 14, flexShrink: 0 }}
-                                whileHover={{ scale: 1.1, rotate: 5 }}
-                            >
-                                <Sparkles size={24} />
-                            </motion.div>
-                            <div style={{ minWidth: 0 }}>
-                                <h1 style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>
-                                    Xin chào, {user?.name}!
-                                </h1>
-                                <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>Tổng quan công việc của bạn</p>
+                    <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' }}>
+                        {/* Left: Greeting */}
+                        <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+                                <motion.div
+                                    style={{ padding: 12, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', borderRadius: 14, flexShrink: 0 }}
+                                    whileHover={{ scale: 1.1, rotate: 5 }}
+                                >
+                                    <Sparkles size={24} />
+                                </motion.div>
+                                <div style={{ minWidth: 0 }}>
+                                    <h1 style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>
+                                        Xin chào, {user?.name}!
+                                    </h1>
+                                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>Tổng quan công việc của bạn</p>
+                                </div>
                             </div>
+
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 14px' }}>
-                                <TrendingUp size={16} style={{ color: '#86efac' }} />
-                                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{totalTasks} công việc</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 14px' }}>
-                                <Target size={16} style={{ color: '#fde047' }} />
-                                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{completionRate}% hoàn thành</span>
-                            </div>
+
+                        {/* Right: Motivational Quote */}
+                        <div style={{
+                            width: 320, minWidth: 320, flexShrink: 0, height: 80,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)',
+                            borderRadius: 16, padding: '20px 24px', position: 'relative', overflow: 'hidden',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                        }}>
+                            <Quote size={20} style={{ position: 'absolute', top: 10, left: 12, opacity: 0.3, color: '#fde047' }} />
+                            <Quote size={16} style={{ position: 'absolute', bottom: 10, right: 12, opacity: 0.2, color: '#ef4444', transform: 'rotate(180deg)' }} />
+                            <AnimatePresence mode="wait">
+                                <motion.p
+                                    key={quoteIndex}
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -8 }}
+                                    transition={{ duration: 0.5 }}
+                                    style={{
+                                        position: 'absolute', left: 24, right: 24, top: 0, bottom: 0,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontSize: 'clamp(13px, 2vw, 15px)', fontWeight: 700, lineHeight: 1.5,
+                                        textAlign: 'center', fontStyle: 'italic',
+                                        background: 'linear-gradient(90deg, #fde047, #f59e0b, #ef4444, #f59e0b, #fde047)',
+                                        backgroundSize: '200% auto',
+                                        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                                        backgroundClip: 'text',
+                                        animation: 'gradientShift 4s linear infinite',
+                                    }}
+                                >
+                                    "{MOTIVATIONAL_QUOTES[quoteIndex]}"
+                                </motion.p>
+                            </AnimatePresence>
                         </div>
                     </div>
                 </WelcomeBanner>
@@ -375,11 +424,10 @@ const UserDashboard = () => {
                                                 {card.list?.title} • {card.list?.board?.title}
                                             </p>
                                         </div>
-                                        <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${
-                                            deadline.urgent
-                                                ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
-                                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                        }`}>
+                                        <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${deadline.urgent
+                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                            }`}>
                                             {deadline.text}
                                         </span>
                                     </motion.div>

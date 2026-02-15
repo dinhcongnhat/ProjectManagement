@@ -17,7 +17,7 @@ console.log('[OnlyOffice] JWT Secret loaded:', ONLYOFFICE_JWT_SECRET ? `${ONLYOF
 console.log('[OnlyOffice] Using env ONLYOFFICE_JWT_SECRET:', !!process.env.ONLYOFFICE_JWT_SECRET);
 
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001/api';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
 // Function to sign OnlyOffice config with JWT
 // OnlyOffice Document Server requires this if JWT is enabled
@@ -958,7 +958,7 @@ export const getDiscussionOnlyOfficeConfig = async (req: AuthRequest, res: Respo
         }
 
         const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-        const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001/api';
+        const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 
         // Find the message with attachment
         const message = await prisma.message.findUnique({
@@ -1555,6 +1555,51 @@ export const checkKanbanOnlyOfficeSupport = async (req: AuthRequest, res: Respon
     } catch (error) {
         console.error('Error checking Kanban OnlyOffice support:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const downloadKanbanFileForOnlyOffice = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        console.log('[OnlyOffice Kanban Download] Request for attachment:', id);
+
+        // Set CORS headers immediately
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+        const attachment = await prisma.kanbanAttachment.findUnique({
+            where: { id: Number(id) },
+        });
+
+        if (!attachment) {
+            console.log('[OnlyOffice Kanban Download] Attachment not found:', id);
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+
+        console.log('[OnlyOffice Kanban Download] Attachment path:', attachment.minioPath);
+
+        // Stream file directly from MinIO
+        const { getFileStream, getFileStats } = await import('../services/minioService.js');
+        const fileStream = await getFileStream(attachment.minioPath);
+        const fileStats = await getFileStats(attachment.minioPath);
+
+        // Set headers
+        const encodedFilename = encodeURIComponent(attachment.fileName).replace(/'/g, "%27");
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+        res.setHeader('Content-Type', fileStats.metaData?.['content-type'] || 'application/octet-stream');
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+        res.setHeader('Access-Control-Allow-Origin', '*');
+
+        console.log('[OnlyOffice Kanban Download] Streaming file');
+        fileStream.pipe(res);
+    } catch (error: any) {
+        console.error('[OnlyOffice Kanban Download] Error:', error?.message || error);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Server error', error: error?.message });
+        }
     }
 };
 

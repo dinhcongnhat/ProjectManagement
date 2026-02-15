@@ -1,7 +1,6 @@
-// Custom Service Worker for PWA Real-time Support
-// Version: 1.0.149
+// Version: 1.0.183
 
-const CACHE_NAME = 'pwa-cache-1770804774967';
+const CACHE_NAME = 'pwa-cache-1770886737672';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -252,6 +251,8 @@ self.addEventListener('notificationclick', (event) => {
     fallbackUrl = `/?notificationType=project&projectId=${data.projectId}`;
   } else if (data.type === 'project' && data.projectId) {
     fallbackUrl = `/?notificationType=project&projectId=${data.projectId}`;
+  } else if (data.type === 'kanban') {
+    fallbackUrl = `/?notificationType=kanban`;
   }
 
   console.log('[SW] Fallback URL:', fallbackUrl);

@@ -10,7 +10,7 @@ import jwt from 'jsonwebtoken';
 
 const userFolderPrefix = 'users/';
 const ONLYOFFICE_URL = process.env.ONLYOFFICE_URL || 'https://jtsconlyoffice.duckdns.org';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001/api';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://jtscapi.duckdns.org/api';
 const ONLYOFFICE_JWT_SECRET = process.env.ONLYOFFICE_JWT_SECRET || '10122002';
 
 // Function to sign OnlyOffice config with JWT

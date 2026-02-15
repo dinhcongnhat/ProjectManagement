@@ -159,6 +159,8 @@ self.addEventListener('notificationclick', (event) => {
     targetUrl = `/projects/${data.projectId}`;
   } else if (data.type === 'discussion' && data.projectId) {
     targetUrl = `/projects/${data.projectId}`;
+  } else if (data.type === 'kanban') {
+    targetUrl = data.url || '/kanban';
   } else if (data.type === 'task') {
     targetUrl = '/my-tasks';
   }

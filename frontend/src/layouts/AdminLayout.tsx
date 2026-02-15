@@ -17,9 +17,13 @@ import { useWebSocket } from '../hooks/useWebSocket';
 
 const LayoutWrapper = styled.div`
   display: flex;
-  height: 100vh; height: 100dvh;
-  background: #f8fafc;
-  overflow: hidden; position: relative;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  width: 100%; height: 100dvh;
+  background: #ffffff;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
   .dark & { background: #0f172a; }
 `;
 
@@ -36,6 +40,8 @@ const SidebarDesktop = styled.aside`
   }
 `;
 
+
+
 const MobileOverlay = styled(motion.div)`
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.4);
@@ -47,17 +53,19 @@ const MobileOverlay = styled(motion.div)`
 const MobileSidebar = styled(motion.aside)`
   position: fixed; left: 0; top: 0;
   width: 280px; max-width: 85vw;
-  height: 100vh; height: 100dvh;
+  height: 100dvh;
   z-index: 60; background: #ffffff;
   box-shadow: 4px 0 24px rgba(0,0,0,0.12);
   display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: 0;
   .dark & { background: #1e293b; }
   @media (min-width: 1024px) { display: none; }
 `;
 
 const ContentArea = styled.div`
   flex: 1; display: flex; flex-direction: column;
-  height: 100vh; height: 100dvh; overflow: hidden;
+  height: 100dvh; overflow: hidden;
   @media (min-width: 1024px) { margin-left: 260px; }
 `;
 
@@ -66,6 +74,8 @@ const HeaderBar = styled.header`
   height: calc(56px + env(safe-area-inset-top, 0px));
   padding: 0 12px;
   padding-top: env(safe-area-inset-top, 0px);
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
   position: sticky; top: 0; z-index: 40;
@@ -77,10 +87,13 @@ const HeaderBar = styled.header`
 
 const MainContentStyled = styled.main`
   flex: 1; overflow-y: auto; overflow-x: hidden;
+  display: block;
   padding: 16px;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-  @media (min-width: 768px) { padding: 24px; padding-bottom: 24px; }
-  @media (min-width: 1024px) { padding: 32px; padding-bottom: 32px; }
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  @media (min-width: 768px) { padding: 24px; padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); }
+  @media (min-width: 1024px) { padding: 32px; padding-bottom: max(32px, env(safe-area-inset-bottom, 0px)); }
 `;
 
 const IconBtn = styled(motion.button)`
@@ -106,7 +119,6 @@ const BadgeEl = styled(motion.span)`
 
 const SidebarLogo = styled.div`
   padding: 20px 16px 16px;
-  padding-top: calc(env(safe-area-inset-top, 0px) + 20px);
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   border-bottom: 1px solid #f1f5f9;
   .dark & { border-bottom-color: #334155; }
@@ -205,6 +217,8 @@ const AdminLayout = () => {
 
     useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
+
+
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotifications(false);
@@ -268,7 +282,7 @@ const AdminLayout = () => {
 
             <ContentArea>
                 <HeaderBar>
-                    <IconBtn className="hidden md:flex lg:!hidden" onClick={() => setSidebarOpen(!sidebarOpen)} whileTap={{ scale: 0.9 }}>
+                    <IconBtn className="flex lg:!hidden" onClick={() => setSidebarOpen(!sidebarOpen)} whileTap={{ scale: 0.9 }}>
                         <Menu size={20} />
                     </IconBtn>
                     <div style={{ flex: 1 }} />
@@ -309,7 +323,8 @@ const AdminLayout = () => {
                     <AnimatePresence mode="wait">
                         <motion.div key={location.pathname} variants={pageVariants}
                             initial="initial" animate="animate" exit="exit"
-                            className="max-w-7xl mx-auto w-full">
+                            className="max-w-7xl mx-auto w-full"
+                            style={{ minHeight: 0 }}>
                             <Outlet />
                         </motion.div>
                     </AnimatePresence>
@@ -332,7 +347,7 @@ const SidebarContentInner = ({ items, onNavClick, onLogout, showClose, onClose }
     <>
         <SidebarLogo>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-                <img src="/Logo.png" alt="JTSC" style={{ height: 52, objectFit: 'contain' }} />
+                <img src="/Logo.png" alt="JTSC" style={{ height: 80, maxWidth: '100%', objectFit: 'contain' }} />
                 {showClose && (
                     <IconBtn onClick={onClose} whileTap={{ scale: 0.85 }} style={{ position: 'absolute', right: 0 }}>
                         <X size={20} />
@@ -340,10 +355,10 @@ const SidebarContentInner = ({ items, onNavClick, onLogout, showClose, onClose }
                 )}
             </div>
             <div style={{ textAlign: 'center', width: '100%' }}>
-                <p className="text-xs font-semibold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 dark:from-orange-400 dark:via-pink-500 dark:to-orange-400 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto]">
+                <p className="text-xs font-bold bg-gradient-to-r from-red-600 via-yellow-500 to-red-600 dark:from-red-500 dark:via-yellow-400 dark:to-red-500 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] tracking-wide uppercase drop-shadow-sm">
                     Lắng nghe từ tâm
                 </p>
-                <p className="text-xs font-semibold bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 dark:from-pink-500 dark:via-orange-400 dark:to-pink-500 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] animation-delay-200">
+                <p className="text-xs font-bold bg-gradient-to-r from-yellow-600 via-red-600 to-yellow-600 dark:from-yellow-400 dark:via-red-500 dark:to-yellow-400 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] animation-delay-200 tracking-wide uppercase drop-shadow-sm">
                     Kiến tạo vươn tầm
                 </p>
             </div>
@@ -362,7 +377,7 @@ const SidebarContentInner = ({ items, onNavClick, onLogout, showClose, onClose }
                 </SidebarNavLinkStyled>
             ))}
         </SidebarNavSection>
-        <div style={{ padding: '8px 12px', borderTop: '1px solid #f1f5f9' }} className="dark:!border-slate-700 pb-safe">
+        <div style={{ padding: '8px 12px', borderTop: '1px solid #f1f5f9' }} className="dark:!border-slate-700">
             <LogoutBtnStyled onClick={onLogout}>
                 <NavIconWrap $active={false}><LogOut size={18} /></NavIconWrap>
                 <span>Đăng xuất</span>

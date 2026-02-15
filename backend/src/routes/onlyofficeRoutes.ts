@@ -19,7 +19,8 @@ import {
     saveDriveFileToSystem,
     handleGeneralSave,
     checkKanbanOnlyOfficeSupport,
-    getKanbanOnlyOfficeConfig
+    getKanbanOnlyOfficeConfig,
+    downloadKanbanFileForOnlyOffice
 } from '../controllers/onlyofficeController.js';
 
 const router = express.Router();
@@ -142,5 +143,8 @@ router.get('/kanban/check/:id', authenticateToken, checkKanbanOnlyOfficeSupport)
 
 // Get OnlyOffice config for kanban attachment
 router.get('/kanban/config/:id', authenticateToken, getKanbanOnlyOfficeConfig);
+
+// Download kanban file for OnlyOffice server (no auth required - OnlyOffice server calls this)
+router.get('/kanban/download/:id', downloadKanbanFileForOnlyOffice);
 
 export default router;

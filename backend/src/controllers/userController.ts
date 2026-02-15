@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import bcrypt from 'bcryptjs';
-import { uploadFile, getPresignedUrl, normalizeVietnameseFilename } from '../services/minioService.js';
+import { uploadFile, getPresignedUrl, normalizeVietnameseFilename, deleteFile } from '../services/minioService.js';
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
     try {
@@ -158,10 +158,40 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
                 where: { userId: userId }
             });
 
+            // Xóa file đính kèm trên MinIO cho chat messages
+            const chatMessages = await tx.chatMessage.findMany({
+                where: { senderId: userId, attachment: { not: null } },
+                select: { attachment: true }
+            });
+            for (const m of chatMessages) {
+                if (m.attachment) {
+                    try {
+                        await deleteFile(m.attachment);
+                    } catch (err) {
+                        console.error(`[User] Failed to delete chat MinIO file: ${m.attachment}`, err);
+                    }
+                }
+            }
+
             // Delete user's chat messages (must delete because of FK constraint)
             await tx.chatMessage.deleteMany({
                 where: { senderId: userId }
             });
+
+            // Xóa file đính kèm trên MinIO cho project messages
+            const projectMessages = await tx.message.findMany({
+                where: { senderId: userId, attachment: { not: null } },
+                select: { attachment: true }
+            });
+            for (const m of projectMessages) {
+                if (m.attachment) {
+                    try {
+                        await deleteFile(m.attachment);
+                    } catch (err) {
+                        console.error(`[User] Failed to delete message MinIO file: ${m.attachment}`, err);
+                    }
+                }
+            }
 
             // Delete user's project messages
             await tx.message.deleteMany({

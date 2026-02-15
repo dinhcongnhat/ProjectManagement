@@ -34,7 +34,7 @@ export interface PushPayload {
     badge?: string;
     tag?: string;
     data?: {
-        type: 'chat' | 'project' | 'task' | 'discussion' | 'mention' | 'activity';
+        type: 'chat' | 'project' | 'task' | 'discussion' | 'mention' | 'activity' | 'kanban';
         url?: string;
         conversationId?: number;
         projectId?: number;
@@ -136,7 +136,8 @@ export const sendPushToUser = async (userId: number, payload: PushPayload) => {
                 'task': 'taskAssignments',
                 'discussion': 'projectDiscussions',
                 'mention': 'mentions',
-                'activity': 'projectUpdates'
+                'activity': 'projectUpdates',
+                'kanban': 'kanbanNotifications'
             };
             const settingKey = typeMap[payload.data.type];
             if (settingKey && settings[settingKey] === false) {
@@ -167,33 +168,50 @@ export const sendPushToUser = async (userId: number, payload: PushPayload) => {
             requireInteraction: payload.requireInteraction || false
         });
 
+        // Push delivery options for faster delivery
+        const pushOptions = {
+            TTL: 60, // 60 seconds TTL for faster expiry of stale notifications
+            urgency: 'high' as const, // High urgency for immediate delivery
+            topic: payload.tag || undefined // Allow replacing notifications with same topic
+        };
+
         let success = 0;
         let failed = 0;
 
-        // Send to all user's subscriptions (multiple devices)
-        for (const sub of subscriptions) {
-            try {
-                await webpush.sendNotification(
-                    {
-                        endpoint: sub.endpoint,
-                        keys: {
-                            p256dh: sub.p256dh,
-                            auth: sub.auth
-                        }
-                    },
-                    notificationPayload
-                );
-                success++;
-            } catch (error: any) {
-                failed++;
-                console.error(`[PushService] Error sending to ${sub.endpoint}:`, error.message);
-
-                // Remove expired/invalid subscriptions
-                if (error.statusCode === 410 || error.statusCode === 404) {
-                    await prisma.pushSubscription.delete({
-                        where: { id: sub.id }
-                    }).catch(() => { });
+        // Send to all user's subscriptions in parallel for speed
+        const results = await Promise.allSettled(
+            subscriptions.map(async (sub) => {
+                try {
+                    await webpush.sendNotification(
+                        {
+                            endpoint: sub.endpoint,
+                            keys: {
+                                p256dh: sub.p256dh,
+                                auth: sub.auth
+                            }
+                        },
+                        notificationPayload,
+                        pushOptions
+                    );
+                    return { success: true, subId: sub.id };
+                } catch (error: any) {
+                    console.error(`[PushService] Error sending to endpoint:`, error.message);
+                    // Remove expired/invalid subscriptions
+                    if (error.statusCode === 410 || error.statusCode === 404) {
+                        await prisma.pushSubscription.delete({
+                            where: { id: sub.id }
+                        }).catch(() => { });
+                    }
+                    return { success: false, subId: sub.id };
                 }
+            })
+        );
+
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value.success) {
+                success++;
+            } else {
+                failed++;
             }
         }
 
@@ -205,15 +223,15 @@ export const sendPushToUser = async (userId: number, payload: PushPayload) => {
     }
 };
 
-// Send push notification to multiple users
+// Send push notification to multiple users (in parallel for speed)
 export const sendPushToUsers = async (userIds: number[], payload: PushPayload) => {
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
         userIds.map(userId => sendPushToUser(userId, payload))
     );
 
     return {
-        success: results.reduce((sum, r) => sum + r.success, 0),
-        failed: results.reduce((sum, r) => sum + r.failed, 0)
+        success: results.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.success : 0), 0),
+        failed: results.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value.failed : 1), 0)
     };
 };
 
@@ -704,6 +722,50 @@ export const notifyTaskReminder = async (
     return sendPushToUser(userId, payload);
 };
 
+// Notify kanban card deadline approaching (10 minutes before)
+export const notifyKanbanCardDeadline = async (
+    recipientIds: number[],
+    cardId: number,
+    cardTitle: string,
+    boardName: string,
+    dueDate: Date
+) => {
+    if (recipientIds.length === 0) return { success: 0, failed: 0 };
+
+    const timeStr = dueDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+    const dateStr = dueDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' });
+    const title = '⏰ Sắp đến hạn công việc Kanban!';
+    const body = `Thẻ "${cardTitle}" trong "${boardName}" sẽ đến hạn lúc ${timeStr} ngày ${dateStr}`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.createMany({
+            data: recipientIds.map(userId => ({
+                userId,
+                type: 'KANBAN_DEADLINE_APPROACHING',
+                title,
+                message: body
+            }))
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving kanban deadline notification to DB:', error);
+    }
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `kanban-deadline-${cardId}`,
+        data: {
+            type: 'kanban',
+            url: '/kanban'
+        },
+        requireInteraction: true,
+        vibrate: [200, 100, 200, 100, 200]
+    };
+
+    return sendPushToUsers(recipientIds, payload);
+};
+
 // Notify kanban daily reminder (consolidated for one user)
 export const notifyKanbanDailyReminder = async (
     userId: number,
@@ -735,7 +797,7 @@ export const notifyKanbanDailyReminder = async (
         body,
         tag: `kanban-daily-reminder-${userId}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/'
         },
         requireInteraction: true,
@@ -782,7 +844,7 @@ export const notifyKanbanCardCreated = async (
         body,
         tag: `kanban-card-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         }
     };
@@ -813,7 +875,7 @@ export const notifyKanbanComment = async (
         body,
         tag: `kanban-comment-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         }
     };
@@ -841,7 +903,7 @@ export const notifyKanbanChecklist = async (
         body,
         tag: `kanban-checklist-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         }
     };
@@ -882,7 +944,7 @@ export const notifyKanbanInvite = async (
         body,
         tag: `kanban-invite-${boardId}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         },
         requireInteraction: true
@@ -914,7 +976,7 @@ export const notifyKanbanCardMoved = async (
         body,
         tag: `kanban-move-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         }
     };
@@ -943,7 +1005,7 @@ export const notifyKanbanCardApproved = async (
         body,
         tag: `kanban-approve-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         },
         requireInteraction: true
@@ -971,7 +1033,7 @@ export const notifyKanbanAttachment = async (
         body,
         tag: `kanban-attachment-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         },
         requireInteraction: false
@@ -1000,7 +1062,7 @@ export const notifyKanbanChecklistToggle = async (
         body,
         tag: `kanban-checklist-toggle-${boardId}-${Date.now()}`,
         data: {
-            type: 'activity',
+            type: 'kanban',
             url: '/kanban'
         },
         requireInteraction: false
@@ -1026,6 +1088,7 @@ export default {
     notifyTaskDeadlineOverdue,
     notifyTaskDeadlineUpcoming,
     notifyTaskReminder,
+    notifyKanbanCardDeadline,
     notifyKanbanDailyReminder,
     notifyKanbanCardCreated,
     notifyKanbanComment,

@@ -6,7 +6,7 @@ import { notifyProjectAssignment, notifyProjectUpdate } from '../services/pushNo
 import { sendProjectAssignmentEmail } from '../services/emailService.js';
 import { getOrCreateProjectBoard } from './kanbanController.js';
 
-import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename } from '../services/minioService.js';
+import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename, deleteFile } from '../services/minioService.js';
 
 export const createProject = async (req: AuthRequest, res: Response) => {
     try {
@@ -615,6 +615,39 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
             where: { parentId: projectId },
             select: { id: true }
         });
+
+        // Collect all project IDs to delete (parent + children)
+        const allProjectIds = [projectId, ...childProjects.map(p => p.id)];
+
+        // Xóa file đính kèm trên MinIO cho tất cả ProjectAttachment
+        const attachments = await prisma.projectAttachment.findMany({
+            where: { projectId: { in: allProjectIds } },
+            select: { minioPath: true }
+        });
+        for (const att of attachments) {
+            try {
+                await deleteFile(att.minioPath);
+                console.log(`[Project] Deleted MinIO file: ${att.minioPath}`);
+            } catch (err) {
+                console.error(`[Project] Failed to delete MinIO file: ${att.minioPath}`, err);
+            }
+        }
+
+        // Xóa file đính kèm trên MinIO cho tất cả Message trong project
+        const messages = await prisma.message.findMany({
+            where: { projectId: { in: allProjectIds }, attachment: { not: null } },
+            select: { attachment: true }
+        });
+        for (const m of messages) {
+            if (m.attachment) {
+                try {
+                    await deleteFile(m.attachment);
+                    console.log(`[Project] Deleted MinIO message file: ${m.attachment}`);
+                } catch (err) {
+                    console.error(`[Project] Failed to delete MinIO message file: ${m.attachment}`, err);
+                }
+            }
+        }
 
         // Delete all child projects first
         if (childProjects.length > 0) {

@@ -91,13 +91,13 @@ export const createCardForTask = async (
         if (!board.members.some(m => m.userId === assigneeId)) {
             await prisma.kanbanBoardMember.create({
                 data: { boardId: board.id, userId: assigneeId, role: 'MEMBER' }
-            }).catch(() => {});
+            }).catch(() => { });
         }
         // Ensure creator is board member
         if (!board.members.some(m => m.userId === creatorId)) {
             await prisma.kanbanBoardMember.create({
                 data: { boardId: board.id, userId: creatorId, role: 'ADMIN' }
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         const maxPos = await prisma.kanbanCard.aggregate({
@@ -220,6 +220,56 @@ export const getUpcomingCards = async (req: AuthRequest, res: Response) => {
         res.json(cards);
     } catch (error) {
         console.error('Error fetching upcoming cards:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Search kanban cards across all accessible boards
+export const searchCards = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const query = (req.query.q as string || '').trim();
+
+        if (!query || query.length < 1) {
+            return res.json([]);
+        }
+
+        const cards = await prisma.kanbanCard.findMany({
+            where: {
+                title: { contains: query, mode: 'insensitive' },
+                list: {
+                    board: {
+                        OR: [
+                            { ownerId: userId },
+                            { members: { some: { userId } } }
+                        ]
+                    }
+                }
+            },
+            include: {
+                list: {
+                    select: {
+                        id: true,
+                        title: true,
+                        board: {
+                            select: { id: true, title: true, background: true }
+                        }
+                    }
+                },
+                assignees: {
+                    select: { id: true, name: true }
+                },
+                labels: {
+                    select: { id: true, name: true, color: true }
+                }
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 20
+        });
+
+        res.json(cards);
+    } catch (error) {
+        console.error('Error searching cards:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
@@ -396,6 +446,23 @@ export const deleteBoard = async (req: AuthRequest, res: Response) => {
         if (!board) return res.status(404).json({ message: 'Board not found' });
         if (board.ownerId !== userId) {
             return res.status(403).json({ message: 'Chỉ người tạo bảng mới có thể xóa' });
+        }
+
+        // Xóa tất cả file đính kèm trên MinIO cho các card trong board
+        const boardAttachments = await prisma.kanbanAttachment.findMany({
+            where: {
+                card: { list: { boardId: Number(id) } },
+                source: { not: 'google-drive' }
+            },
+            select: { minioPath: true }
+        });
+        for (const att of boardAttachments) {
+            try {
+                await deleteFile(att.minioPath);
+                console.log(`[Kanban] Deleted MinIO file: ${att.minioPath}`);
+            } catch (err) {
+                console.error(`[Kanban] Failed to delete MinIO file: ${att.minioPath}`, err);
+            }
         }
 
         await prisma.kanbanBoard.delete({ where: { id: Number(id) } });
@@ -706,7 +773,10 @@ export const updateCard = async (req: AuthRequest, res: Response) => {
         const updateData: any = {};
         if (title !== undefined) updateData.title = title;
         if (description !== undefined) updateData.description = description;
-        if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+        if (dueDate !== undefined) {
+            updateData.dueDate = dueDate ? new Date(dueDate) : null;
+            updateData.deadlineReminderSent = false; // Reset so reminder fires for new deadline
+        }
         if (completed !== undefined) updateData.completed = completed;
         if (listId !== undefined) updateData.listId = Number(listId);
         if (position !== undefined) updateData.position = position;
@@ -764,8 +834,21 @@ export const deleteCard = async (req: AuthRequest, res: Response) => {
         // Get card's board before deleting
         const card = await prisma.kanbanCard.findUnique({
             where: { id: Number(id) },
-            select: { listId: true, list: { select: { boardId: true } } }
+            select: { listId: true, list: { select: { boardId: true } }, attachments: { where: { source: { not: 'google-drive' } }, select: { minioPath: true } } }
         });
+
+        // Xóa file đính kèm trên MinIO cho card
+        if (card?.attachments) {
+            for (const att of card.attachments) {
+                try {
+                    await deleteFile(att.minioPath);
+                    console.log(`[Kanban] Deleted MinIO file: ${att.minioPath}`);
+                } catch (err) {
+                    console.error(`[Kanban] Failed to delete MinIO file: ${att.minioPath}`, err);
+                }
+            }
+        }
+
         await prisma.kanbanCard.delete({ where: { id: Number(id) } });
 
         // Emit board update to other members

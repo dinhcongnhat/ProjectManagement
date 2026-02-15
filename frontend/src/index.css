@@ -1068,11 +1068,11 @@ header {
   }
 
   .pwa-safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: 0 !important;
   }
 
   .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: 0 !important;
   }
 }
 
@@ -1244,16 +1244,19 @@ body {
   /* PWA Standalone Mode - Apply safe areas */
   @media (display-mode: standalone) {
     body {
-      /* Only bottom/left/right - header handles top */
       padding-top: 0;
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-bottom: 0;
       padding-left: env(safe-area-inset-left, 0px);
       padding-right: env(safe-area-inset-right, 0px);
+      /* Ensure no gray gap at bottom */
+      min-height: 100dvh;
     }
 
     /* Root container in standalone mode */
     #root {
       min-height: 100dvh;
+      height: 100dvh;
+      overflow: hidden;
     }
   }
 
@@ -1290,7 +1293,7 @@ body {
 
   @media (display-mode: standalone) {
     .pwa-safe-bottom {
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+      padding-bottom: 0 !important;
     }
   }
 
@@ -1300,7 +1303,7 @@ body {
   }
 
   .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: 0 !important;
   }
 
   .safe-left {
@@ -1316,7 +1319,7 @@ body {
   }
 
   .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: 0 !important;
   }
 
   /* Touch-friendly tap targets */
@@ -1367,7 +1370,7 @@ body {
 
   /* Mobile bottom navigation safe area */
   .pb-safe {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-bottom: 0 !important;
   }
 
   /* Backdrop blur support check */
@@ -1424,9 +1427,9 @@ body {
     }
   }
 
-  /* Safe area bottom for input fields on mobile */
+  /* Safe area bottom for input fields on mobile - disabled for edge-to-edge */
   .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: 0 !important;
   }
 
   /* Touch manipulation for better mobile performance */

@@ -9,6 +9,7 @@ interface NotificationSettings {
     projectUpdates: boolean;
     taskAssignments: boolean;
     mentions: boolean;
+    kanbanNotifications: boolean;
 }
 
 interface PushNotificationContextType {
@@ -31,8 +32,13 @@ const defaultSettings: NotificationSettings = {
     projectDiscussions: true,
     projectUpdates: true,
     taskAssignments: true,
-    mentions: true
+    mentions: true,
+    kanbanNotifications: true
 };
+
+// LocalStorage keys for persisting notification state
+const LS_PUSH_ENABLED = 'push-notification-enabled';
+const LS_PUSH_USER_ID = 'push-notification-user-id';
 
 const PushNotificationContext = createContext<PushNotificationContextType | null>(null);
 
@@ -115,7 +121,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
         }
     }, [isSupported]);
 
-    // Check existing subscription and load settings
+    // Check existing subscription, load settings, and auto-resubscribe if needed
     useEffect(() => {
         const checkSubscription = async () => {
             if (!isSupported || !token || !user) {
@@ -126,7 +132,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
             try {
                 // Add timeout for service worker ready
                 const timeoutPromise = new Promise<null>((_, reject) => 
-                    setTimeout(() => reject(new Error('Service worker timeout')), 5000)
+                    setTimeout(() => reject(new Error('Service worker timeout')), 10000)
                 );
 
                 const registration = await Promise.race([
@@ -141,7 +147,57 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
                 const subscription = await registration.pushManager.getSubscription();
                 subscriptionRef.current = subscription;
-                setIsSubscribed(!!subscription);
+
+                // Check localStorage for previously enabled state
+                const wasEnabled = localStorage.getItem(LS_PUSH_ENABLED) === 'true';
+                const savedUserId = localStorage.getItem(LS_PUSH_USER_ID);
+                const isSameUser = savedUserId === String(user.id);
+
+                if (subscription) {
+                    setIsSubscribed(true);
+                    // Ensure localStorage is in sync
+                    localStorage.setItem(LS_PUSH_ENABLED, 'true');
+                    localStorage.setItem(LS_PUSH_USER_ID, String(user.id));
+
+                    // Re-send subscription to server to ensure it's registered
+                    // (handles case where server DB was reset or subscription expired)
+                    try {
+                        await fetch(`${API_URL}/notifications/subscribe`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${token}`
+                            },
+                            body: JSON.stringify({
+                                subscription: subscription.toJSON(),
+                                userAgent: navigator.userAgent
+                            })
+                        });
+                        console.log('[Push] Re-synced existing subscription to server');
+                    } catch (e) {
+                        console.warn('[Push] Failed to re-sync subscription:', e);
+                    }
+                } else if (wasEnabled && isSameUser) {
+                    // User had notifications enabled but subscription was lost (SW update)
+                    // Auto-resubscribe
+                    console.log('[Push] Subscription lost after update, auto-resubscribing...');
+                    setIsSubscribed(false);
+                    // Will auto-subscribe after this effect completes
+                    setTimeout(async () => {
+                        try {
+                            const result = await subscribeInternal(registration);
+                            if (result) {
+                                console.log('[Push] Auto-resubscribe successful');
+                            } else {
+                                console.warn('[Push] Auto-resubscribe failed');
+                            }
+                        } catch (e) {
+                            console.error('[Push] Auto-resubscribe error:', e);
+                        }
+                    }, 1000);
+                } else {
+                    setIsSubscribed(false);
+                }
 
                 // Fetch settings
                 const response = await fetch(`${API_URL}/notifications/settings`, {
@@ -153,6 +209,15 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
                 }
             } catch (error) {
                 console.error('[Push] Error checking subscription:', error);
+                // If check failed but localStorage says enabled, still try to subscribe
+                const wasEnabled = localStorage.getItem(LS_PUSH_ENABLED) === 'true';
+                const savedUserId = localStorage.getItem(LS_PUSH_USER_ID);
+                if (wasEnabled && savedUserId === String(user.id)) {
+                    console.log('[Push] Check failed, will retry subscription in background');
+                    setTimeout(() => {
+                        subscribe().catch(console.error);
+                    }, 3000);
+                }
             } finally {
                 setLoading(false);
             }
@@ -160,6 +225,137 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
         checkSubscription();
     }, [isSupported, token, user]);
+
+    // Auto-resubscribe when all dependencies become ready after update
+    // This handles the race condition where vapidPublicKey isn't available yet
+    // when the initial checkSubscription runs after an app update
+    useEffect(() => {
+        if (!isSupported || !vapidPublicKey || !token || !user || isSubscribed || loading) return;
+
+        const wasEnabled = localStorage.getItem(LS_PUSH_ENABLED) === 'true';
+        const savedUserId = localStorage.getItem(LS_PUSH_USER_ID);
+        const isSameUser = savedUserId === String(user.id);
+
+        if (wasEnabled && isSameUser) {
+            console.log('[Push] All dependencies ready, attempting auto-resubscribe...');
+            const attemptResubscribe = async (retries = 3) => {
+                for (let i = 0; i < retries; i++) {
+                    try {
+                        const registration = await navigator.serviceWorker.ready;
+                        const existingSub = await registration.pushManager.getSubscription();
+                        if (existingSub) {
+                            // Already subscribed, just sync state
+                            subscriptionRef.current = existingSub;
+                            setIsSubscribed(true);
+                            // Re-sync to server
+                            await fetch(`${API_URL}/notifications/subscribe`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    subscription: existingSub.toJSON(),
+                                    userAgent: navigator.userAgent
+                                })
+                            });
+                            console.log('[Push] Auto-resubscribe: found existing subscription, synced');
+                            return;
+                        }
+
+                        const result = await subscribeInternal(registration);
+                        if (result) {
+                            console.log('[Push] Auto-resubscribe successful (attempt', i + 1, ')');
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('[Push] Auto-resubscribe attempt', i + 1, 'failed:', e);
+                    }
+                    // Wait before retry (1s, 2s, 3s)
+                    if (i < retries - 1) {
+                        await new Promise(r => setTimeout(r, (i + 1) * 1000));
+                    }
+                }
+                console.warn('[Push] Auto-resubscribe exhausted all retries');
+            };
+
+            // Small delay to ensure SW is fully ready
+            const timer = setTimeout(() => attemptResubscribe(), 500);
+            return () => clearTimeout(timer);
+        }
+    }, [isSupported, vapidPublicKey, token, user, isSubscribed, loading]);
+
+    // Listen for service worker updates and re-check subscription
+    useEffect(() => {
+        if (!isSupported) return;
+
+        const handleSWUpdate = async () => {
+            console.log('[Push] Service worker updated, re-checking subscription...');
+            // Small delay to let new SW activate
+            setTimeout(async () => {
+                try {
+                    const registration = await navigator.serviceWorker.ready;
+                    const subscription = await registration.pushManager.getSubscription();
+                    subscriptionRef.current = subscription;
+
+                    if (subscription) {
+                        setIsSubscribed(true);
+                        // Re-sync to server
+                        if (token) {
+                            await fetch(`${API_URL}/notifications/subscribe`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    subscription: subscription.toJSON(),
+                                    userAgent: navigator.userAgent
+                                })
+                            });
+                        }
+                    } else {
+                        const wasEnabled = localStorage.getItem(LS_PUSH_ENABLED) === 'true';
+                        if (wasEnabled && token && vapidPublicKey) {
+                            console.log('[Push] Re-subscribing after SW update...');
+                            const newSub = await registration.pushManager.subscribe({
+                                userVisibleOnly: true,
+                                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+                            });
+                            subscriptionRef.current = newSub;
+                            setIsSubscribed(true);
+
+                            await fetch(`${API_URL}/notifications/subscribe`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    Authorization: `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    subscription: newSub.toJSON(),
+                                    userAgent: navigator.userAgent
+                                })
+                            });
+                            console.log('[Push] Re-subscribe after SW update successful');
+                        }
+                    }
+                } catch (error) {
+                    console.error('[Push] Error re-checking subscription after SW update:', error);
+                }
+            }, 2000);
+        };
+
+        // Listen for controlling SW change (new SW activated)
+        navigator.serviceWorker.addEventListener('controllerchange', handleSWUpdate);
+
+        // Listen for custom PWA resume event  
+        window.addEventListener('pwa-resume', handleSWUpdate);
+
+        return () => {
+            navigator.serviceWorker.removeEventListener('controllerchange', handleSWUpdate);
+            window.removeEventListener('pwa-resume', handleSWUpdate);
+        };
+    }, [isSupported, token, vapidPublicKey]);
 
     // Listen for messages from service worker
     useEffect(() => {
@@ -206,6 +402,10 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
                     window.dispatchEvent(new CustomEvent('navigateFromNotification', {
                         detail: { type: 'project', projectId: data.projectId }
                     }));
+                } else if (data.type === 'kanban') {
+                    window.dispatchEvent(new CustomEvent('navigateFromNotification', {
+                        detail: { type: 'kanban' }
+                    }));
                 } else if (data.taskId) {
                     window.dispatchEvent(new CustomEvent('navigateFromNotification', {
                         detail: { type: 'task', taskId: data.taskId }
@@ -233,6 +433,65 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
         }
     }, [isSupported]);
 
+    // Internal subscribe function that takes a registration (used for auto-resubscribe)
+    const subscribeInternal = useCallback(async (registration?: ServiceWorkerRegistration): Promise<boolean> => {
+        if (!isSupported || !vapidPublicKey || !token) {
+            return false;
+        }
+
+        try {
+            if (!registration) {
+                const timeoutPromise = new Promise<null>((_, reject) => 
+                    setTimeout(() => reject(new Error('Service worker timeout')), 10000)
+                );
+                registration = await Promise.race([
+                    navigator.serviceWorker.ready,
+                    timeoutPromise
+                ]) as ServiceWorkerRegistration;
+            }
+
+            if (!registration) return false;
+
+            // Check if already subscribed
+            let subscription = await registration.pushManager.getSubscription();
+            
+            if (!subscription) {
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+                });
+            }
+
+            subscriptionRef.current = subscription;
+
+            const response = await fetch(`${API_URL}/notifications/subscribe`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    subscription: subscription.toJSON(),
+                    userAgent: navigator.userAgent
+                })
+            });
+
+            if (response.ok) {
+                setIsSubscribed(true);
+                // Persist to localStorage
+                localStorage.setItem(LS_PUSH_ENABLED, 'true');
+                if (user) {
+                    localStorage.setItem(LS_PUSH_USER_ID, String(user.id));
+                }
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error('[Push] Internal subscribe error:', error);
+            return false;
+        }
+    }, [isSupported, vapidPublicKey, token, user]);
+
     const subscribe = useCallback(async (): Promise<boolean> => {
         if (!isSupported || !vapidPublicKey || !token) {
             setError('Push notifications không được hỗ trợ');
@@ -252,47 +511,11 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
                 }
             }
 
-            // Add timeout for service worker ready
-            const timeoutPromise = new Promise<null>((_, reject) => 
-                setTimeout(() => reject(new Error('Service worker timeout')), 10000)
-            );
-
-            const registration = await Promise.race([
-                navigator.serviceWorker.ready,
-                timeoutPromise
-            ]) as ServiceWorkerRegistration;
-
-            if (!registration) {
-                throw new Error('Service worker not available');
+            const result = await subscribeInternal();
+            if (!result) {
+                throw new Error('Failed to subscribe');
             }
-            
-            // Subscribe to push
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
-            });
-
-            subscriptionRef.current = subscription;
-
-            // Send subscription to server
-            const response = await fetch(`${API_URL}/notifications/subscribe`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    subscription: subscription.toJSON(),
-                    userAgent: navigator.userAgent
-                })
-            });
-
-            if (response.ok) {
-                setIsSubscribed(true);
-                return true;
-            } else {
-                throw new Error('Failed to save subscription');
-            }
+            return true;
         } catch (error: any) {
             console.error('[Push] Error subscribing:', error);
             setError(error.message || 'Không thể đăng ký thông báo');
@@ -300,7 +523,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
         } finally {
             setLoading(false);
         }
-    }, [isSupported, vapidPublicKey, token, permission, requestPermission]);
+    }, [isSupported, vapidPublicKey, token, permission, requestPermission, subscribeInternal]);
 
     const unsubscribe = useCallback(async (): Promise<boolean> => {
         if (!subscriptionRef.current || !token) return false;
@@ -323,6 +546,9 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
             subscriptionRef.current = null;
             setIsSubscribed(false);
+            // Clear localStorage persistence
+            localStorage.removeItem(LS_PUSH_ENABLED);
+            localStorage.removeItem(LS_PUSH_USER_ID);
             return true;
         } catch (error) {
             console.error('[Push] Error unsubscribing:', error);

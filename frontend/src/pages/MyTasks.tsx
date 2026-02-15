@@ -662,18 +662,202 @@ const MyTasks = () => {
                 </DndContext>
             )}
 
-            {view === 'gantt' && (
-                <div className="bg-white p-4 lg:p-6 rounded-xl border border-gray-200">
-                    <div className="flex flex-col items-center justify-center p-8 text-center">
-                        <Calendar size={48} className="text-gray-300 mb-3" />
-                        <h3 className="text-lg font-semibold text-gray-700">Chế độ Gantt không khả dụng</h3>
-                        <p className="text-gray-500 max-w-sm mt-1">Chế độ xem Gantt hiện chỉ hỗ trợ cho các dự án có ngày bắt đầu và kết thúc cụ thể.</p>
-                        <button onClick={() => setView('list')} className="mt-4 text-blue-600 hover:text-blue-700 font-medium">
-                            Quay lại danh sách
-                        </button>
+            {view === 'gantt' && (() => {
+                // Calculate timeline range
+                const tasksWithDates = filteredTasks.filter(t => t.reminderAt || t.startDate || t.endDate);
+
+                if (tasksWithDates.length === 0) {
+                    return (
+                        <div className="bg-white dark:bg-gray-800 p-4 lg:p-6 rounded-xl border border-gray-200 dark:border-gray-700">
+                            <div className="flex flex-col items-center justify-center p-8 text-center">
+                                <Calendar size={48} className="text-gray-300 mb-3" />
+                                <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Chưa có công việc</h3>
+                                <p className="text-gray-500 dark:text-gray-400 max-w-sm mt-1">Hãy tạo công việc mới để xem biểu đồ Gantt.</p>
+                            </div>
+                        </div>
+                    );
+                }
+
+                // Determine timeline boundaries
+                const now = new Date();
+                let minDate = new Date(now);
+                let maxDate = new Date(now);
+
+                tasksWithDates.forEach(t => {
+                    const dates = [
+                        t.startDate ? new Date(t.startDate) : null,
+                        t.endDate ? new Date(t.endDate) : null,
+                        t.reminderAt ? new Date(t.reminderAt) : null,
+                        new Date(t.createdAt),
+                    ].filter(Boolean) as Date[];
+                    dates.forEach(d => {
+                        if (d < minDate) minDate = new Date(d);
+                        if (d > maxDate) maxDate = new Date(d);
+                    });
+                });
+
+                // Add padding: 2 days before and 5 days after
+                minDate.setDate(minDate.getDate() - 2);
+                maxDate.setDate(maxDate.getDate() + 5);
+
+                // Ensure minimum 7-day range
+                const diffDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays < 7) {
+                    maxDate.setDate(minDate.getDate() + 7);
+                }
+
+                const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                const dayWidth = Math.max(40, Math.min(80, 800 / totalDays)); // Responsive day width
+
+                // Generate day columns
+                const days: Date[] = [];
+                for (let i = 0; i <= totalDays; i++) {
+                    const d = new Date(minDate);
+                    d.setDate(d.getDate() + i);
+                    days.push(d);
+                }
+
+                const getPositionPercent = (date: Date) => {
+                    return ((date.getTime() - minDate.getTime()) / (maxDate.getTime() - minDate.getTime())) * 100;
+                };
+
+                const statusColors: Record<string, { bg: string; border: string; text: string }> = {
+                    'TODO': { bg: 'bg-blue-500', border: 'border-blue-600', text: 'text-white' },
+                    'IN_PROGRESS': { bg: 'bg-amber-500', border: 'border-amber-600', text: 'text-white' },
+                    'COMPLETED': { bg: 'bg-emerald-500', border: 'border-emerald-600', text: 'text-white' },
+                };
+
+                const isToday = (d: Date) => {
+                    const today = new Date();
+                    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
+                };
+
+                const isSunday = (d: Date) => d.getDay() === 0;
+                const isSaturday = (d: Date) => d.getDay() === 6;
+
+                return (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none overflow-hidden">
+                        {/* Legend */}
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex flex-wrap items-center gap-4 text-xs">
+                            <span className="font-semibold text-gray-700 dark:text-gray-200">Chú thích:</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-500"></span> Cần làm</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500"></span> Đang làm</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500"></span> Hoàn thành</span>
+                            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500 ring-2 ring-purple-200"></span> Nhắc nhở</span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                            <div style={{ minWidth: `${Math.max(days.length * dayWidth + 200, 600)}px` }}>
+                                {/* Timeline header */}
+                                <div className="flex border-b border-gray-200 dark:border-gray-700 sticky top-0 bg-white dark:bg-gray-800 z-10">
+                                    {/* Task name column */}
+                                    <div className="w-[200px] min-w-[200px] px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80">
+                                        Công việc
+                                    </div>
+                                    {/* Days */}
+                                    <div className="flex flex-1">
+                                        {days.map((d, i) => (
+                                            <div
+                                                key={i}
+                                                style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
+                                                className={`text-center py-1.5 text-[10px] border-r border-gray-100 dark:border-gray-700/50 ${
+                                                    isToday(d) ? 'bg-blue-50 dark:bg-blue-900/30 font-bold text-blue-700 dark:text-blue-300' :
+                                                    isSunday(d) ? 'bg-red-50/50 dark:bg-red-900/10 text-red-400' :
+                                                    isSaturday(d) ? 'bg-orange-50/50 dark:bg-orange-900/10 text-orange-400' :
+                                                    'text-gray-500 dark:text-gray-400'
+                                                }`}
+                                            >
+                                                <div className="font-medium">{d.getDate()}/{d.getMonth() + 1}</div>
+                                                <div className="text-[9px] opacity-70">{['CN','T2','T3','T4','T5','T6','T7'][d.getDay()]}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Task rows */}
+                                {tasksWithDates.map((task) => {
+                                    const color = statusColors[task.status] || statusColors['TODO'];
+                                    const hasRange = task.startDate && task.endDate;
+                                    const taskStart = task.startDate ? new Date(task.startDate) : task.reminderAt ? new Date(task.reminderAt) : new Date(task.createdAt);
+                                    const taskEnd = task.endDate ? new Date(task.endDate) : task.startDate ? new Date(task.startDate) : task.reminderAt ? new Date(task.reminderAt) : new Date(task.createdAt);
+
+                                    // Ensure end >= start
+                                    const barStart = taskStart < taskEnd ? taskStart : taskEnd;
+                                    const barEnd = taskStart < taskEnd ? taskEnd : taskStart;
+
+                                    const startPercent = getPositionPercent(barStart);
+                                    const endPercent = getPositionPercent(barEnd);
+                                    const widthPercent = Math.max(endPercent - startPercent, 1.5); // Minimum width for visibility
+
+                                    const reminderDate = task.reminderAt ? new Date(task.reminderAt) : null;
+                                    const reminderPercent = reminderDate ? getPositionPercent(reminderDate) : null;
+
+                                    return (
+                                        <div key={task.id} className="flex border-b border-gray-50 dark:border-gray-700/30 hover:bg-gray-50/50 dark:hover:bg-gray-700/20 group">
+                                            {/* Task name */}
+                                            <div className="w-[200px] min-w-[200px] px-3 py-2.5 border-r border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${color.bg}`}></span>
+                                                <span className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate" title={task.title}>
+                                                    {task.title}
+                                                </span>
+                                                {task.status === 'COMPLETED' && <span className="text-[9px] text-emerald-500">✓</span>}
+                                            </div>
+                                            {/* Gantt bar area */}
+                                            <div className="flex-1 relative py-1.5" style={{ minHeight: '36px' }}>
+                                                {/* Background grid lines */}
+                                                <div className="absolute inset-0 flex">
+                                                    {days.map((d, i) => (
+                                                        <div
+                                                            key={i}
+                                                            style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
+                                                            className={`border-r border-gray-50 dark:border-gray-700/20 ${
+                                                                isToday(d) ? 'bg-blue-50/40 dark:bg-blue-900/10' :
+                                                                isSunday(d) || isSaturday(d) ? 'bg-gray-50/40 dark:bg-gray-700/10' : ''
+                                                            }`}
+                                                        />
+                                                    ))}
+                                                </div>
+                                                {/* Today line */}
+                                                {(() => {
+                                                    const todayPercent = getPositionPercent(now);
+                                                    if (todayPercent >= 0 && todayPercent <= 100) {
+                                                        return <div className="absolute top-0 bottom-0 w-px bg-red-400 dark:bg-red-500 z-10 opacity-60" style={{ left: `${todayPercent}%` }} />;
+                                                    }
+                                                    return null;
+                                                })()}
+                                                {/* Task bar */}
+                                                <div
+                                                    className={`absolute top-1/2 -translate-y-1/2 h-5 rounded-md ${color.bg} opacity-85 group-hover:opacity-100 transition-opacity shadow-sm cursor-default z-[2]`}
+                                                    style={{
+                                                        left: `${startPercent}%`,
+                                                        width: `${widthPercent}%`,
+                                                        minWidth: hasRange ? '8px' : '16px',
+                                                    }}
+                                                    title={`${task.title}\n${hasRange ? `${new Date(task.startDate!).toLocaleDateString('vi-VN')} → ${new Date(task.endDate!).toLocaleDateString('vi-VN')}` : task.reminderAt ? `Nhắc: ${new Date(task.reminderAt).toLocaleString('vi-VN')}` : `Tạo: ${new Date(task.createdAt).toLocaleDateString('vi-VN')}`}`}
+                                                >
+                                                    {widthPercent > 8 && (
+                                                        <span className={`absolute inset-0 flex items-center px-1.5 text-[9px] ${color.text} font-medium truncate`}>
+                                                            {task.title}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {/* Reminder marker */}
+                                                {reminderPercent !== null && reminderPercent >= 0 && reminderPercent <= 100 && (
+                                                    <div
+                                                        className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-purple-500 ring-2 ring-purple-200 dark:ring-purple-800 z-[3]"
+                                                        style={{ left: `${reminderPercent}%`, marginLeft: '-5px' }}
+                                                        title={`Nhắc nhở: ${new Date(task.reminderAt!).toLocaleString('vi-VN')}`}
+                                                    />
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {showModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
@@ -753,7 +937,7 @@ const MyTasks = () => {
                                 </div>
                             )}
 
-                            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 pb-safe">
+                            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
                                 <button
                                     type="button"
                                     onClick={resetForm}
@@ -802,7 +986,7 @@ const MyTasks = () => {
                                     Ghi chú lần cuối: {formatDateTime(selectedTaskForNote.lastNoteAt)}
                                 </p>
                             )}
-                            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4 pb-safe">
+                            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-4">
                                 <button
                                     type="button"
                                     onClick={closeNoteModal}

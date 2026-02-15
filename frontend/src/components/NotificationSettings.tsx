@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, BellOff, MessageSquare, Briefcase, Users, CheckCircle2, AtSign, History, RefreshCw } from 'lucide-react';
+import { Bell, BellOff, MessageSquare, Briefcase, Users, CheckCircle2, AtSign, History, RefreshCw, LayoutDashboard } from 'lucide-react';
 import { usePushNotifications } from '../context/PushNotificationContext';
 
 interface NotificationSettingsProps {
@@ -170,6 +170,14 @@ export const NotificationSettings: React.FC<NotificationSettingsProps> = ({ onCl
                                 title="Được nhắc đến"
                                 checked={settings.mentions}
                                 onChange={(v) => handleSettingChange('mentions', v)}
+                            />
+
+                            {/* Kanban notifications */}
+                            <SettingToggle
+                                icon={<LayoutDashboard size={16} />}
+                                title="Thông báo Kanban"
+                                checked={settings.kanbanNotifications}
+                                onChange={(v) => handleSettingChange('kanbanNotifications', v)}
                             />
                         </div>
                     </div>

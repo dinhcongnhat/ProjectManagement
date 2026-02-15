@@ -145,7 +145,8 @@ router.put('/settings', authenticateToken, async (req: AuthRequest, res: Respons
             projectDiscussions,
             projectUpdates,
             taskAssignments,
-            mentions
+            mentions,
+            kanbanNotifications
         } = req.body;
 
         const settings = await prisma.notificationSettings.upsert({
@@ -156,7 +157,8 @@ router.put('/settings', authenticateToken, async (req: AuthRequest, res: Respons
                 projectDiscussions: projectDiscussions ?? undefined,
                 projectUpdates: projectUpdates ?? undefined,
                 taskAssignments: taskAssignments ?? undefined,
-                mentions: mentions ?? undefined
+                mentions: mentions ?? undefined,
+                kanbanNotifications: kanbanNotifications ?? undefined
             },
             create: {
                 userId,
@@ -165,7 +167,8 @@ router.put('/settings', authenticateToken, async (req: AuthRequest, res: Respons
                 projectDiscussions: projectDiscussions ?? true,
                 projectUpdates: projectUpdates ?? true,
                 taskAssignments: taskAssignments ?? true,
-                mentions: mentions ?? true
+                mentions: mentions ?? true,
+                kanbanNotifications: kanbanNotifications ?? true
             }
         });
 

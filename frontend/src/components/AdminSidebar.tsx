@@ -103,7 +103,7 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
             <aside
                 className={clsx(
                     'hidden lg:flex bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex-col h-screen fixed left-0 top-0 z-50 shadow-sm',
-                    'w-60'
+                    'w-72'
                 )}
             >
                 <SidebarContent
@@ -123,7 +123,7 @@ const AdminSidebar = ({ isOpen = true, onClose }: AdminSidebarProps) => {
                         initial="hidden"
                         animate="visible"
                         exit="exit"
-                        className="lg:hidden bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col h-screen fixed left-0 top-0 z-[60] shadow-lg w-60"
+                        className="lg:hidden bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col h-screen fixed left-0 top-0 z-[60] shadow-lg w-72"
                     >
                         <SidebarContent
                             navItems={navItems}
@@ -167,7 +167,7 @@ const SidebarContent = ({
                 <motion.img
                     src="/Logo.png"
                     alt="Logo"
-                    className="h-20 lg:h-24 w-auto object-contain"
+                    className="w-full px-2 h-auto object-contain max-h-32"
                     initial={animate ? { scale: 0.8, opacity: 0 } : false}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 200, damping: 20, delay: 0.1 }}
@@ -181,10 +181,10 @@ const SidebarContent = ({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
             >
-                <p className="text-xs font-semibold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 dark:from-orange-400 dark:via-pink-500 dark:to-orange-400 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto]">
+                <p className="text-sm font-bold bg-gradient-to-r from-red-600 via-yellow-500 to-red-600 dark:from-red-500 dark:via-yellow-400 dark:to-red-500 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] tracking-wide uppercase drop-shadow-sm">
                     Lắng nghe từ tâm
                 </p>
-                <p className="text-xs font-semibold bg-gradient-to-r from-purple-600 via-blue-600 to-purple-600 dark:from-pink-500 dark:via-orange-400 dark:to-pink-500 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] animation-delay-200">
+                <p className="text-sm font-bold bg-gradient-to-r from-yellow-600 via-red-600 to-yellow-600 dark:from-yellow-400 dark:via-red-500 dark:to-yellow-400 bg-clip-text text-transparent animate-gradientShift bg-[length:200%_auto] animation-delay-200 tracking-wide uppercase drop-shadow-sm">
                     Kiến tạo vươn tầm
                 </p>
             </motion.div>
@@ -251,7 +251,7 @@ const SidebarContent = ({
         </motion.nav>
 
         {/* Footer */}
-        <div className="p-3 border-t border-gray-100 dark:border-gray-700 pb-safe">
+        <div className="p-3 border-t border-gray-100 dark:border-gray-700">
             <motion.button
                 onClick={handleLogout}
                 className="flex items-center gap-3 px-3 py-3 w-full text-left text-gray-600 dark:text-gray-300 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 rounded-xl transition-all duration-200 group"

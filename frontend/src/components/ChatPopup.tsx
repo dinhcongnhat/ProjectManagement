@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import {
     MessageCircle, X, Search, Users, MessageSquare, Send, Smile,
     Mic, Minimize2, Maximize2, ArrowLeft, Play, Pause,
-    Volume2, FileText, Plus, Check, CheckCheck, Loader2, Camera, Trash2, MoreVertical,
-    ZoomIn, ZoomOut, RotateCw, Info, Copy
+    Volume2, FileText, Check, CheckCheck, Loader2, Camera, Trash2, MoreVertical,
+    ZoomIn, ZoomOut, RotateCw, Info, Copy, Reply, Share2, CornerUpRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -89,6 +89,7 @@ interface Message {
     attachmentName?: string | null;
     conversationId?: number;
     senderId?: number;
+    isForwarded?: boolean;
     createdAt: string;
     updatedAt?: string;
     reactions?: Reaction[];
@@ -98,6 +99,16 @@ interface Message {
         name: string;
         avatar?: string;
     };
+    replyTo?: {
+        id: number;
+        content: string | null;
+        messageType: string;
+        attachment: string | null;
+        sender: {
+            id: number;
+            name: string;
+        };
+    } | null;
 }
 
 interface Conversation {
@@ -215,6 +226,85 @@ const isVideoFile = (filename: string | null): boolean => {
     const ext = filename.split('.').pop()?.toLowerCase() || '';
     const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v', '3gp'];
     return videoExts.includes(ext);
+};
+
+// Video player component - uses backend proxy URL for same-origin streaming
+// Falls back to presigned URL (direct MinIO) if proxy fails, then to download
+const ChatVideoPlayer: React.FC<{
+    filename: string;
+    fallbackUrl: string;
+    isOwn: boolean;
+}> = ({ filename, fallbackUrl, isOwn }) => {
+    const [videoSrc, setVideoSrc] = React.useState(fallbackUrl);
+    const [phase, setPhase] = React.useState<'proxy' | 'presigned' | 'failed'>('proxy');
+
+    const ext = filename.split('.').pop()?.toLowerCase() || 'mp4';
+    const videoMimeMap: Record<string, string> = {
+        'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+        'mov': 'video/quicktime', // Use quicktime for Safari; Chrome handles via video/mp4 fallback
+        'avi': 'video/x-msvideo',
+        'mkv': 'video/x-matroska', 'm4v': 'video/x-m4v', '3gp': 'video/3gpp'
+    };
+    const videoMime = videoMimeMap[ext] || `video/${ext}`;
+
+    const handleError = async () => {
+        if (phase === 'proxy') {
+            // Try presigned URL from backend - use absolute API URL
+            try {
+                const match = fallbackUrl.match(/conversations\/(\d+)\/messages\/(\d+)\/file/);
+                if (match) {
+                    const apiBase = API_URL.replace(/\/api$/, '');
+                    const resp = await fetch(`${apiBase}/api/chat/conversations/${match[1]}/messages/${match[2]}/video-url`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        setVideoSrc(data.url);
+                        setPhase('presigned');
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[ChatVideoPlayer] Presigned URL fetch failed:', e);
+            }
+            setPhase('failed');
+        } else if (phase === 'presigned') {
+            setPhase('failed');
+        }
+    };
+
+    if (phase === 'failed') {
+        return (
+            <div className="max-w-[300px]">
+                <a
+                    href={fallbackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`flex items-center gap-2 p-2.5 rounded-xl ${isOwn ? 'bg-white/10 text-white' : 'bg-gray-100 text-blue-500'}`}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                    <span>Tải video để xem ({filename})</span>
+                </a>
+            </div>
+        );
+    }
+
+    return (
+        <div className="max-w-[300px]">
+            <video
+                key={videoSrc}
+                controls
+                playsInline
+                className="rounded-lg max-w-full"
+                style={{ maxHeight: '250px' }}
+                preload="metadata"
+                onError={handleError}
+            >
+                {/* For .mov files, try mp4 first (Chrome/Android), then quicktime (Safari) */}
+                {ext === 'mov' && <source src={videoSrc} type="video/mp4" />}
+                <source src={videoSrc} type={videoMime} />
+                Trình duyệt của bạn không hỗ trợ video.
+            </video>
+        </div>
+    );
 };
 
 const extractFilename = (path: string): string => {
@@ -672,6 +762,27 @@ const ChatPopup: React.FC = () => {
         loading: boolean;
         query: string;
     }>>({});
+
+    // Reply state - which message is being replied to per conversation
+    const [replyingTo, setReplyingTo] = useState<Record<number, Message | null>>({});
+
+    // Forward state
+    const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
+    const [showForwardDialog, setShowForwardDialog] = useState(false);
+    const [forwardSearch, setForwardSearch] = useState('');
+    const [forwardSelectedIds, setForwardSelectedIds] = useState<number[]>([]);
+    const [forwardSelectedUserIds, setForwardSelectedUserIds] = useState<number[]>([]);
+    const [forwardAllUsers, setForwardAllUsers] = useState<any[]>([]);
+    const [forwardTab, setForwardTab] = useState<'conversations' | 'users'>('conversations');
+
+    // Message action menu state (3-dot menu)
+    const [messageMenuOpen, setMessageMenuOpen] = useState<number | null>(null);
+
+    // Mobile swipe state
+    const swipeStartXRef = useRef<number>(0);
+    const swipeCurrentXRef = useRef<number>(0);
+    const [swipingMessageId, setSwipingMessageId] = useState<number | null>(null);
+    const [swipeOffset, setSwipeOffset] = useState(0);
 
     const toggleChatInfo = (windowId: number, conversationId: number) => {
         setChatWindows(prev => prev.map(w => {
@@ -1852,6 +1963,9 @@ const ChatPopup: React.FC = () => {
         // Encrypt the message content
         const encryptedContent = encryptMessage(content.trim());
 
+        // Get reply info
+        const replyMsg = replyingTo[conversationId];
+
         // Stop typing indicator
         if (socketRef.current?.connected) {
             socketRef.current.emit('chat:stop_typing', {
@@ -1876,9 +1990,19 @@ const ChatPopup: React.FC = () => {
                 name: user?.name || 'You',
                 avatar: undefined
             },
+            replyTo: replyMsg ? {
+                id: replyMsg.id,
+                content: replyMsg.messageType === 'TEXT' && replyMsg.content ? decryptMessage(replyMsg.content) : replyMsg.content,
+                messageType: replyMsg.messageType,
+                attachment: replyMsg.attachment,
+                sender: replyMsg.sender
+            } : null,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
+
+        // Clear reply state
+        setReplyingTo(prev => ({ ...prev, [conversationId]: null }));
 
         // Update UI immediately
         setChatWindows(prev => prev.map(w =>
@@ -1903,7 +2027,8 @@ const ChatPopup: React.FC = () => {
         try {
             const response = await api.post(`/chat/conversations/${conversationId}/messages`, {
                 content: encryptedContent,
-                messageType: 'TEXT'
+                messageType: 'TEXT',
+                ...(replyMsg ? { replyToId: replyMsg.id } : {})
             });
 
             const realMessage = { ...response.data, content: content.trim() }; // Keep original content for display
@@ -2021,6 +2146,79 @@ const ChatPopup: React.FC = () => {
         }
     };
 
+    // Reply to a message
+    const startReply = (msg: Message, conversationId: number) => {
+        setReplyingTo(prev => ({ ...prev, [conversationId]: msg }));
+        setMessageMenuOpen(null);
+        setShowReactionPicker(null);
+        // Focus the input
+        setTimeout(() => {
+            inputRefs.current[conversationId]?.focus();
+        }, 100);
+    };
+
+    // Forward message
+    const openForwardDialog = async (msg: Message) => {
+        setForwardingMessage(msg);
+        setShowForwardDialog(true);
+        setForwardSearch('');
+        setForwardSelectedIds([]);
+        setForwardSelectedUserIds([]);
+        setForwardTab('conversations');
+        setMessageMenuOpen(null);
+        setShowReactionPicker(null);
+
+        // Fetch all users from database
+        try {
+            const response = await api.get('/chat/users/search');
+            setForwardAllUsers(response.data || []);
+        } catch (error) {
+            console.error('Error fetching users for forward:', error);
+            setForwardAllUsers([]);
+        }
+    };
+
+    const executeForward = async () => {
+        if (!forwardingMessage || (forwardSelectedIds.length === 0 && forwardSelectedUserIds.length === 0)) return;
+        try {
+            // For selected users without existing conversation, create conversations first
+            const allConversationIds = [...forwardSelectedIds];
+
+            for (const targetUserId of forwardSelectedUserIds) {
+                try {
+                    const response = await api.post('/chat/conversations', {
+                        type: 'PRIVATE',
+                        memberIds: [targetUserId]
+                    });
+                    if (response.data?.id) {
+                        allConversationIds.push(response.data.id);
+                    }
+                } catch (err) {
+                    console.error('Error creating conversation for forward:', err);
+                }
+            }
+
+            if (allConversationIds.length === 0) {
+                showError('Không thể tạo cuộc trò chuyện để chuyển tiếp');
+                return;
+            }
+
+            await api.post(`/chat/messages/${forwardingMessage.id}/forward`, {
+                targetConversationIds: allConversationIds
+            });
+            const totalCount = forwardSelectedIds.length + forwardSelectedUserIds.length;
+            showSuccess(`Đã chuyển tiếp tin nhắn tới ${totalCount} cuộc trò chuyện`);
+            setShowForwardDialog(false);
+            setForwardingMessage(null);
+            setForwardSelectedIds([]);
+            setForwardSelectedUserIds([]);
+            fetchConversations();
+        } catch (error) {
+            console.error('Error forwarding message:', error);
+            showError('Không thể chuyển tiếp tin nhắn');
+        }
+    };
+
     // ==================== DRAG & DROP HANDLERS ====================
     const handleDragEnter = (e: React.DragEvent, conversationId: number) => {
         e.preventDefault();
@@ -2080,9 +2278,9 @@ const ChatPopup: React.FC = () => {
         const isImage = file.type.startsWith('image/');
         const isVideo = file.type.startsWith('video/');
 
-        // Check video file size limit (1024MB = 1GB)
-        if (isVideo && file.size > 1024 * 1024 * 1024) {
-            showError('Video quá lớn. Kích thước tối đa là 1GB.');
+        // Check video file size limit (5120MB = 5GB)
+        if (isVideo && file.size > 5 * 1024 * 1024 * 1024) {
+            showError('Video quá lớn. Kích thước tối đa là 5GB.');
             return;
         }
 
@@ -2490,39 +2688,14 @@ const ChatPopup: React.FC = () => {
 
                 // Check if file is a video
                 if (isVideoFile(filename) && resolvedAttachmentUrl) {
-                    const ext = filename.split('.').pop()?.toLowerCase() || '';
-                    // Correct MIME type mapping
-                    const videoMimeMap: Record<string, string> = {
-                        'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
-                        'mov': 'video/quicktime', 'avi': 'video/x-msvideo',
-                        'mkv': 'video/x-matroska', 'm4v': 'video/x-m4v', '3gp': 'video/3gpp'
-                    };
-                    const videoMime = videoMimeMap[ext] || `video/${ext}`;
                     return (
                         <div className="max-w-[300px]">
                             {msg.content && <p className="mb-2 whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>}
-                            <video
-                                controls
-                                playsInline
-                                className="rounded-lg max-w-full"
-                                style={{ maxHeight: '250px' }}
-                                preload="metadata"
-                                onError={(e) => {
-                                    // On error, replace video with download link
-                                    const container = (e.target as HTMLVideoElement).parentElement;
-                                    if (container) {
-                                        const link = document.createElement('a');
-                                        link.href = resolvedAttachmentUrl!;
-                                        link.target = '_blank';
-                                        link.className = `flex items-center gap-2 p-2.5 rounded-xl ${isOwn ? 'bg-white/10 text-white' : 'bg-gray-100 text-blue-500'}`;
-                                        link.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span>Tải video để xem</span>`;
-                                        (e.target as HTMLVideoElement).replaceWith(link);
-                                    }
-                                }}
-                            >
-                                <source src={resolvedAttachmentUrl} type={videoMime} />
-                                Trình duyệt của bạn không hỗ trợ video.
-                            </video>
+                            <ChatVideoPlayer
+                                filename={filename}
+                                fallbackUrl={resolvedAttachmentUrl}
+                                isOwn={isOwn}
+                            />
                         </div>
                     );
                 }
@@ -2845,6 +3018,36 @@ const ChatPopup: React.FC = () => {
                                                                 </div>
                                                             )}
                                                             <div className="relative">
+                                                                {/* Reply preview - if this message is a reply */}
+                                                                {msg.replyTo && (
+                                                                    <div 
+                                                                        className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 cursor-pointer ${isOwn 
+                                                                            ? 'bg-blue-700/50 border-blue-300 text-blue-100' 
+                                                                            : 'bg-gray-100 border-gray-400 text-gray-600'
+                                                                        }`}
+                                                                        onClick={() => {
+                                                                            const el = document.getElementById(`msg-${msg.replyTo!.id}`);
+                                                                            if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('bg-yellow-100'); setTimeout(() => el.classList.remove('bg-yellow-100'), 2000); }
+                                                                        }}
+                                                                    >
+                                                                        <div className="font-medium">{msg.replyTo.sender.name}</div>
+                                                                        <div className="truncate opacity-80">
+                                                                            {msg.replyTo.messageType === 'TEXT' && msg.replyTo.content
+                                                                                ? decryptMessage(msg.replyTo.content)
+                                                                                : msg.replyTo.messageType === 'IMAGE' ? '📷 Hình ảnh'
+                                                                                : msg.replyTo.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                                                : msg.replyTo.messageType === 'FILE' ? '📎 File'
+                                                                                : msg.replyTo.content || 'Tin nhắn'}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                {/* Forwarded label */}
+                                                                {msg.isForwarded && (
+                                                                    <div className={`flex items-center gap-1 mb-0.5 text-xs italic ${isOwn ? 'text-blue-200' : 'text-gray-400'}`}>
+                                                                        <CornerUpRight size={10} />
+                                                                        <span>Đã chuyển tiếp</span>
+                                                                    </div>
+                                                                )}
                                                                 <div className={`px-3 py-2 rounded-2xl shadow-sm text-sm ${isOwn
                                                                     ? 'bg-blue-600 text-white'
                                                                     : 'bg-white text-gray-800 border border-gray-100'
@@ -2852,37 +3055,70 @@ const ChatPopup: React.FC = () => {
                                                                     {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                                                 </div>
 
-                                                                {/* Reaction buttons - Show on hover for desktop */}
-                                                                <div className={`absolute ${isOwn ? '-left-24' : '-right-24'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white rounded-full shadow-md border px-1 py-0.5 z-10`}>
-                                                                    {REACTION_EMOJIS.slice(0, 3).map(emoji => (
-                                                                        <button
-                                                                            key={emoji}
-                                                                            onClick={() => toggleReaction(msg, emoji)}
-                                                                            className="text-sm hover:scale-125 transition-transform p-0.5"
-                                                                            title={emoji}
-                                                                        >
-                                                                            {emoji}
-                                                                        </button>
-                                                                    ))}
+                                                                {/* Message action buttons - Show on hover for desktop */}
+                                                                <div className={`absolute ${isOwn ? '-left-20' : '-right-20'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 bg-white rounded-full shadow-md border px-1 py-0.5 z-10`}>
+                                                                    {/* Reaction button */}
                                                                     <button
                                                                         onClick={() => setShowReactionPicker(showReactionPicker === msg.id ? null : msg.id)}
-                                                                        className="p-0.5 text-gray-400 hover:text-gray-600"
-                                                                        title="Thêm reaction"
+                                                                        className="p-1 text-gray-400 hover:text-yellow-500 hover:bg-gray-50 rounded-full transition-colors"
+                                                                        title="Thả cảm xúc"
                                                                     >
-                                                                        <Plus size={12} />
+                                                                        <Smile size={14} />
                                                                     </button>
-                                                                    {isOwn && (
+                                                                    {/* Reply button */}
+                                                                    <button
+                                                                        onClick={() => startReply(msg, conversationId)}
+                                                                        className="p-1 text-gray-400 hover:text-blue-500 hover:bg-gray-50 rounded-full transition-colors"
+                                                                        title="Trả lời"
+                                                                    >
+                                                                        <Reply size={14} />
+                                                                    </button>
+                                                                    {/* 3-dot menu button */}
+                                                                    <div className="relative">
                                                                         <button
-                                                                            onClick={() => deleteMessage(msg.id, conversationId)}
-                                                                            className="p-0.5 text-gray-400 hover:text-red-500"
-                                                                            title="Xóa tin nhắn"
+                                                                            onClick={() => setMessageMenuOpen(messageMenuOpen === msg.id ? null : msg.id)}
+                                                                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-full transition-colors"
+                                                                            title="Thêm"
                                                                         >
-                                                                            <Trash2 size={12} />
+                                                                            <MoreVertical size={14} />
                                                                         </button>
-                                                                    )}
+                                                                        {/* Dropdown menu */}
+                                                                        {messageMenuOpen === msg.id && (
+                                                                            <>
+                                                                                <div className="fixed inset-0 z-[9998]" onClick={() => setMessageMenuOpen(null)} />
+                                                                                <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} top-full mt-1 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-40`}>
+                                                                                    {msg.messageType === 'TEXT' && displayContent && (
+                                                                                        <button
+                                                                                            onClick={() => { navigator.clipboard.writeText(displayContent); setMessageMenuOpen(null); }}
+                                                                                            className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                                                                                        >
+                                                                                            <Copy size={14} />
+                                                                                            Sao chép
+                                                                                        </button>
+                                                                                    )}
+                                                                                    <button
+                                                                                        onClick={() => openForwardDialog(msg)}
+                                                                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                                                                                    >
+                                                                                        <Share2 size={14} />
+                                                                                        Chuyển tiếp
+                                                                                    </button>
+                                                                                    {isOwn && (
+                                                                                        <button
+                                                                                            onClick={() => { setMessageMenuOpen(null); deleteMessage(msg.id, conversationId); }}
+                                                                                            className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                                                                        >
+                                                                                            <Trash2 size={14} />
+                                                                                            Xóa
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
 
-                                                                {/* Full Reaction Picker - shown when clicking Plus */}
+                                                                {/* Full Reaction Picker - shown when clicking Smile */}
                                                                 {showReactionPicker === msg.id && (
                                                                     <>
                                                                         <div className="fixed inset-0 z-[9998]" onClick={() => setShowReactionPicker(null)} />
@@ -3004,7 +3240,31 @@ const ChatPopup: React.FC = () => {
                             )}
 
                             {/* Input Area */}
-                            <div className="p-2 border-t border-gray-200 bg-white shrink-0">
+                            <div className="border-t border-gray-200 bg-white shrink-0">
+                                {/* Reply preview bar */}
+                                {replyingTo[conversationId] && (
+                                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+                                        <Reply size={14} className="text-blue-500 shrink-0" />
+                                        <div className="flex-1 min-w-0 border-l-2 border-blue-400 pl-2">
+                                            <div className="text-xs font-medium text-blue-600">{replyingTo[conversationId]!.sender.name}</div>
+                                            <div className="text-xs text-gray-500 truncate">
+                                                {replyingTo[conversationId]!.messageType === 'TEXT' && replyingTo[conversationId]!.content
+                                                    ? decryptMessage(replyingTo[conversationId]!.content!)
+                                                    : replyingTo[conversationId]!.messageType === 'IMAGE' ? '📷 Hình ảnh'
+                                                    : replyingTo[conversationId]!.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                    : replyingTo[conversationId]!.messageType === 'FILE' ? '📎 File'
+                                                    : 'Tin nhắn'}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setReplyingTo(prev => ({ ...prev, [conversationId]: null }))}
+                                            className="p-1 hover:bg-blue-100 rounded-full transition-colors shrink-0"
+                                        >
+                                            <X size={14} className="text-gray-400" />
+                                        </button>
+                                    </div>
+                                )}
+                                <div className="p-2">
                                 {isRecording === conversationId ? (
                                     <div className="flex items-center gap-2 px-1 py-1">
                                         <div
@@ -3195,6 +3455,7 @@ const ChatPopup: React.FC = () => {
                                     </div>
                                 )}
                             </div>
+                            </div>
                         </div>
 
                         {/* INFO SIDEBAR */}
@@ -3366,9 +3627,9 @@ const ChatPopup: React.FC = () => {
         const otherStatus = getOtherUserStatus();
 
         return (
-            <div className={`fixed inset-0 z-50 flex flex-col ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+            <div className={`fixed inset-0 z-[100] flex flex-col h-[100dvh] ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
                 {/* Header - Clean Design with safe area */}
-                <div className="bg-blue-600 shrink-0 shadow-sm">
+                <div className="bg-blue-600 shrink-0 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
                     <div className="flex items-center gap-3 px-3 py-2.5">
                         <button
                             onClick={() => { setMobileActiveChat(null); setIsOpen(true); }}
@@ -3483,7 +3744,45 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                     </div>
                                 )}
-                                <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isNewSenderGroup ? 'mt-3' : 'mt-0.5'}`}>
+                                <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} ${isNewSenderGroup ? 'mt-3' : 'mt-0.5'} relative`}
+                                    onTouchStart={(e) => {
+                                        if (showReactionPicker) return;
+                                        const touch = e.touches[0];
+                                        swipeStartXRef.current = touch.clientX;
+                                        swipeCurrentXRef.current = touch.clientX;
+                                        setSwipingMessageId(msg.id);
+                                    }}
+                                    onTouchMove={(e) => {
+                                        if (swipingMessageId !== msg.id || showReactionPicker) return;
+                                        const touch = e.touches[0];
+                                        swipeCurrentXRef.current = touch.clientX;
+                                        const diff = swipeCurrentXRef.current - swipeStartXRef.current;
+                                        if (diff > 10) {
+                                            setSwipeOffset(Math.min(diff, 80));
+                                            if (longPressTimerRef.current) {
+                                                clearTimeout(longPressTimerRef.current);
+                                                longPressTimerRef.current = null;
+                                            }
+                                            setLongPressMessageId(null);
+                                        }
+                                    }}
+                                    onTouchEnd={() => {
+                                        if (swipingMessageId === msg.id) {
+                                            if (swipeOffset > 60) {
+                                                startReply(msg, conversationId);
+                                                if (navigator.vibrate) navigator.vibrate(30);
+                                            }
+                                            setSwipingMessageId(null);
+                                            setSwipeOffset(0);
+                                        }
+                                    }}
+                                >
+                                    {/* Swipe reply indicator */}
+                                    {swipingMessageId === msg.id && swipeOffset > 10 && (
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 flex items-center justify-center z-10" style={{ width: swipeOffset, opacity: Math.min(swipeOffset / 60, 1) }}>
+                                            <Reply size={20} className={`${swipeOffset > 60 ? 'text-blue-500' : 'text-gray-400'} transition-colors`} />
+                                        </div>
+                                    )}
                                     {/* Avatar for other users */}
                                     {!isOwn && (
                                         <div className="w-8 h-8 mr-2 shrink-0">
@@ -3508,7 +3807,7 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                     )}
 
-                                    <div className="max-w-[75%]">
+                                    <div className="max-w-[75%]" style={{ transform: swipingMessageId === msg.id ? `translateX(${swipeOffset}px)` : undefined, transition: swipingMessageId === msg.id ? 'none' : 'transform 0.2s ease' }}>
                                         {/* Sender name with time */}
                                         {!isOwn && isNewSenderGroup && (
                                             <div className="flex items-center gap-2 mb-1 ml-1">
@@ -3524,6 +3823,36 @@ const ChatPopup: React.FC = () => {
                                             </div>
                                         )}
                                         <div className="relative">
+                                            {/* Reply preview on mobile */}
+                                            {msg.replyTo && (
+                                                <div
+                                                    className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 ${isOwn
+                                                        ? 'bg-blue-600/50 border-blue-300 text-blue-100'
+                                                        : isDark ? 'bg-gray-600 border-gray-400 text-gray-300' : 'bg-gray-200 border-gray-400 text-gray-600'
+                                                    }`}
+                                                    onClick={() => {
+                                                        const el = document.getElementById(`msg-${msg.replyTo!.id}`);
+                                                        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+                                                    }}
+                                                >
+                                                    <div className="font-medium">{msg.replyTo.sender.name}</div>
+                                                    <div className="truncate opacity-80">
+                                                        {msg.replyTo.messageType === 'TEXT' && msg.replyTo.content
+                                                            ? decryptMessage(msg.replyTo.content)
+                                                            : msg.replyTo.messageType === 'IMAGE' ? '📷 Hình ảnh'
+                                                            : msg.replyTo.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                            : msg.replyTo.messageType === 'FILE' ? '📎 File'
+                                                            : msg.replyTo.content || 'Tin nhắn'}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Forwarded label */}
+                                            {msg.isForwarded && (
+                                                <div className={`flex items-center gap-1 mb-0.5 text-xs italic ${isOwn ? 'text-blue-200' : isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                    <CornerUpRight size={10} />
+                                                    <span>Đã chuyển tiếp</span>
+                                                </div>
+                                            )}
                                             <div
                                                 className={`px-3 py-2 rounded-2xl select-none ${isOwn ? 'bg-blue-500 text-white' : (isDark ? 'bg-gray-700 text-gray-100' : 'bg-gray-100 text-gray-800')
                                                     } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''} ${longPressMessageId === msg.id ? 'scale-95' : ''}`}
@@ -3554,50 +3883,82 @@ const ChatPopup: React.FC = () => {
                                                 {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                             </div>
 
-                                            {/* Reaction Picker with delete */}
+                                            {/* Long-press context menu */}
                                             {showReactionPicker === msg.id && (
                                                 <>
-                                                    <div className="fixed inset-0 z-[9998] bg-black/10" onClick={() => setShowReactionPicker(null)} />
-                                                    <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} -top-12 rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 z-[9999] ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
-                                                        {REACTION_EMOJIS.map(emoji => (
-                                                            <button
-                                                                key={emoji}
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    toggleReaction(msg, emoji);
-                                                                    setShowReactionPicker(null);
-                                                                }}
-                                                                className="text-xl p-1 active:scale-125"
-                                                            >
-                                                                {emoji}
-                                                            </button>
-                                                        ))}
-                                                        {msg.messageType === 'TEXT' && (
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    navigator.clipboard.writeText(displayContent || '');
-                                                                    setShowReactionPicker(null);
-                                                                    showSuccess('Đã sao chép');
-                                                                }}
-                                                                className={`p-1.5 rounded-full ${isDark ? 'text-gray-400 hover:text-blue-400 hover:bg-gray-700' : 'text-gray-500 hover:text-blue-500 hover:bg-gray-100'}`}
-                                                                title="Sao chép"
-                                                            >
-                                                                <Copy size={16} />
-                                                            </button>
-                                                        )}
-                                                        {isOwn && (
+                                                    <div className="fixed inset-0 z-[9998] bg-black/30" onClick={() => setShowReactionPicker(null)} />
+                                                    <div className={`absolute ${isOwn ? 'right-0' : 'left-0'} bottom-full mb-2 z-[9999] flex flex-col items-stretch`}>
+                                                        {/* Reaction emojis row */}
+                                                        <div className={`rounded-full shadow-xl border px-2 py-1 flex items-center gap-1 mb-1 ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                            {REACTION_EMOJIS.map(emoji => (
+                                                                <button
+                                                                    key={emoji}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        toggleReaction(msg, emoji);
+                                                                        setShowReactionPicker(null);
+                                                                    }}
+                                                                    className="text-xl p-1 active:scale-125 transition-transform"
+                                                                >
+                                                                    {emoji}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                        {/* Action buttons list */}
+                                                        <div className={`rounded-xl shadow-xl border overflow-hidden ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                            {/* Reply */}
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     setShowReactionPicker(null);
-                                                                    deleteMessage(msg.id, conversationId);
+                                                                    startReply(msg, conversationId);
                                                                 }}
-                                                                className={`p-1.5 rounded-full ${isDark ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700' : 'text-gray-500 hover:text-red-500 hover:bg-gray-100'}`}
+                                                                className={`w-full flex items-center justify-between px-4 py-3 text-sm ${isDark ? 'text-gray-200 active:bg-gray-700' : 'text-gray-700 active:bg-gray-100'}`}
                                                             >
-                                                                <Trash2 size={16} />
+                                                                <span>Trả lời</span>
+                                                                <Reply size={16} className="opacity-60" />
                                                             </button>
-                                                        )}
+                                                            {/* Copy - only for text messages */}
+                                                            {msg.messageType === 'TEXT' && displayContent && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        navigator.clipboard.writeText(displayContent);
+                                                                        setShowReactionPicker(null);
+                                                                    }}
+                                                                    className={`w-full flex items-center justify-between px-4 py-3 text-sm border-t ${isDark ? 'text-gray-200 active:bg-gray-700 border-gray-700' : 'text-gray-700 active:bg-gray-100 border-gray-100'}`}
+                                                                >
+                                                                    <span>Sao chép</span>
+                                                                    <Copy size={16} className="opacity-60" />
+                                                                </button>
+                                                            )}
+                                                            {/* Forward */}
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setShowReactionPicker(null);
+                                                                    openForwardDialog(msg);
+                                                                }}
+                                                                className={`w-full flex items-center justify-between px-4 py-3 text-sm border-t ${isDark ? 'text-gray-200 active:bg-gray-700 border-gray-700' : 'text-gray-700 active:bg-gray-100 border-gray-100'}`}
+                                                            >
+                                                                <span>Chuyển tiếp</span>
+                                                                <Share2 size={16} className="opacity-60" />
+                                                            </button>
+                                                            {/* Delete - own messages only */}
+                                                            {isOwn && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setShowReactionPicker(null);
+                                                                        deleteMessage(msg.id, conversationId);
+                                                                    }}
+                                                                    className={`w-full flex items-center justify-between px-4 py-3 text-sm border-t ${isDark ? 'text-red-400 active:bg-gray-700 border-gray-700' : 'text-red-500 active:bg-red-50 border-gray-100'}`}
+                                                                >
+                                                                    <span>Xoá</span>
+                                                                    <Trash2 size={16} className="opacity-60" />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </>
                                             )}
@@ -3687,7 +4048,33 @@ const ChatPopup: React.FC = () => {
                 )}
 
                 {/* Input - Modern Design */}
-                <div className={`p-3 border-t shrink-0 ${isDark ? 'bg-gray-900 border-gray-700 shadow-[0_-2px_10px_rgba(0,0,0,0.3)]' : 'bg-white border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]'}`} style={{ paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
+                <div
+                    className={`border-t shrink-0 ${isDark ? 'bg-gray-900 border-gray-700 shadow-[0_-2px_10px_rgba(0,0,0,0.3)]' : 'bg-white border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]'}`}
+                >
+                    {/* Mobile Reply preview */}
+                    {replyingTo[conversationId] && (
+                        <div className={`px-3 py-2 border-b flex items-center gap-2 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-blue-50 border-blue-100'}`}>
+                            <Reply size={14} className="text-blue-500 shrink-0" />
+                            <div className={`flex-1 min-w-0 border-l-2 border-blue-400 pl-2`}>
+                                <div className="text-xs font-medium text-blue-600">{replyingTo[conversationId]!.sender.name}</div>
+                                <div className={`text-xs truncate ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    {replyingTo[conversationId]!.messageType === 'TEXT' && replyingTo[conversationId]!.content
+                                        ? decryptMessage(replyingTo[conversationId]!.content!)
+                                        : replyingTo[conversationId]!.messageType === 'IMAGE' ? '📷 Hình ảnh'
+                                        : replyingTo[conversationId]!.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                        : replyingTo[conversationId]!.messageType === 'FILE' ? '📎 File'
+                                        : 'Tin nhắn'}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setReplyingTo(prev => ({ ...prev, [conversationId]: null }))}
+                                className={`p-1 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700' : 'hover:bg-blue-100'}`}
+                            >
+                                <X size={14} className="text-gray-400" />
+                            </button>
+                        </div>
+                    )}
+                    <div className="px-3 py-2">
                     {isRecording === conversationId ? (
                         <div className="flex items-center gap-3 px-3 py-2">
                             <div
@@ -3865,9 +4252,11 @@ const ChatPopup: React.FC = () => {
                         </div>
                     )}
                 </div>
+                </div>
+                {/* Safe area spacer removed - edge to edge for PWA */}
                 {/* Mobile Info Overlay */}
                 {mobileShowInfo && (
-                    <div className={`fixed inset-0 z-[60] flex flex-col animate-slideUp ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+                    <div className={`fixed inset-0 z-[60] flex flex-col animate-slideUp ${isDark ? 'bg-gray-900' : 'bg-white'}`} style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
                         <div className={`flex items-center justify-between px-4 py-3 border-b shadow-sm ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
                             <h3 className={`text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>Thông tin</h3>
                             <button onClick={() => setMobileShowInfo(false)} className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-700 active:bg-gray-600' : 'hover:bg-gray-100 active:bg-gray-200'}`}>
@@ -4030,6 +4419,190 @@ const ChatPopup: React.FC = () => {
                         </div>
                     </div>
                 )}
+            </div>
+        );
+    };
+
+    // ==================== RENDER FORWARD DIALOG ====================
+    const renderForwardDialog = () => {
+        if (!showForwardDialog || !forwardingMessage) return null;
+
+        const filteredConversations = conversations.filter(conv => {
+            if (!forwardSearch.trim()) return true;
+            return conv.displayName?.toLowerCase().includes(forwardSearch.toLowerCase());
+        });
+
+        // Filter users: exclude self, filter by search query
+        const filteredUsers = forwardAllUsers.filter(u => {
+            if (u.id === user?.id) return false;
+            if (!forwardSearch.trim()) return true;
+            return u.name?.toLowerCase().includes(forwardSearch.toLowerCase()) ||
+                   u.username?.toLowerCase().includes(forwardSearch.toLowerCase());
+        });
+
+        const totalSelected = forwardSelectedIds.length + forwardSelectedUserIds.length;
+
+        return (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl animate-scaleIn">
+                    {/* Header */}
+                    <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+                        <h3 className="text-lg font-bold text-gray-800">Chuyển tiếp tin nhắn</h3>
+                        <button
+                            onClick={() => { setShowForwardDialog(false); setForwardingMessage(null); setForwardSelectedIds([]); setForwardSelectedUserIds([]); }}
+                            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                        >
+                            <X size={20} className="text-gray-500" />
+                        </button>
+                    </div>
+
+                    {/* Message preview */}
+                    <div className="px-4 py-2 bg-gray-50 border-b">
+                        <div className="text-xs text-gray-500 mb-1">Tin nhắn:</div>
+                        <div className="text-sm text-gray-700 truncate">
+                            {forwardingMessage.messageType === 'TEXT' && forwardingMessage.content
+                                ? decryptMessage(forwardingMessage.content)
+                                : forwardingMessage.messageType === 'IMAGE' ? '📷 Hình ảnh'
+                                : forwardingMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                : forwardingMessage.messageType === 'FILE' ? '📎 File'
+                                : forwardingMessage.messageType === 'LINK' ? '🔗 Link'
+                                : forwardingMessage.content || 'Tin nhắn'}
+                        </div>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex border-b border-gray-100">
+                        <button
+                            onClick={() => setForwardTab('conversations')}
+                            className={`flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${forwardTab === 'conversations' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <MessageSquare size={15} />
+                            Hội thoại
+                        </button>
+                        <button
+                            onClick={() => setForwardTab('users')}
+                            className={`flex-1 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${forwardTab === 'users' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <Users size={15} />
+                            Người dùng
+                        </button>
+                    </div>
+
+                    {/* Search */}
+                    <div className="p-3">
+                        <div className="relative">
+                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder={forwardTab === 'conversations' ? 'Tìm kiếm cuộc trò chuyện...' : 'Tìm kiếm người dùng...'}
+                                value={forwardSearch}
+                                onChange={(e) => setForwardSearch(e.target.value)}
+                                className="w-full pl-9 pr-3 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Content list */}
+                    <div className="flex-1 overflow-y-auto px-2 pb-2">
+                        {forwardTab === 'conversations' ? (
+                            <>
+                                {filteredConversations.map(conv => {
+                                    const isSelected = forwardSelectedIds.includes(conv.id);
+                                    return (
+                                        <button
+                                            key={conv.id}
+                                            onClick={() => {
+                                                setForwardSelectedIds(prev =>
+                                                    isSelected ? prev.filter(id => id !== conv.id) : [...prev, conv.id]
+                                                );
+                                            }}
+                                            className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-colors ${isSelected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'}`}
+                                        >
+                                            <div className="relative">
+                                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden">
+                                                    {conv.avatarUrl || conv.displayAvatar ? (
+                                                        <img src={resolveAttachmentUrl(conv.avatarUrl || conv.displayAvatar) || ''} alt="" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-blue-600 font-bold text-sm">{conv.displayName?.charAt(0).toUpperCase()}</span>
+                                                    )}
+                                                </div>
+                                                {conv.type === 'GROUP' && (
+                                                    <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                                                        <Users size={8} className="text-white" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0 text-left">
+                                                <div className="text-sm font-medium text-gray-800 truncate">{conv.displayName}</div>
+                                                <div className="text-xs text-gray-500">
+                                                    {conv.type === 'GROUP' ? `${conv.members.length} thành viên` : 'Tin nhắn riêng'}
+                                                </div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
+                                                {isSelected && <Check size={12} className="text-white" />}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                                {filteredConversations.length === 0 && (
+                                    <div className="text-center text-sm text-gray-400 py-8">Không tìm thấy cuộc trò chuyện</div>
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                {filteredUsers.map(u => {
+                                    const isSelected = forwardSelectedUserIds.includes(u.id);
+                                    return (
+                                        <button
+                                            key={u.id}
+                                            onClick={() => {
+                                                setForwardSelectedUserIds(prev =>
+                                                    isSelected ? prev.filter(id => id !== u.id) : [...prev, u.id]
+                                                );
+                                            }}
+                                            className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-colors ${isSelected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'}`}
+                                        >
+                                            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center overflow-hidden">
+                                                {u.avatarUrl ? (
+                                                    <img src={resolveAttachmentUrl(u.avatarUrl) || ''} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-green-600 font-bold text-sm">{u.name?.charAt(0).toUpperCase()}</span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0 text-left">
+                                                <div className="text-sm font-medium text-gray-800 truncate">{u.name}</div>
+                                                <div className="text-xs text-gray-500 truncate">@{u.username}{u.position ? ` · ${u.position}` : ''}</div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
+                                                {isSelected && <Check size={12} className="text-white" />}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                                {filteredUsers.length === 0 && (
+                                    <div className="text-center text-sm text-gray-400 py-8">Không tìm thấy người dùng</div>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-3 border-t border-gray-100 flex items-center justify-between">
+                        <span className="text-sm text-gray-500">
+                            {totalSelected > 0 ? `Đã chọn ${totalSelected}` : 'Chọn người nhận'}
+                        </span>
+                        <button
+                            onClick={executeForward}
+                            disabled={totalSelected === 0}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${totalSelected > 0
+                                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                            }`}
+                        >
+                            Chuyển tiếp
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     };
@@ -4275,12 +4848,13 @@ const ChatPopup: React.FC = () => {
                                 flexDirection: 'column',
                                 overflow: 'hidden',
                                 ...(isMobile ? {
+                                    top: 0,
                                     left: 0,
                                     right: 0,
                                     bottom: 0,
-                                    height: '92dvh',
-                                    borderTopLeftRadius: '16px',
-                                    borderTopRightRadius: '16px'
+                                    height: '100dvh', // Full height
+                                    borderTopLeftRadius: '0px',
+                                    borderTopRightRadius: '0px'
                                 } : {
                                     right: '16px',
                                     bottom: '80px',
@@ -4526,6 +5100,8 @@ const ChatPopup: React.FC = () => {
                                                                         </svg>
                                                                         {pinnedConversations.has(conv.id) ? 'Bỏ ghim' : 'Ghim cuộc trò chuyện'}
                                                                     </button>
+                                                                    {/* Only ADMIN can delete group conversations; anyone can delete private */}
+                                                                    {(conv.type !== 'GROUP' || user?.role === 'ADMIN') && (
                                                                     <button
                                                                         onClick={(e) => {
                                                                             e.stopPropagation();
@@ -4537,6 +5113,7 @@ const ChatPopup: React.FC = () => {
                                                                         <Trash2 size={16} />
                                                                         Xóa cuộc trò chuyện
                                                                     </button>
+                                                                    )}
                                                                 </div>
                                                             </>
                                                         )}
@@ -4629,6 +5206,9 @@ const ChatPopup: React.FC = () => {
 
                 {/* Create Group Modal */}
                 {renderCreateGroupModal()}
+
+                {/* Forward Dialog */}
+                {renderForwardDialog()}
 
                 {/* Image Preview Modal with Zoom */}
                 {imagePreview && (

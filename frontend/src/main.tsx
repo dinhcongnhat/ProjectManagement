@@ -14,11 +14,14 @@ const isStandalonePWA = window.matchMedia('(display-mode: standalone)').matches 
 const updateSW = registerSW({
   onNeedRefresh() {
     console.log('[SW] New version available, auto-updating...');
-    // Auto-update without user confirmation - clear caches and apply
+    // Clear only app caches (not push subscription related)
     if ('caches' in window) {
       caches.keys().then((names) => {
         names.forEach((name) => {
-          caches.delete(name);
+          // Only clear app/asset caches, preserve push-related state
+          if (name.startsWith('pwa-cache') || name.startsWith('workbox-')) {
+            caches.delete(name);
+          }
         });
       });
     }
@@ -83,6 +86,8 @@ if (isStandalonePWA) {
 
 // Preload OnlyOffice script in background
 preloadOnlyOfficeScript()
+
+
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -19,11 +19,13 @@ import {
     markConversationAsRead,
     deleteMessage,
     deleteConversation,
+    forwardMessage,
     serveMessageAttachment,
     serveConversationAvatar,
     searchMessagesInConversation,
     getConversationMedia,
-    getMessageContext
+    getMessageContext,
+    getVideoStreamUrl
 } from '../controllers/chatController.js';
 
 const router = express.Router();
@@ -99,6 +101,9 @@ router.get('/conversations/:conversationId/messages/:messageId/file', (req, res,
     next();
 }, serveMessageAttachment);
 
+// Video stream URL endpoint (public for <video> tag to work)
+router.get('/conversations/:conversationId/messages/:messageId/video-url', getVideoStreamUrl);
+
 router.get('/conversations/:id/avatar', (req, res, next) => {
     console.log('[chatRoutes] Matched PUBLIC route for conversation avatar');
     console.log('[chatRoutes] Params:', req.params);
@@ -128,6 +133,7 @@ router.post('/conversations/:id/messages', sendMessage);
 router.post('/conversations/:id/messages/file', upload.single('file'), sendFileMessage);
 router.post('/conversations/:id/messages/voice', upload.single('audio'), sendVoiceMessage);
 router.delete('/messages/:messageId', deleteMessage);
+router.post('/messages/:messageId/forward', forwardMessage);
 
 // Reactions
 router.post('/messages/:messageId/reactions', addReaction);

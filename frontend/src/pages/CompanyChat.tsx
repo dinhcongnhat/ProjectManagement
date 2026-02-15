@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import api from '../config/api';
@@ -16,6 +17,74 @@ import {
     User as UserCircle
 } from 'lucide-react';
 import { resolveUrl } from '../utils/urlUtils';
+
+// Video player - uses backend proxy URL directly for same-origin streaming
+// Falls back to presigned URL (direct MinIO) if proxy fails, then to download
+const CompanyChatVideoPlayer: React.FC<{
+    attachmentUrl: string;
+    filename: string;
+}> = ({ attachmentUrl, filename }) => {
+    const [videoSrc, setVideoSrc] = React.useState(resolveUrl(attachmentUrl) || '');
+    const [phase, setPhase] = React.useState<'proxy' | 'presigned' | 'failed'>('proxy');
+
+    const ext = filename.split('.').pop()?.toLowerCase() || 'mp4';
+    const mimeMap: Record<string, string> = {
+        'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+        'mov': 'video/mp4', // Chrome can play H.264 .mov as mp4
+        'avi': 'video/x-msvideo',
+        'mkv': 'video/x-matroska', 'm4v': 'video/x-m4v', '3gp': 'video/3gpp'
+    };
+
+    const handleError = async () => {
+        if (phase === 'proxy') {
+            try {
+                const resolved = resolveUrl(attachmentUrl) || '';
+                const match = resolved.match(/conversations\/(\d+)\/messages\/(\d+)\/file/);
+                if (match) {
+                    const resp = await fetch(`/api/chat/conversations/${match[1]}/messages/${match[2]}/video-url`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        setVideoSrc(data.url);
+                        setPhase('presigned');
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[CompanyChatVideoPlayer] Presigned URL fetch failed:', e);
+            }
+            setPhase('failed');
+        } else if (phase === 'presigned') {
+            setPhase('failed');
+        }
+    };
+
+    const originalSrc = resolveUrl(attachmentUrl) || '';
+
+    if (phase === 'failed') {
+        return (
+            <a href={originalSrc} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-blue-500">
+                <Paperclip className="h-4 w-4" />
+                <span className="underline">Tải video để xem ({filename})</span>
+            </a>
+        );
+    }
+
+    return (
+        <video
+            key={videoSrc}
+            controls
+            playsInline
+            className="max-w-full rounded-lg"
+            style={{ maxHeight: '300px' }}
+            preload="metadata"
+            onError={handleError}
+        >
+            <source src={videoSrc} type={mimeMap[ext] || `video/${ext}`} />
+            {ext === 'mov' && <source src={videoSrc} type="video/quicktime" />}
+            Trình duyệt không hỗ trợ video.
+        </video>
+    );
+};
 
 interface User {
     id: number;
@@ -546,22 +615,11 @@ export default function CompanyChat() {
                                                             const ext = fname.split('.').pop()?.toLowerCase() || '';
                                                             const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v', '3gp'];
                                                             if (videoExts.includes(ext)) {
-                                                                const mimeMap: Record<string, string> = {
-                                                                    'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
-                                                                    'mov': 'video/quicktime', 'avi': 'video/x-msvideo',
-                                                                    'mkv': 'video/x-matroska', 'm4v': 'video/x-m4v', '3gp': 'video/3gpp'
-                                                                };
                                                                 return (
-                                                                    <video
-                                                                        controls
-                                                                        playsInline
-                                                                        className="max-w-full rounded-lg"
-                                                                        style={{ maxHeight: '300px' }}
-                                                                        preload="metadata"
-                                                                    >
-                                                                        <source src={resolveUrl(msg.attachmentUrl) || ''} type={mimeMap[ext] || `video/${ext}`} />
-                                                                        Trình duyệt không hỗ trợ video.
-                                                                    </video>
+                                                                    <CompanyChatVideoPlayer
+                                                                        attachmentUrl={msg.attachmentUrl!}
+                                                                        filename={fname}
+                                                                    />
                                                                 );
                                                             }
                                                             return null;
@@ -615,7 +673,7 @@ export default function CompanyChat() {
                         </div>
 
                         {/* Input */}
-                        <div className="p-2 md:p-4 border-t" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom, 0px))' }}>
+                        <div className="p-2 md:p-4 border-t">
                             <div className="flex items-center gap-2">
                                 <input
                                     type="file"

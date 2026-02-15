@@ -7,7 +7,8 @@ import api, { API_URL } from '../config/api';
 import {
     Plus, X, MoreHorizontal, Users, Calendar, MessageSquare, CheckSquare,
     Trash2, Edit3, ChevronLeft, UserPlus, Clock,
-    Star, ShieldCheck, Paperclip, Download, Eye, FileText, Image, Film, HardDrive, FolderOpen
+    Star, ShieldCheck, Paperclip, Download, Eye, FileText, Image, Film, HardDrive, FolderOpen,
+    BarChart3, Layout
 } from 'lucide-react';
 import {
     DndContext,
@@ -666,7 +667,7 @@ const KanbanPage: React.FC = () => {
     const isDark = resolvedTheme === 'dark';
 
     // View state
-    const [view, setView] = useState<'boards' | 'board'>('boards');
+    const [view, setView] = useState<'boards' | 'board' | 'gantt'>('boards');
     const [selectedBoard, setSelectedBoard] = useState<KanbanBoard | null>(null);
     const [boards, setBoards] = useState<KanbanBoard[]>([]);
     const [loading, setLoading] = useState(false);
@@ -676,10 +677,6 @@ const KanbanPage: React.FC = () => {
     const [newBoardTitle, setNewBoardTitle] = useState('');
     const [newBoardDescription, setNewBoardDescription] = useState('');
     const [newBoardColor, setNewBoardColor] = useState('#0079bf');
-
-    // List creation
-    const [addingList, setAddingList] = useState(false);
-    const [newListTitle, setNewListTitle] = useState('');
 
     // Card creation
     const [addingCardToList, setAddingCardToList] = useState<number | null>(null);
@@ -839,23 +836,6 @@ const KanbanPage: React.FC = () => {
     };
 
     // ==================== LIST ACTIONS ====================
-    const handleCreateList = async () => {
-        if (!newListTitle.trim() || !selectedBoard) return;
-        try {
-            const res = await api.post(`/kanban/boards/${selectedBoard.id}/lists`, {
-                title: newListTitle.trim()
-            });
-            setSelectedBoard(prev => prev ? {
-                ...prev,
-                lists: [...prev.lists, { ...res.data, cards: res.data.cards || [] }]
-            } : null);
-            setNewListTitle('');
-            setAddingList(false);
-        } catch (error) {
-            console.error('Error creating list:', error);
-        }
-    };
-
     const handleEditListTitle = async (listId: number, title: string) => {
         try {
             await api.put(`/kanban/lists/${listId}`, { title });
@@ -910,13 +890,17 @@ const KanbanPage: React.FC = () => {
         try {
             const targetList = selectedBoard?.lists.find(l => l.id === toListId);
             const newPosition = targetList ? targetList.cards.length : 0;
+            const targetTitle = targetList?.title.toLowerCase() || '';
+            const isCompleteList = targetTitle.includes('hoàn thành') || targetTitle === 'done';
 
-            await api.put(`/kanban/cards/${cardId}`, { listId: toListId, position: newPosition });
+            await api.put(`/kanban/cards/${cardId}/move`, { targetListId: toListId, position: newPosition });
 
             setSelectedBoard(prev => {
                 if (!prev) return null;
                 const card = prev.lists.find(l => l.id === fromListId)?.cards.find(c => c.id === cardId);
                 if (!card) return prev;
+
+                const updatedCard = { ...card, listId: toListId, completed: isCompleteList ? true : card.completed };
 
                 return {
                     ...prev,
@@ -925,14 +909,18 @@ const KanbanPage: React.FC = () => {
                             return { ...l, cards: l.cards.filter(c => c.id !== cardId) };
                         }
                         if (l.id === toListId) {
-                            return { ...l, cards: [...l.cards, { ...card, listId: toListId }] };
+                            return { ...l, cards: [...l.cards, updatedCard] };
                         }
                         return l;
                     })
                 };
             });
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error moving card:', error);
+            if (error?.response?.data?.message) {
+                alert(error.response.data.message);
+            }
+            if (selectedBoard) fetchBoard(selectedBoard.id);
         }
     };
 
@@ -1292,12 +1280,24 @@ const KanbanPage: React.FC = () => {
                         ?.cards.find(c => c.id === activeCardId);
                     if (!cardToMove) return list;
 
-                    const overIndex = overIdStr.startsWith('card-')
-                        ? list.cards.findIndex(c => c.id === Number(overIdStr.replace('card-', '')))
-                        : list.cards.length;
+                    let newIndex = list.cards.length; // Default: append to end
+
+                    if (overIdStr.startsWith('card-')) {
+                        const overCardId = Number(overIdStr.replace('card-', ''));
+                        const overIndex = list.cards.findIndex(c => c.id === overCardId);
+                        if (overIndex >= 0) {
+                            // Determine if the dragged item is below the over item
+                            // by comparing the translated rect positions
+                            const isBelowOverItem =
+                                active.rect.current.translated &&
+                                over.rect &&
+                                active.rect.current.translated.top > over.rect.top + over.rect.height / 2;
+                            newIndex = isBelowOverItem ? overIndex + 1 : overIndex;
+                        }
+                    }
 
                     const newCards = [...list.cards];
-                    newCards.splice(overIndex >= 0 ? overIndex : list.cards.length, 0, {
+                    newCards.splice(newIndex, 0, {
                         ...cardToMove,
                         listId: targetListId
                     });
@@ -1370,6 +1370,21 @@ const KanbanPage: React.FC = () => {
 
                     // Check if card moved to a different list
                     const movedToNewList = originalListId && originalListId !== list.id;
+
+                    // If moved to completed list, update local state immediately
+                    if (movedToNewList) {
+                        const targetTitle = list.title.toLowerCase();
+                        const isCompleteList = targetTitle.includes('hoàn thành') || targetTitle === 'done';
+                        if (isCompleteList) {
+                            setSelectedBoard(prev => prev ? {
+                                ...prev,
+                                lists: prev.lists.map(l => ({
+                                    ...l,
+                                    cards: l.cards.map(c => c.id === activeCardId ? { ...c, completed: true } : c)
+                                }))
+                            } : null);
+                        }
+                    }
 
                     try {
                         if (movedToNewList) {
@@ -1548,44 +1563,7 @@ const KanbanPage: React.FC = () => {
         return (
             <div className="flex flex-col h-full">
                 {/* Board Header */}
-                <div className={`flex items-center gap-2 px-2 sm:px-4 py-2 sm:py-3 border-b ${isDark ? 'border-gray-700 bg-gray-800/80' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
-                    <button
-                        onClick={() => { setView('boards'); setSelectedBoard(null); }}
-                        className={`p-1 sm:p-1.5 rounded-lg shrink-0 ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
-                    >
-                        <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <h2 className={`text-sm sm:text-lg font-bold truncate flex-1 min-w-0 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {selectedBoard.title}
-                    </h2>
-                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                        {/* Members - hidden on small screens */}
-                        <div className="hidden md:flex -space-x-2 mr-2">
-                            {selectedBoard.members.slice(0, 5).map(m => (
-                                <div
-                                    key={m.user.id}
-                                    className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold ring-2 ring-white dark:ring-gray-800"
-                                    title={m.user.name}
-                                >
-                                    {m.user.avatarUrl ? (
-                                        <img src={resolveAvatarUrl(m.user.avatarUrl)} alt={m.user.name} className="w-full h-full rounded-full object-cover" />
-                                    ) : (
-                                        m.user.name.charAt(0).toUpperCase()
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                        <button
-                            onClick={() => { setShowMembers(true); fetchAllUsers(); }}
-                            className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm ${isDark
-                                    ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                }`}
-                        >
-                            <UserPlus className="w-4 h-4" /> <span className="hidden sm:inline">Mời</span>
-                        </button>
-                    </div>
-                </div>
+                {renderBoardHeader()}
 
                 {/* Mobile Column Tabs */}
                 {selectedBoard.lists.length > 0 && (
@@ -1606,12 +1584,7 @@ const KanbanPage: React.FC = () => {
                                 </span>
                             </button>
                         ))}
-                        <button
-                            onClick={() => setAddingList(true)}
-                            className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium ${isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}
-                        >
-                            <Plus className="w-3 h-3 inline" />
-                        </button>
+                        {/* Add list button removed on mobile */}
                     </div>
                 )}
 
@@ -1656,51 +1629,7 @@ const KanbanPage: React.FC = () => {
                                 ))}
                             </SortableContext>
 
-                            {/* Add list - desktop */}
-                            <div className="flex-shrink-0 w-72">
-                                {addingList ? (
-                                    <div className={`p-3 rounded-xl ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                                        <input
-                                            autoFocus
-                                            value={newListTitle}
-                                            onChange={e => setNewListTitle(e.target.value)}
-                                            onKeyDown={e => {
-                                                if (e.key === 'Enter') handleCreateList();
-                                                if (e.key === 'Escape') setAddingList(false);
-                                            }}
-                                            placeholder="Nhập tiêu đề danh sách..."
-                                            className={`w-full px-3 py-2 rounded-lg border text-sm ${isDark
-                                                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                    : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
-                                                }`}
-                                        />
-                                        <div className="flex items-center gap-2 mt-2">
-                                            <button
-                                                onClick={handleCreateList}
-                                                className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-                                            >
-                                                Thêm danh sách
-                                            </button>
-                                            <button
-                                                onClick={() => setAddingList(false)}
-                                                className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <button
-                                        onClick={() => setAddingList(true)}
-                                        className={`w-full p-3 rounded-xl text-sm flex items-center gap-2 ${isDark
-                                                ? 'bg-gray-800/60 text-gray-400 hover:bg-gray-800 hover:text-gray-200'
-                                                : 'bg-gray-100/80 text-gray-500 hover:bg-gray-200 hover:text-gray-700'
-                                            }`}
-                                    >
-                                        <Plus className="w-4 h-4" /> Thêm danh sách
-                                    </button>
-                                )}
-                            </div>
+                            {/* Add list column removed - 4 default columns are sufficient */}
                         </div>
 
                         {/* Mobile: single column view with swipe */}
@@ -1763,39 +1692,7 @@ const KanbanPage: React.FC = () => {
                                 )}
                             </SortableContext>
 
-                            {/* Mobile add list */}
-                            {addingList && (
-                                <div className={`p-3 rounded-xl mt-3 ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
-                                    <input
-                                        autoFocus
-                                        value={newListTitle}
-                                        onChange={e => setNewListTitle(e.target.value)}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter') handleCreateList();
-                                            if (e.key === 'Escape') setAddingList(false);
-                                        }}
-                                        placeholder="Nhập tiêu đề danh sách..."
-                                        className={`w-full px-3 py-2 rounded-lg border text-sm ${isDark
-                                                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
-                                            }`}
-                                    />
-                                    <div className="flex items-center gap-2 mt-2">
-                                        <button
-                                            onClick={handleCreateList}
-                                            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-                                        >
-                                            Thêm
-                                        </button>
-                                        <button
-                                            onClick={() => setAddingList(false)}
-                                            className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                            {/* Mobile add list removed */}
 
                             {/* Swipe hint */}
                             {selectedBoard.lists.length > 1 && (
@@ -2463,10 +2360,264 @@ const KanbanPage: React.FC = () => {
         );
     };
 
+    // ==================== RENDER GANTT VIEW ====================
+    const renderGanttView = () => {
+        if (!selectedBoard) return <div className="p-6">Đang tải...</div>;
+
+        const allCards = selectedBoard.lists.flatMap(list => list.cards.map(card => ({ ...card, listTitle: list.title })));
+
+        if (allCards.length === 0) {
+            return (
+                <div className="flex flex-col h-full">
+                    {renderBoardHeader()}
+                    <div className={`flex-1 flex items-center justify-center ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                        <div className="text-center p-8">
+                            <BarChart3 size={48} className="text-gray-300 mx-auto mb-3" />
+                            <h3 className={`text-lg font-semibold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>Chưa có thẻ nào</h3>
+                            <p className={`mt-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Thêm thẻ vào bảng để xem biểu đồ Gantt.</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const now = new Date();
+        let minDate = new Date(now);
+        let maxDate = new Date(now);
+
+        allCards.forEach(c => {
+            const dates = [
+                c.dueDate ? new Date(c.dueDate) : null,
+                new Date(), // ensure today is in range
+            ].filter(Boolean) as Date[];
+            dates.forEach(d => {
+                if (d < minDate) minDate = new Date(d);
+                if (d > maxDate) maxDate = new Date(d);
+            });
+        });
+
+        minDate.setDate(minDate.getDate() - 3);
+        maxDate.setDate(maxDate.getDate() + 7);
+
+        const diffDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays < 14) maxDate.setDate(minDate.getDate() + 14);
+
+        const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+        const dayWidth = Math.max(36, Math.min(60, 900 / totalDays));
+
+        const days: Date[] = [];
+        for (let i = 0; i <= totalDays; i++) {
+            const d = new Date(minDate);
+            d.setDate(d.getDate() + i);
+            days.push(d);
+        }
+
+        const getPositionPercent = (date: Date) => {
+            return ((date.getTime() - minDate.getTime()) / (maxDate.getTime() - minDate.getTime())) * 100;
+        };
+
+        const isToday = (d: Date) => {
+            const t = new Date();
+            return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
+        };
+        const isSunday = (d: Date) => d.getDay() === 0;
+        const isSaturday = (d: Date) => d.getDay() === 6;
+
+        // Group by list
+        const listColors: Record<string, string> = {};
+        const palette = ['bg-blue-500', 'bg-amber-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-cyan-500', 'bg-red-500', 'bg-indigo-500'];
+        selectedBoard.lists.forEach((list, i) => {
+            listColors[list.title] = palette[i % palette.length];
+        });
+
+        return (
+            <div className="flex flex-col h-full">
+                {renderBoardHeader()}
+                <div className={`flex-1 overflow-hidden ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+                    {/* Legend */}
+                    <div className={`px-4 py-2 border-b flex flex-wrap items-center gap-4 text-xs ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
+                        <span className={`font-semibold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>Cột:</span>
+                        {selectedBoard.lists.map((list, i) => (
+                            <span key={list.id} className="flex items-center gap-1.5">
+                                <span className={`w-3 h-3 rounded ${palette[i % palette.length]}`}></span>
+                                <span className={isDark ? 'text-gray-300' : 'text-gray-600'}>{list.title} ({list.cards.length})</span>
+                            </span>
+                        ))}
+                    </div>
+                    <div className="overflow-auto h-[calc(100%-40px)]">
+                        <div style={{ minWidth: `${Math.max(days.length * dayWidth + 220, 700)}px` }}>
+                            {/* Timeline header */}
+                            <div className={`flex border-b sticky top-0 z-10 ${isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
+                                <div className={`w-[220px] min-w-[220px] px-3 py-2 text-xs font-semibold border-r ${isDark ? 'text-gray-400 border-gray-700 bg-gray-800' : 'text-gray-500 border-gray-200 bg-gray-50'}`}>
+                                    Thẻ
+                                </div>
+                                <div className="flex flex-1">
+                                    {days.map((d, i) => (
+                                        <div
+                                            key={i}
+                                            style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
+                                            className={`text-center py-1.5 text-[10px] border-r ${isDark ? 'border-gray-700/50' : 'border-gray-100'} ${
+                                                isToday(d) ? (isDark ? 'bg-blue-900/40 font-bold text-blue-300' : 'bg-blue-50 font-bold text-blue-700') :
+                                                isSunday(d) ? (isDark ? 'bg-red-900/10 text-red-400' : 'bg-red-50/50 text-red-400') :
+                                                isSaturday(d) ? (isDark ? 'bg-orange-900/10 text-orange-400' : 'bg-orange-50/50 text-orange-400') :
+                                                isDark ? 'text-gray-400' : 'text-gray-500'
+                                            }`}
+                                        >
+                                            <div className="font-medium">{d.getDate()}/{d.getMonth() + 1}</div>
+                                            <div className="text-[9px] opacity-70">{['CN','T2','T3','T4','T5','T6','T7'][d.getDay()]}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Rows grouped by list */}
+                            {selectedBoard.lists.map(list => (
+                                <div key={list.id}>
+                                    {/* List header row */}
+                                    <div className={`flex border-b ${isDark ? 'border-gray-700 bg-gray-800/60' : 'border-gray-200 bg-gray-100/80'}`}>
+                                        <div className={`w-[220px] min-w-[220px] px-3 py-1.5 border-r flex items-center gap-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                                            <span className={`w-2.5 h-2.5 rounded ${listColors[list.title]}`}></span>
+                                            <span className={`text-xs font-bold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>{list.title}</span>
+                                            <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>({list.cards.length})</span>
+                                        </div>
+                                        <div className="flex-1"></div>
+                                    </div>
+                                    {/* Card rows */}
+                                    {list.cards.map(card => {
+                                        const barColor = listColors[list.title];
+                                        const hasDueDate = !!card.dueDate;
+                                        const endDate = card.dueDate ? new Date(card.dueDate) : null;
+
+                                        let startPercent = 0;
+                                        let widthPercent = 2;
+                                        if (endDate) {
+                                            const barStart = endDate < now ? endDate : now < endDate ? now : endDate;
+                                            startPercent = getPositionPercent(barStart < endDate ? barStart : endDate);
+                                            const endPercent = getPositionPercent(endDate);
+                                            if (now <= endDate) {
+                                                startPercent = getPositionPercent(now);
+                                                widthPercent = Math.max(endPercent - startPercent, 1.5);
+                                            } else {
+                                                startPercent = getPositionPercent(endDate);
+                                                widthPercent = 1.5;
+                                            }
+                                        } else {
+                                            // No due date — show a small dot at today
+                                            startPercent = getPositionPercent(now);
+                                            widthPercent = 1;
+                                        }
+
+                                        const isOverdue = endDate && endDate < now && !card.completed;
+
+                                        return (
+                                            <div key={card.id} className={`flex border-b group ${isDark ? 'border-gray-700/30 hover:bg-gray-700/20' : 'border-gray-50 hover:bg-gray-50/80'}`}>
+                                                <div className={`w-[220px] min-w-[220px] px-3 py-2 border-r flex items-center gap-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                                                    {card.completed ? (
+                                                        <CheckSquare className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                                    ) : isOverdue ? (
+                                                        <Clock className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                                                    ) : (
+                                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${barColor}`}></span>
+                                                    )}
+                                                    <span className={`text-xs truncate ${card.completed ? (isDark ? 'text-gray-500 line-through' : 'text-gray-400 line-through') : isDark ? 'text-gray-200' : 'text-gray-800'}`} title={card.title}>
+                                                        {card.title}
+                                                    </span>
+                                                    {card.assignees.length > 0 && (
+                                                        <div className="flex -space-x-1 ml-auto flex-shrink-0">
+                                                            {card.assignees.slice(0, 2).map(a => (
+                                                                <div key={a.id} className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center text-white text-[8px] font-bold ring-1 ring-white dark:ring-gray-800" title={a.name}>
+                                                                    {a.avatarUrl ? <img src={resolveAvatarUrl(a.avatarUrl)!} alt={a.name} className="w-full h-full rounded-full object-cover" /> : a.name.charAt(0).toUpperCase()}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 relative py-1" style={{ minHeight: '32px' }}>
+                                                    {/* Background grid */}
+                                                    <div className="absolute inset-0 flex">
+                                                        {days.map((d, i) => (
+                                                            <div key={i} style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }} className={`border-r ${isDark ? 'border-gray-700/20' : 'border-gray-50'} ${
+                                                                isToday(d) ? (isDark ? 'bg-blue-900/10' : 'bg-blue-50/30') :
+                                                                isSunday(d) || isSaturday(d) ? (isDark ? 'bg-gray-700/10' : 'bg-gray-50/30') : ''
+                                                            }`} />
+                                                        ))}
+                                                    </div>
+                                                    {/* Today line */}
+                                                    {(() => {
+                                                        const tp = getPositionPercent(now);
+                                                        if (tp >= 0 && tp <= 100) return <div className="absolute top-0 bottom-0 w-px bg-red-400 z-10 opacity-50" style={{ left: `${tp}%` }} />;
+                                                        return null;
+                                                    })()}
+                                                    {/* Bar */}
+                                                    <div
+                                                        className={`absolute top-1/2 -translate-y-1/2 h-4 rounded ${barColor} ${
+                                                            card.completed ? 'opacity-50' : isOverdue ? 'opacity-90 ring-1 ring-red-400' : 'opacity-80 group-hover:opacity-100'
+                                                        } transition-opacity shadow-sm z-[2]`}
+                                                        style={{ left: `${startPercent}%`, width: `${widthPercent}%`, minWidth: hasDueDate ? '6px' : '12px' }}
+                                                        title={`${card.title}${endDate ? `\nDeadline: ${endDate.toLocaleDateString('vi-VN')}` : '\nKhông có deadline'}`}
+                                                    >
+                                                        {widthPercent > 8 && (
+                                                            <span className="absolute inset-0 flex items-center px-1.5 text-[9px] text-white font-medium truncate">
+                                                                {card.title}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // Extract board header for reuse
+    const renderBoardHeader = () => {
+        if (!selectedBoard) return null;
+        return (
+            <div className={`flex items-center gap-2 px-2 sm:px-4 py-2 sm:py-3 border-b ${isDark ? 'border-gray-700 bg-gray-800/80' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
+                <button
+                    onClick={() => { setView('boards'); setSelectedBoard(null); }}
+                    className={`p-1 sm:p-1.5 rounded-lg shrink-0 ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                >
+                    <ChevronLeft className="w-5 h-5" />
+                </button>
+                <h2 className={`text-sm sm:text-lg font-bold truncate flex-1 min-w-0 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                    {selectedBoard.title}
+                </h2>
+                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                    <div className="hidden md:flex -space-x-2 mr-2">
+                        {selectedBoard.members.slice(0, 5).map(m => (
+                            <div key={m.user.id} className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold ring-2 ring-white dark:ring-gray-800" title={m.user.name}>
+                                {m.user.avatarUrl ? <img src={resolveAvatarUrl(m.user.avatarUrl)} alt={m.user.name} className="w-full h-full rounded-full object-cover" /> : m.user.name.charAt(0).toUpperCase()}
+                            </div>
+                        ))}
+                    </div>
+                    {/* View toggle */}
+                    <div className={`flex rounded-lg border p-0.5 ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}`}>
+                        <button onClick={() => setView('board')} className={`p-1.5 rounded-md transition-all ${view === 'board' ? 'bg-blue-600 text-white shadow-sm' : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`} title="Kanban">
+                            <Layout className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setView('gantt')} className={`p-1.5 rounded-md transition-all ${view === 'gantt' ? 'bg-blue-600 text-white shadow-sm' : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`} title="Gantt">
+                            <BarChart3 className="w-4 h-4" />
+                        </button>
+                    </div>
+                    <button onClick={() => { setShowMembers(true); fetchAllUsers(); }} className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                        <UserPlus className="w-4 h-4" /> <span className="hidden sm:inline">Mời</span>
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
     // ==================== MAIN RENDER ====================
     return (
-        <div className={`h-full ${view === 'board' ? '-mx-4 -mb-4 sm:mx-0 sm:mb-0 -mt-4 sm:mt-0' : ''}`}>
-            {view === 'boards' ? renderBoardsList() : renderBoardView()}
+        <div className={`h-full ${view === 'board' || view === 'gantt' ? '-mx-4 -mb-4 sm:mx-0 sm:mb-0 -mt-4 sm:mt-0' : ''}`}>
+            {view === 'boards' ? renderBoardsList() : view === 'gantt' ? renderGanttView() : renderBoardView()}
         </div>
     );
 };

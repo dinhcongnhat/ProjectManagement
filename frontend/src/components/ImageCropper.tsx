@@ -262,7 +262,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
             </div>
 
             {/* Controls */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 pb-8 bg-gradient-to-t from-black/80 to-transparent safe-area-bottom">
+            <div className="absolute bottom-0 left-0 right-0 p-6 pb-8 bg-gradient-to-t from-black/80 to-transparent">
                 {/* Confirm button for mobile - large and prominent */}
                 <div className="flex justify-center mb-4 md:hidden">
                     <button

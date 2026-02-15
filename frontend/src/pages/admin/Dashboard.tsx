@@ -2,14 +2,22 @@ import { useState, useEffect } from 'react';
 import {
     Users, FolderKanban, CheckCircle2, AlertCircle,
     TrendingUp, Sparkles, ArrowRight, ChevronDown, ChevronRight,
-    CornerDownRight, BarChart3, Target, Zap
+    CornerDownRight, BarChart3, Target, Zap, Quote
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import styled from '@emotion/styled';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
+
+const MOTIVATIONAL_QUOTES = [
+    'Việc hôm nay chớ để ngày mai',
+    'Hãy suy nghĩ như một khách hàng',
+    'Chỉ hành động mới tạo ra kết quả',
+    'Đừng mong chờ kết quả mới nếu bạn lặp đi lặp lại cách làm cũ',
+    'Làm việc đừng có em tưởng, phải có lương tâm, trách nhiệm',
+];
 
 interface Project {
     id: number;
@@ -27,6 +35,7 @@ const DashboardContainer = styled.div`
   display: flex;
   flex-direction: column;
   gap: 20px;
+  height: fit-content;
   @media (min-width: 640px) { gap: 24px; }
 `;
 
@@ -288,6 +297,19 @@ const Dashboard = () => {
     const [stats, setStats] = useState({ totalProjects: 0, totalUsers: 0, completedProjects: 0, pendingProjects: 0 });
     const [projects, setProjects] = useState<Project[]>([]);
     const { token, user } = useAuth();
+    const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
+
+    // Auto-cycle quotes every 8 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setQuoteIndex(prev => {
+                let next: number;
+                do { next = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length); } while (next === prev && MOTIVATIONAL_QUOTES.length > 1);
+                return next;
+            });
+        }, 8000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const fetchStats = async () => {
@@ -334,56 +356,75 @@ const Dashboard = () => {
                 <DashboardContainer>
                     {/* Welcome Banner */}
                     <WelcomeBanner variants={itemVariants}>
-                        <div style={{ position: 'relative', zIndex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-                                <motion.div
-                                    style={{
-                                        padding: 12,
-                                        background: 'rgba(255,255,255,0.15)',
-                                        backdropFilter: 'blur(8px)',
-                                        borderRadius: 14,
-                                        flexShrink: 0
-                                    }}
-                                    whileHover={{ scale: 1.1, rotate: 5 }}
-                                >
-                                    <Sparkles size={24} />
-                                </motion.div>
-                                <div style={{ minWidth: 0 }}>
-                                    <h1 style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>
-                                        Xin chào, {user?.name}!
-                                    </h1>
-                                    <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
-                                        Bảng điều khiển quản trị
-                                    </p>
+                        <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, flexWrap: 'wrap' }}>
+                            {/* Left: Greeting */}
+                            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+                                    <motion.div
+                                        style={{ padding: 12, background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', borderRadius: 14, flexShrink: 0 }}
+                                        whileHover={{ scale: 1.1, rotate: 5 }}
+                                    >
+                                        <Sparkles size={24} />
+                                    </motion.div>
+                                    <div style={{ minWidth: 0 }}>
+                                        <h1 style={{ fontSize: 'clamp(20px, 5vw, 32px)', fontWeight: 800, lineHeight: 1.2, marginBottom: 4 }}>
+                                            Xin chào, {user?.name}!
+                                        </h1>
+                                        <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14 }}>
+                                            Bảng điều khiển quản trị
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Quick stats in banner */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 20 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 14px', backdropFilter: 'blur(4px)' }}>
+                                        <BarChart3 size={16} style={{ color: '#86efac' }} />
+                                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{stats.totalProjects} dự án</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 14px', backdropFilter: 'blur(4px)' }}>
+                                        <Users size={16} style={{ color: '#93c5fd' }} />
+                                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{stats.totalUsers} thành viên</span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.12)', borderRadius: 10, padding: '8px 14px', backdropFilter: 'blur(4px)' }}>
+                                        <Target size={16} style={{ color: '#fde047' }} />
+                                        <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{completionRate}% hoàn thành</span>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Quick stats in banner */}
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 20 }}>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 8,
-                                    background: 'rgba(255,255,255,0.12)', borderRadius: 10,
-                                    padding: '8px 14px', backdropFilter: 'blur(4px)'
-                                }}>
-                                    <BarChart3 size={16} style={{ color: '#86efac' }} />
-                                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{stats.totalProjects} dự án</span>
-                                </div>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 8,
-                                    background: 'rgba(255,255,255,0.12)', borderRadius: 10,
-                                    padding: '8px 14px', backdropFilter: 'blur(4px)'
-                                }}>
-                                    <Users size={16} style={{ color: '#93c5fd' }} />
-                                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{stats.totalUsers} thành viên</span>
-                                </div>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 8,
-                                    background: 'rgba(255,255,255,0.12)', borderRadius: 10,
-                                    padding: '8px 14px', backdropFilter: 'blur(4px)'
-                                }}>
-                                    <Target size={16} style={{ color: '#fde047' }} />
-                                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)' }}>{completionRate}% hoàn thành</span>
-                                </div>
+                            {/* Right: Motivational Quote */}
+                            <div style={{
+                                width: 320, minWidth: 320, flexShrink: 0, height: 80,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)',
+                                borderRadius: 16, padding: '20px 24px', position: 'relative', overflow: 'hidden',
+                                border: '1px solid rgba(255,255,255,0.15)',
+                            }}>
+                                <Quote size={20} style={{ position: 'absolute', top: 10, left: 12, opacity: 0.3, color: '#fde047' }} />
+                                <Quote size={16} style={{ position: 'absolute', bottom: 10, right: 12, opacity: 0.2, color: '#ef4444', transform: 'rotate(180deg)' }} />
+                                <AnimatePresence mode="wait">
+                                    <motion.p
+                                        key={quoteIndex}
+                                        initial={{ opacity: 0, y: 8 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -8 }}
+                                        transition={{ duration: 0.5 }}
+                                        style={{
+                                            position: 'absolute', left: 24, right: 24, top: 0, bottom: 0,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: 'clamp(13px, 2vw, 15px)', fontWeight: 700, lineHeight: 1.5,
+                                            textAlign: 'center', fontStyle: 'italic',
+                                            background: 'linear-gradient(90deg, #fde047, #f59e0b, #ef4444, #f59e0b, #fde047)',
+                                            backgroundSize: '200% auto',
+                                            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                                            backgroundClip: 'text',
+                                            animation: 'gradientShift 4s linear infinite',
+                                        }}
+                                    >
+                                        "{MOTIVATIONAL_QUOTES[quoteIndex]}"
+                                    </motion.p>
+                                </AnimatePresence>
                             </div>
                         </div>
                     </WelcomeBanner>

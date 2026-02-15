@@ -494,6 +494,16 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
             return;
         }
 
+        // Xóa file đính kèm trên MinIO nếu có
+        if (message.attachment) {
+            try {
+                await deleteFile(message.attachment);
+                console.log(`[Message] Deleted MinIO file: ${message.attachment}`);
+            } catch (err) {
+                console.error(`[Message] Failed to delete MinIO file: ${message.attachment}`, err);
+            }
+        }
+
         // Delete message
         await prisma.message.delete({
             where: { id: parseInt(id) }

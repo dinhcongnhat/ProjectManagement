@@ -291,6 +291,7 @@ model ChatMessage {
   messageType MessageType @default(TEXT)
   attachment  String?     // File path trong MinIO
   isRead      Boolean     @default(false)
+  isForwarded Boolean     @default(false)  // Tin nhắn được chuyển tiếp
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -299,6 +300,10 @@ model ChatMessage {
 
   senderId Int
   sender   User @relation("ChatMessageSender", fields: [senderId], references: [id])
+
+  replyToId Int?
+  replyTo   ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   ChatMessage[] @relation("MessageReplies")
   
   reactions ChatMessageReaction[]
   
@@ -345,6 +350,7 @@ model NotificationSettings {
   projectUpdates        Boolean  @default(true)
   taskAssignments       Boolean  @default(true)
   mentions              Boolean  @default(true)
+  kanbanNotifications   Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -620,6 +626,7 @@ model KanbanCard {
   approved    Boolean   @default(false)  // Manager/reviewer approved this card
   approvedById Int?     // Who approved
   approvedAt DateTime?  // When approved
+  deadlineReminderSent Boolean @default(false) // Track if 10-min reminder was sent
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

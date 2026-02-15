@@ -41,7 +41,10 @@ const NotificationNavigator = () => {
             } else if (detail.type === 'result' && detail.projectId) {
                 navigate(`${prefix}/projects/${detail.projectId}?tab=results`);
             } else if (detail.type === 'activity') {
-                // Kanban and other activity notifications → kanban page
+                // Activity notifications → kanban page
+                navigate(`${prefix}/kanban`);
+            } else if (detail.type === 'kanban') {
+                // Kanban notifications → kanban page
                 navigate(`${prefix}/kanban`);
             } else if (detail.type === 'mention' && detail.projectId) {
                 navigate(`${prefix}/projects/${detail.projectId}?tab=discussion`);
@@ -95,7 +98,10 @@ const NotificationNavigator = () => {
             } else if (notificationType === 'result' && projectId) {
                 navigate(`${prefix}/projects/${projectId}?tab=results`, { replace: true });
             } else if (notificationType === 'activity') {
-                // Kanban and other activity notifications → kanban page
+                // Activity notifications → kanban page
+                navigate(`${prefix}/kanban`, { replace: true });
+            } else if (notificationType === 'kanban') {
+                // Kanban notifications → kanban page
                 navigate(`${prefix}/kanban`, { replace: true });
             } else if (notificationType === 'chat') {
                 // Chat notifications → home

@@ -6,7 +6,7 @@ import {
     notifyTaskDeadlineUpcoming
 } from './pushNotificationService.js';
 import { sendDeadlineReminderEmail } from './emailService.js';
-import { notifyKanbanDailyReminder } from './pushNotificationService.js';
+import { notifyKanbanDailyReminder, notifyKanbanCardDeadline } from './pushNotificationService.js';
 import { sendKanbanDailyReminderEmail } from './emailService.js';
 
 // Get start of today in UTC
@@ -377,6 +377,76 @@ export const checkKanbanIncompleteCards = async (): Promise<void> => {
     }
 };
 
+// Check kanban cards approaching deadline (10 minutes before) - runs every minute
+export const checkKanbanCardDeadlines = async (): Promise<void> => {
+    const now = new Date();
+    const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+
+    try {
+        // Find cards with deadline between now and 10 minutes from now
+        // that haven't been reminded yet and are not completed
+        const cardsApproachingDeadline = await prisma.kanbanCard.findMany({
+            where: {
+                dueDate: {
+                    gt: now,
+                    lte: tenMinutesFromNow
+                },
+                completed: false,
+                deadlineReminderSent: false
+            },
+            include: {
+                list: {
+                    include: {
+                        board: {
+                            include: {
+                                members: {
+                                    include: {
+                                        user: { select: { id: true, name: true, email: true } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                assignees: { select: { id: true, name: true } }
+            }
+        });
+
+        if (cardsApproachingDeadline.length === 0) return;
+
+        console.log(`[DeadlineScheduler] Found ${cardsApproachingDeadline.length} kanban cards approaching deadline`);
+
+        for (const card of cardsApproachingDeadline) {
+            if (!card.dueDate) continue;
+
+            const board = card.list.board;
+            // Notify assignees if any, otherwise all board members
+            const recipientIds = card.assignees.length > 0
+                ? card.assignees.map(a => a.id)
+                : board.members.map(m => m.userId);
+
+            // Send push notification
+            await notifyKanbanCardDeadline(
+                recipientIds,
+                card.id,
+                card.title,
+                board.title,
+                card.dueDate
+            );
+
+            // Mark reminder as sent
+            await prisma.kanbanCard.update({
+                where: { id: card.id },
+                data: { deadlineReminderSent: true }
+            });
+
+            console.log(`[DeadlineScheduler] Sent deadline reminder for kanban card "${card.title}" (due: ${card.dueDate.toISOString()})`);
+        }
+    } catch (error) {
+        console.error('[DeadlineScheduler] Error checking kanban card deadlines:', error);
+    }
+};
+
 // Run all deadline checks
 export const runDeadlineChecks = async (): Promise<void> => {
     console.log('[DeadlineScheduler] ========== Running deadline checks ==========');
@@ -486,12 +556,16 @@ export const startDeadlineScheduler = (): void => {
         schedulerIntervalId = setInterval(runDeadlineChecks, 24 * 60 * 60 * 1000);
     }, msUntil8AM);
 
-    // 2. Setup Minutely Reminder Check
+    // 2. Setup Minutely Reminder Check (task reminders + kanban card deadlines)
     console.log('[DeadlineScheduler] Starting minutely reminder check...');
     // Run immediately
     checkTaskReminders();
+    checkKanbanCardDeadlines();
     // Then run every minute
-    reminderIntervalId = setInterval(checkTaskReminders, 60 * 1000);
+    reminderIntervalId = setInterval(() => {
+        checkTaskReminders();
+        checkKanbanCardDeadlines();
+    }, 60 * 1000);
 };
 
 // Stop the deadline scheduler
@@ -516,5 +590,6 @@ export default {
     checkOverdueTasks,
     checkUpcomingTaskDeadlines,
     checkTaskReminders,
+    checkKanbanCardDeadlines,
     checkKanbanIncompleteCards
 };

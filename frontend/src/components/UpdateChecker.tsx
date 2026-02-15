@@ -106,23 +106,26 @@ const UpdateChecker = () => {
         setUpdating(true);
 
         try {
-            // 1. Tell SW to clear icon cache before unregistering
+            // 1. Tell SW to clear icon cache before updating
             if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
                 navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_ICON_CACHE' });
                 // Small delay to let the SW process the message
                 await new Promise(resolve => setTimeout(resolve, 200));
             }
 
-            // 2. Unregister all service workers
+            // 2. Try to activate waiting service worker (if any) instead of unregistering
+            // Unregistering SWs destroys push notification subscriptions!
             if ('serviceWorker' in navigator) {
                 const registrations = await navigator.serviceWorker.getRegistrations();
                 for (const registration of registrations) {
-                    await registration.unregister();
+                    if (registration.waiting) {
+                        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                    }
                 }
-                console.log('[UpdateChecker] Service workers unregistered');
+                console.log('[UpdateChecker] Activated waiting service workers');
             }
 
-            // 3. Clear all caches (including icon caches)
+            // 3. Clear all caches (assets/icons, not push subscriptions which are browser-managed)
             if ('caches' in window) {
                 const cacheNames = await caches.keys();
                 for (const cacheName of cacheNames) {

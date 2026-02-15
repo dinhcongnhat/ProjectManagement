@@ -34,7 +34,8 @@ import {
     uploadCardAttachmentFromDrive,
     deleteCardAttachment,
     getAttachmentPresignedUrl,
-    getUpcomingCards
+    getUpcomingCards,
+    searchCards
 } from '../controllers/kanbanController.js';
 
 const router = Router();
@@ -44,6 +45,7 @@ router.use(authenticateToken);
 
 // Upcoming cards (for dashboard)
 router.get('/cards/upcoming', getUpcomingCards);
+router.get('/cards/search', searchCards);
 
 // Boards
 router.get('/boards', getBoards);
