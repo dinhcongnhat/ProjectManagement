@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../components/ui/Dialog';
 import { API_URL } from '../config/api';
@@ -797,39 +798,42 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
         };
     }, [fileId, token]);
 
-    return (
-        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex flex-col">
-            <div className="flex items-center justify-between px-4 py-2 bg-white border-b shadow-sm">
-                <div className="flex items-center gap-2">
-                    <FileText className="text-blue-600" size={18} />
-                    <span className="font-medium text-gray-800">{fileName}</span>
-                </div>
-                <button
-                    onClick={onClose}
-                    className="p-2 hover:bg-gray-100 rounded transition-colors"
-                    title="Đóng (ESC)"
-                >
-                    <X size={20} className="text-gray-600" />
-                </button>
-            </div>
+    return createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, background: '#fff' }} className="flex flex-col">
+            {/* Floating close button — does NOT interfere with OnlyOffice toolbar */}
+            <button
+                onClick={onClose}
+                className="bg-gray-800/80 hover:bg-gray-700 text-white rounded-xl transition-colors shadow-lg"
+                style={{
+                    position: 'fixed',
+                    top: 'max(12px, env(safe-area-inset-top, 12px))',
+                    right: 'max(12px, env(safe-area-inset-right, 12px))',
+                    padding: '10px',
+                    zIndex: 100000,
+                }}
+                title="Đóng (ESC)"
+            >
+                <X size={22} />
+            </button>
 
-            <div className="flex-1 relative bg-gray-100">
+            {/* Editor fills entire screen */}
+            <div style={{ width: '100%', height: '100%', position: 'relative' }}>
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white">
+                    <div className="absolute inset-0 flex items-center justify-center bg-white" style={{ zIndex: 10 }}>
                         <div className="flex flex-col items-center gap-4">
-                            <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
-                            <p className="text-gray-600 font-medium">Đang tải tài liệu...</p>
+                            <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+                            <p className="text-gray-600 font-medium text-sm">Đang tải tài liệu...</p>
                         </div>
                     </div>
                 )}
 
                 {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white">
+                    <div className="absolute inset-0 flex items-center justify-center bg-white" style={{ zIndex: 10 }}>
                         <div className="flex flex-col items-center gap-4 max-w-md text-center p-6">
-                            <p className="text-red-600">{error}</p>
+                            <p className="text-red-600 text-sm">{error}</p>
                             <button
                                 onClick={onClose}
-                                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                                className="px-6 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
                             >
                                 Đóng
                             </button>
@@ -840,8 +844,11 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                 <div
                     id="folder-onlyoffice-editor"
                     ref={editorRef}
-                    className="w-full h-full"
-                    style={{ display: loading || error ? 'none' : 'block' }}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        display: loading || error ? 'none' : 'block',
+                    }}
                 />
             </div>
 
@@ -849,26 +856,17 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                 <SaveAsDialog
                     onClose={() => {
                         setShowSaveAs(false);
-                        setSaveAsFormat(undefined); // Reset format when closing
+                        setSaveAsFormat(undefined);
                     }}
                     token={token}
                     originalFileName={fileName}
                     targetFormat={saveAsFormat}
                     onSave={async (folderId, name) => {
-                        // For MVP: We assume the user has saved or autosave is working (we enabled forceSave).
-                        // We will copy the file on the backend.
-                        // We need `saveFileFromUrl` to support `sourceFileId` or use `getFileUrl` here.
-
-                        // Let's fetch the current file URL (presigned) from backend, then send it to `saveFileFromUrl`.
-                        // This effectively copies the file.
-
                         try {
                             const urlRes = await fetch(`${API_URL}/folders/files/${fileId}/url`, {
                                 headers: { Authorization: `Bearer ${token}` }
                             });
                             const { url } = await urlRes.json();
-
-                            // Determine source type from filename
                             const sourceFileType = fileName.split('.').pop()?.toLowerCase();
 
                             const saveRes = await fetch(`${API_URL}/folders/files/save-from-url`, {
@@ -899,7 +897,8 @@ const OnlyOfficeViewer = ({ fileId, fileName, onClose, token }: OnlyOfficeViewer
                     }}
                 />
             )}
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -928,14 +927,21 @@ const ImageViewer = ({ imageUrl, fileName, onClose }: ImageViewerProps) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[9999] bg-black/90 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-2 bg-black/50">
-                <span className="text-white font-medium">{fileName}</span>
+        <div className="fixed inset-0 z-[100000] bg-black/90 flex flex-col">
+            <div
+                className="flex items-center justify-between px-4 bg-black/50 shrink-0"
+                style={{
+                    paddingTop: 'max(10px, env(safe-area-inset-top, 10px))',
+                    paddingBottom: '10px',
+                    minHeight: '44px',
+                }}
+            >
+                <span className="text-white font-medium text-sm truncate flex-1 min-w-0">{fileName}</span>
                 <button
                     onClick={handleClose}
-                    className="p-2 hover:bg-white/10 rounded transition-colors"
+                    className="p-2 hover:bg-white/10 rounded-full transition-colors shrink-0 ml-2"
                 >
-                    <X size={24} className="text-white" />
+                    <X size={22} className="text-white" />
                 </button>
             </div>
 

@@ -513,7 +513,7 @@ export const addBoardMember = async (req: AuthRequest, res: Response) => {
             for (const mid of newMembers) {
                 await createNotification(Number(mid), 'KANBAN_INVITE', 'Mời vào bảng Kanban',
                     `${inviterName} đã mời bạn vào bảng làm việc nhóm "${board.title}"`,
-                    undefined, undefined);
+                    undefined, undefined, Number(id), undefined);
                 io.to(`user:${mid}`).emit('new_notification', {
                     type: 'KANBAN_INVITE', title: 'Mời vào bảng Kanban',
                     message: `${inviterName} đã mời bạn vào bảng "${board.title}"`,
@@ -657,6 +657,7 @@ export const reorderLists = async (req: AuthRequest, res: Response) => {
     try {
         const { boardId } = req.params;
         const { listIds } = req.body; // array of list IDs in new order
+        const userId = req.user!.id;
 
         if (!Array.isArray(listIds)) {
             return res.status(400).json({ message: 'listIds must be an array' });
@@ -670,6 +671,9 @@ export const reorderLists = async (req: AuthRequest, res: Response) => {
                 })
             )
         );
+
+        // Emit realtime update to other board members
+        emitBoardUpdate(Number(boardId), userId, { action: 'lists_reordered' });
 
         res.json({ message: 'Lists reordered' });
     } catch (error) {
@@ -743,7 +747,7 @@ export const createCard = async (req: AuthRequest, res: Response) => {
             for (const mid of memberIds.filter(m => m !== userId)) {
                 await createNotification(mid, 'KANBAN_CARD_CREATED', 'Thẻ mới trong Kanban',
                     `${card.creator.name} đã tạo thẻ "${card.title}" trong danh sách "${list.title}"`,
-                    undefined, undefined);
+                    undefined, undefined, list.boardId, card.id);
                 io.to(`user:${mid}`).emit('new_notification', {
                     type: 'KANBAN_CARD_CREATED', title: 'Thẻ mới trong Kanban',
                     message: `${card.creator.name} đã tạo thẻ "${card.title}"`,
@@ -754,7 +758,7 @@ export const createCard = async (req: AuthRequest, res: Response) => {
             // Push notification to devices
             notifyKanbanCardCreated(
                 memberIds, userId, card.creator.name,
-                list.boardId, list.board.title, card.title, list.title
+                list.boardId, list.board.title, card.title, list.title, card.id
             ).catch(err => console.error('[Kanban] Push notification error:', err));
         }
 
@@ -938,7 +942,7 @@ export const moveCard = async (req: AuthRequest, res: Response) => {
             for (const mid of allMemberIds) {
                 await createNotification(mid, 'KANBAN_CARD_MOVED', 'Thẻ được di chuyển',
                     `${userName} đã chuyển "${card.title}" từ "${sourceList.title}" sang "${targetList.title}"`,
-                    card.projectId ?? undefined, card.taskId ?? undefined);
+                    card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
                 io.to(`user:${mid}`).emit('new_notification', {
                     type: 'KANBAN_CARD_MOVED', title: 'Thẻ được di chuyển',
                     message: `${userName} đã chuyển "${card.title}" từ "${sourceList.title}" sang "${targetList.title}"`,
@@ -949,7 +953,7 @@ export const moveCard = async (req: AuthRequest, res: Response) => {
             // Push notification to devices
             notifyKanbanCardMoved(
                 board.members.map(m => m.userId), userId, userName,
-                board.id, card.title, sourceList.title, targetList.title
+                board.id, card.title, sourceList.title, targetList.title, card.id
             ).catch(err => console.error('[Kanban] Push move notification error:', err));
         }
 
@@ -1012,7 +1016,7 @@ export const approveCard = async (req: AuthRequest, res: Response) => {
         for (const mid of allMemberIds) {
             await createNotification(mid, 'KANBAN_CARD_APPROVED', 'Công việc đã được duyệt',
                 `"${card.title}" đã được duyệt bởi ${approverName}. Có thể chuyển sang Hoàn thành.`,
-                card.projectId ?? undefined, card.taskId ?? undefined);
+                card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
             io.to(`user:${mid}`).emit('new_notification', {
                 type: 'KANBAN_CARD_APPROVED', title: 'Công việc đã được duyệt',
                 message: `"${card.title}" đã được duyệt bởi ${approverName}`,
@@ -1023,7 +1027,7 @@ export const approveCard = async (req: AuthRequest, res: Response) => {
         // Push notification to devices
         notifyKanbanCardApproved(
             board.members.map(m => m.userId), userId, approverName,
-            board.id, card.title
+            board.id, card.title, card.id
         ).catch(err => console.error('[Kanban] Push approve notification error:', err));
 
         res.json(updatedCard);
@@ -1037,6 +1041,7 @@ export const reorderCards = async (req: AuthRequest, res: Response) => {
     try {
         const { listId } = req.params;
         const { cardIds } = req.body;
+        const userId = req.user!.id;
 
         if (!Array.isArray(cardIds)) {
             return res.status(400).json({ message: 'cardIds must be an array' });
@@ -1050,6 +1055,15 @@ export const reorderCards = async (req: AuthRequest, res: Response) => {
                 })
             )
         );
+
+        // Emit realtime update: find the boardId from the list
+        const list = await prisma.kanbanList.findUnique({
+            where: { id: Number(listId) },
+            select: { boardId: true }
+        });
+        if (list) {
+            emitBoardUpdate(list.boardId, userId, { action: 'cards_reordered', listId: Number(listId) });
+        }
 
         res.json({ message: 'Cards reordered' });
     } catch (error) {
@@ -1165,7 +1179,7 @@ export const addCardComment = async (req: AuthRequest, res: Response) => {
             for (const mid of allMemberIds) {
                 await createNotification(mid, 'KANBAN_COMMENT', 'Bình luận mới trên thẻ Kanban',
                     `${comment.author.name} đã bình luận trên "${card.title}": ${content.trim().substring(0, 100)}`,
-                    card.projectId ?? undefined, card.taskId ?? undefined);
+                    card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
                 io.to(`user:${mid}`).emit('new_notification', {
                     type: 'KANBAN_COMMENT', title: 'Bình luận mới trên thẻ Kanban',
                     message: `${comment.author.name} đã bình luận trên "${card.title}"`,
@@ -1176,7 +1190,7 @@ export const addCardComment = async (req: AuthRequest, res: Response) => {
             // Push notification to devices
             notifyKanbanComment(
                 board.members.map(m => m.userId), userId, comment.author.name || 'Người dùng',
-                board.id, card.title, content.trim()
+                board.id, card.title, content.trim(), card.id
             ).catch(err => console.error('[Kanban] Push comment notification error:', err));
         }
 
@@ -1279,7 +1293,7 @@ export const addChecklistItem = async (req: AuthRequest, res: Response) => {
             for (const mid of allMemberIds) {
                 await createNotification(mid, 'KANBAN_CHECKLIST', 'Công việc mới trong Kanban',
                     `${userName} đã thêm "${title.trim()}" vào danh sách công việc của "${card.title}"`,
-                    card.projectId ?? undefined, card.taskId ?? undefined);
+                    card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
                 io.to(`user:${mid}`).emit('new_notification', {
                     type: 'KANBAN_CHECKLIST', title: 'Công việc mới trong Kanban',
                     message: `${userName} đã thêm công việc trong "${card.title}"`,
@@ -1290,7 +1304,7 @@ export const addChecklistItem = async (req: AuthRequest, res: Response) => {
             // Push notification to devices
             notifyKanbanChecklist(
                 board.members.map(m => m.userId), userId, userName,
-                board.id, card.title, title.trim()
+                board.id, card.title, title.trim(), card.id
             ).catch(err => console.error('[Kanban] Push checklist notification error:', err));
         }
 
@@ -1344,7 +1358,7 @@ export const updateChecklistItem = async (req: AuthRequest, res: Response) => {
                 for (const mid of allMemberIds) {
                     await createNotification(mid, 'KANBAN_CHECKLIST', checked ? 'Hoàn thành công việc' : 'Mở lại công việc',
                         `${userName} đã ${checked ? 'hoàn thành' : 'mở lại'} "${item.title}" trong thẻ "${card.title}"`,
-                        card.projectId ?? undefined, card.taskId ?? undefined);
+                        card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
                     io.to(`user:${mid}`).emit('new_notification', {
                         type: 'KANBAN_CHECKLIST', title: checked ? 'Hoàn thành công việc' : 'Mở lại công việc',
                         message: `${userName} đã ${checked ? 'hoàn thành' : 'mở lại'} "${item.title}" trong "${card.title}"`,
@@ -1358,7 +1372,7 @@ export const updateChecklistItem = async (req: AuthRequest, res: Response) => {
                 // Push notification to devices
                 notifyKanbanChecklistToggle(
                     board.members.map(m => m.userId), userId, userName,
-                    board.id, card.title, item.title, checked
+                    board.id, card.title, item.title, checked, card.id
                 ).catch(err => console.error('[Kanban] Push checklist toggle notification error:', err));
             }
         }
@@ -1430,6 +1444,8 @@ export const uploadCardAttachment = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ message: 'No files uploaded' });
         }
 
+        const category = req.body.category || 'attachment'; // 'attachment' or 'completion'
+
         const attachments = [];
         for (const file of files) {
             const fileName = normalizeVietnameseFilename(file.originalname);
@@ -1445,6 +1461,7 @@ export const uploadCardAttachment = async (req: AuthRequest, res: Response) => {
                     mimeType: file.mimetype,
                     minioPath,
                     source: 'upload',
+                    category,
                     cardId: Number(cardId),
                     uploadedById: userId
                 },
@@ -1467,7 +1484,7 @@ export const uploadCardAttachment = async (req: AuthRequest, res: Response) => {
         for (const mid of allMemberIds) {
             await createNotification(mid, 'KANBAN_ATTACHMENT', 'File đính kèm mới',
                 `${userName} đã đính kèm ${attachments.length} file vào thẻ "${card.title}"`,
-                card.projectId ?? undefined, card.taskId ?? undefined);
+                card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
             io.to(`user:${mid}`).emit('new_notification', {
                 type: 'KANBAN_ATTACHMENT', title: 'File đính kèm mới',
                 message: `${userName} đã đính kèm file vào "${card.title}"`,
@@ -1493,7 +1510,8 @@ export const uploadCardAttachmentFromFolder = async (req: AuthRequest, res: Resp
     try {
         const userId = req.user!.id;
         const { cardId } = req.params;
-        const { files: folderFiles } = req.body; // Array of { id, name, mimeType, size, minioPath }
+        const { files: folderFiles, category: folderCategory } = req.body; // Array of { id, name, mimeType, size, minioPath }
+        const category = folderCategory || 'attachment'; // 'attachment' or 'completion'
 
         if (!folderFiles || !Array.isArray(folderFiles) || folderFiles.length === 0) {
             return res.status(400).json({ message: 'No files selected' });
@@ -1526,6 +1544,7 @@ export const uploadCardAttachmentFromFolder = async (req: AuthRequest, res: Resp
                     mimeType: file.mimeType || 'application/octet-stream',
                     minioPath: file.minioPath,
                     source: 'folder',
+                    category,
                     cardId: Number(cardId),
                     uploadedById: userId
                 },
@@ -1543,7 +1562,7 @@ export const uploadCardAttachmentFromFolder = async (req: AuthRequest, res: Resp
         const userNameFolder = currentUserFolder?.name || 'Người dùng';
         notifyKanbanAttachment(
             board.members.map(m => m.userId), userId, userNameFolder,
-            board.id, card.title, attachments[0]?.fileName || 'file'
+            board.id, card.title, attachments[0]?.fileName || 'file', Number(cardId)
         ).catch(err => console.error('[Kanban] Push folder attachment notification error:', err));
 
         res.status(201).json(attachments);
@@ -1609,7 +1628,7 @@ export const uploadCardAttachmentFromDrive = async (req: AuthRequest, res: Respo
         const userNameDrive = currentUserDrive?.name || 'Người dùng';
         notifyKanbanAttachment(
             board.members.map(m => m.userId), userId, userNameDrive,
-            board.id, card.title, attachments[0]?.fileName || 'file'
+            board.id, card.title, attachments[0]?.fileName || 'file', Number(cardId)
         ).catch(err => console.error('[Kanban] Push drive attachment notification error:', err));
 
         res.status(201).json(attachments);

@@ -13,25 +13,8 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost',
     'http://localhost:3001',
-    'https://jtsc.io.vn',
-    'http://jtsc.io.vn',
-    'https://www.jtsc.io.vn',
-    'http://www.jtsc.io.vn',
-    'https://ai.jtsc.io.vn',
-    'http://ai.jtsc.io.vn',
-    // DuckDNS domains
-    'https://jtscapi.duckdns.org',
-    'http://jtscapi.duckdns.org',
-    'https://jtscminio.duckdns.org',
-    'http://jtscminio.duckdns.org',
-    'https://jtsconlyoffice.duckdns.org',
-    'http://jtsconlyoffice.duckdns.org',
-    'https://jtscdb.duckdns.org',
-    'http://jtscdb.duckdns.org',
-    // IP addresses
-    'http://117.0.207.175:3000',
-    'http://117.0.207.175:3001',
-    'http://117.0.207.175'
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
 ];
 const io = new Server(httpServer, {
     cors: {
@@ -102,8 +85,8 @@ app.use((req, res, next) => {
     next();
 });
 // Body parsing middleware - must be before routes
-app.use(express.json({ limit: '1gb' }));
-app.use(express.urlencoded({ extended: true, limit: '1gb' }));
+app.use(express.json({ limit: '5gb' }));
+app.use(express.urlencoded({ extended: true, limit: '5gb' }));
 // Ensure body is always an object for JSON requests
 app.use((req, res, next) => {
     // Only for JSON content type
@@ -187,6 +170,54 @@ app.get('/api/onlyoffice/download/:id', async (req, res) => {
     }
     catch (error) {
         console.error('[OnlyOffice Download] Error:', error?.message, error?.stack);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+// OnlyOffice download route for Kanban attachments (NO AUTH - OnlyOffice server needs direct access)
+app.get('/api/onlyoffice/kanban/download/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('[OnlyOffice Kanban Download] Attachment ID:', id);
+        const attachment = await prisma.kanbanAttachment.findUnique({
+            where: { id: Number(id) },
+        });
+        if (!attachment || !attachment.minioPath) {
+            console.log('[OnlyOffice Kanban Download] Attachment not found');
+            return res.status(404).json({ message: 'Attachment not found' });
+        }
+        console.log('[OnlyOffice Kanban Download] Found attachment:', attachment.minioPath);
+        const { getFileStream, getFileStats } = await import('./services/minioService.js');
+        let fileStats;
+        try {
+            fileStats = await getFileStats(attachment.minioPath);
+        }
+        catch (statsError) {
+            console.error('[OnlyOffice Kanban Download] Failed to get file stats:', statsError?.message);
+            return res.status(404).json({ message: 'File not found in storage' });
+        }
+        let fileStream;
+        try {
+            fileStream = await getFileStream(attachment.minioPath);
+        }
+        catch (streamError) {
+            console.error('[OnlyOffice Kanban Download] Failed to get file stream:', streamError?.message);
+            return res.status(500).json({ message: 'Cannot read file from storage' });
+        }
+        const originalName = attachment.fileName;
+        const encodedFilename = encodeURIComponent(originalName).replace(/'/g, "%27");
+        const asciiFilename = originalName.replace(/[^\x00-\x7F]/g, '_');
+        res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
+        res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
+        if (fileStats.size) {
+            res.setHeader('Content-Length', fileStats.size);
+        }
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        fileStream.pipe(res);
+    }
+    catch (error) {
+        console.error('[OnlyOffice Kanban Download] Error:', error?.message, error?.stack);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -665,14 +696,8 @@ io.on('connection', async (socket) => {
         socket.leave(`conversation:${conversationId}`);
         console.log(`User ${socket.data.userId} left conversation ${conversationId}`);
     });
-    // Send chat message
-    socket.on('send_chat_message', (data) => {
-        // Broadcast to all users in the conversation room
-        io.to(`conversation:${data.conversationId}`).emit('new_chat_message', {
-            conversationId: data.conversationId,
-            message: data.message
-        });
-    });
+    // Note: Chat messages are sent via REST API (chatController), not socket events.
+    // The controller emits 'chat:new_message' to individual user rooms to avoid double delivery.
     // Chat typing indicator - Optimized for realtime
     socket.on('chat:typing', (data) => {
         socket.to(`conversation:${data.conversationId}`).emit('chat:typing', {
@@ -756,15 +781,35 @@ app.get('/api/ping', (req, res) => {
     res.send('pong');
 });
 // Keep alive / Pulse check for terminal health
-// This helps the user know if the terminal is "paused" (Windows QuickEdit mode)
+// IMPORTANT: Using process.stderr.write instead of console.log to avoid
+// Windows QuickEdit mode freezing the entire Node.js event loop.
+// When QuickEdit is enabled and user clicks the terminal, stdout gets blocked,
+// which blocks console.log, which blocks the event loop, which freezes the server.
 setInterval(() => {
     const timestamp = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-    // Use process.stdout.write to be less intrusive but visible
-    // console.log(`[${timestamp}] System Active - Press Enter if stuck`);
-    // We print to ensure the user sees the process is ALIVE.
-    // If this stops printing, the user knows to press Enter.
-    console.log(`[${timestamp}] ⚡ Server Heartbeat | Active`);
-}, 30000);
+    // Use stderr which is less likely to block on Windows QuickEdit
+    try {
+        process.stderr.write(`[${timestamp}] ⚡ Server Heartbeat | Active\n`);
+    }
+    catch {
+        // Ignore write errors - don't let terminal issues crash the server
+    }
+}, 60000);
+// Resume stdin to prevent Windows QuickEdit from blocking the event loop
+// This is critical for Windows terminals where selecting text freezes the process
+if (process.platform === 'win32') {
+    try {
+        if (process.stdin.isTTY) {
+            process.stdin.resume();
+            process.stdin.setRawMode?.(false);
+        }
+        console.log('[Windows] Terminal input handling configured to prevent QuickEdit freezing');
+        console.log('[Windows] TIP: Right-click terminal title bar → Properties → Uncheck "QuickEdit Mode" to prevent freezing');
+    }
+    catch (e) {
+        // Ignore errors if stdin is not available
+    }
+}
 // Explicit Database Connection Check on Startup
 // This ensures we fail fast or confirm connection immediately
 (async () => {

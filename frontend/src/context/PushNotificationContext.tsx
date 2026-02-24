@@ -80,17 +80,17 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
     // Check if push notifications are supported
     useEffect(() => {
         const checkSupport = () => {
-            const supported = 
-                'serviceWorker' in navigator && 
+            const supported =
+                'serviceWorker' in navigator &&
                 'PushManager' in window &&
                 'Notification' in window;
             setIsSupported(supported);
-            
+
             if (supported) {
                 setPermission(Notification.permission);
             }
         };
-        
+
         checkSupport();
     }, []);
 
@@ -131,7 +131,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
             try {
                 // Add timeout for service worker ready
-                const timeoutPromise = new Promise<null>((_, reject) => 
+                const timeoutPromise = new Promise<null>((_, reject) =>
                     setTimeout(() => reject(new Error('Service worker timeout')), 10000)
                 );
 
@@ -363,10 +363,10 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
         const handleMessage = (event: MessageEvent) => {
             console.log('[Push] Message from SW:', event.data);
-            
+
             if (event.data?.type === 'NOTIFICATION_CLICK') {
                 const data = event.data.data;
-                
+
                 // Handle different notification types using custom events
                 // This allows the app to use React Router navigation + role-aware paths
                 if ((data.type === 'chat' || (data.type === 'mention' && data.conversationId)) && data.conversationId) {
@@ -402,9 +402,9 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
                     window.dispatchEvent(new CustomEvent('navigateFromNotification', {
                         detail: { type: 'project', projectId: data.projectId }
                     }));
-                } else if (data.type === 'kanban') {
+                } else if (data.type === 'kanban' || data.kanbanBoardId) {
                     window.dispatchEvent(new CustomEvent('navigateFromNotification', {
-                        detail: { type: 'kanban' }
+                        detail: { type: 'kanban', boardId: data.kanbanBoardId, cardId: data.kanbanCardId }
                     }));
                 } else if (data.taskId) {
                     window.dispatchEvent(new CustomEvent('navigateFromNotification', {
@@ -441,7 +441,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
         try {
             if (!registration) {
-                const timeoutPromise = new Promise<null>((_, reject) => 
+                const timeoutPromise = new Promise<null>((_, reject) =>
                     setTimeout(() => reject(new Error('Service worker timeout')), 10000)
                 );
                 registration = await Promise.race([
@@ -454,7 +454,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
             // Check if already subscribed
             let subscription = await registration.pushManager.getSubscription();
-            
+
             if (!subscription) {
                 subscription = await registration.pushManager.subscribe({
                     userVisibleOnly: true,
@@ -530,7 +530,7 @@ export const PushNotificationProvider: React.FC<{ children: React.ReactNode }> =
 
         try {
             setLoading(true);
-            
+
             const endpoint = subscriptionRef.current.endpoint;
             await subscriptionRef.current.unsubscribe();
 

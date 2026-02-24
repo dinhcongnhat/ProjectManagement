@@ -12,7 +12,7 @@ import { sendKanbanDailyReminderEmail } from './emailService.js';
 // Get start of today in UTC
 const getStartOfToday = (): Date => {
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    now.setUTCHours(0, 0, 0, 0);
     return now;
 };
 
@@ -535,21 +535,22 @@ export const startDeadlineScheduler = (): void => {
     console.log('[DeadlineScheduler] Starting deadline scheduler...');
 
     // 1. Setup Daily Deadline Check (8:00 AM Vietnam time = UTC+7)
+    // Vietnam 8:00 AM = UTC 1:00 AM (8 - 7 = 1)
     const now = new Date();
-    const vnOffset = 7 * 60; // Vietnam is UTC+7
-    const nowVN = new Date(now.getTime() + vnOffset * 60 * 1000);
-    const next8AM_VN = new Date(nowVN);
-    next8AM_VN.setHours(8, 0, 0, 0);
+    const TARGET_HOUR_UTC = 1; // 8:00 AM Vietnam = 1:00 AM UTC
 
-    // If it's already past 8 AM Vietnam time today, schedule for tomorrow
-    if (nowVN >= next8AM_VN) {
-        next8AM_VN.setDate(next8AM_VN.getDate() + 1);
+    // Calculate next 1:00 AM UTC (= 8:00 AM Vietnam)
+    const next8AM_UTC = new Date(now);
+    next8AM_UTC.setUTCHours(TARGET_HOUR_UTC, 0, 0, 0);
+
+    // If it's already past 1:00 AM UTC today, schedule for tomorrow
+    if (now.getTime() >= next8AM_UTC.getTime()) {
+        next8AM_UTC.setUTCDate(next8AM_UTC.getUTCDate() + 1);
     }
 
-    // Convert back to UTC for scheduling
-    const next8AM_UTC = new Date(next8AM_VN.getTime() - vnOffset * 60 * 1000);
     const msUntil8AM = next8AM_UTC.getTime() - now.getTime();
-    console.log(`[DeadlineScheduler] Next daily check scheduled for ${next8AM_UTC.toISOString()} (8:00 AM Vietnam time)`);
+    const hoursUntil = (msUntil8AM / (1000 * 60 * 60)).toFixed(1);
+    console.log(`[DeadlineScheduler] Next daily check scheduled for ${next8AM_UTC.toISOString()} (8:00 AM Vietnam time, in ${hoursUntil}h)`);
 
     setTimeout(() => {
         runDeadlineChecks();

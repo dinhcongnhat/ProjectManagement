@@ -153,7 +153,9 @@ export const createNotification = async (
     title: string,
     message: string,
     projectId?: number,
-    taskId?: number
+    taskId?: number,
+    kanbanBoardId?: number,
+    kanbanCardId?: number
 ) => {
     try {
         const notification = await prisma.notification.create({
@@ -163,7 +165,9 @@ export const createNotification = async (
                 title,
                 message,
                 projectId: projectId ?? null,
-                taskId: taskId ?? null
+                taskId: taskId ?? null,
+                kanbanBoardId: kanbanBoardId ?? null,
+                kanbanCardId: kanbanCardId ?? null
             }
         });
         return notification;

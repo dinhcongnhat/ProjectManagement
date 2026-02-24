@@ -15,6 +15,8 @@ interface Notification {
     projectId?: number;
     project?: { id: number; name: string; code: string };
     taskId?: number;
+    kanbanBoardId?: number;
+    kanbanCardId?: number;
     isRead: boolean;
     readAt?: string;
     createdAt: string;
@@ -158,8 +160,12 @@ const NotificationList = ({ onClose }: NotificationListProps) => {
             type === 'KANBAN_CHECKLIST_TOGGLE' ||
             type === 'KANBAN_ATTACHMENT'
         ) {
-            // All Kanban notifications → go to kanban board page
-            navigate(`${prefix}/kanban`);
+            // All Kanban notifications → deep-link to specific board/card
+            const params = new URLSearchParams();
+            if (notification.kanbanBoardId) params.set('boardId', String(notification.kanbanBoardId));
+            if (notification.kanbanCardId) params.set('cardId', String(notification.kanbanCardId));
+            const query = params.toString() ? `?${params.toString()}` : '';
+            navigate(`${prefix}/kanban${query}`);
             onClose();
         } else if (notification.taskId && !notification.projectId) {
             // Task notification without project → go to my-tasks

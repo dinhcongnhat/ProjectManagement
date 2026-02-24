@@ -245,7 +245,8 @@ export const notifyNewChatMessage = async (
     conversationId: number,
     conversationName: string,
     messagePreview: string,
-    isGroup: boolean
+    isGroup: boolean,
+    customUrl?: string
 ) => {
     // Don't notify the sender
     const recipients = recipientIds.filter(id => id !== senderId);
@@ -270,7 +271,7 @@ export const notifyNewChatMessage = async (
         // tag: `chat-${conversationId}`,
         data: {
             type: 'chat',
-            url: '/',
+            url: customUrl || '/',
             conversationId,
             senderId,
             senderName
@@ -383,7 +384,8 @@ export const notifyMention = async (
     context: 'chat' | 'discussion',
     contextId: number,
     contextName: string,
-    messagePreview: string
+    messagePreview: string,
+    customUrl?: string
 ) => {
     // Save to DB for bell icon
     try {
@@ -402,7 +404,7 @@ export const notifyMention = async (
 
     const data: PushPayload['data'] = {
         type: 'mention',
-        url: context === 'chat' ? '/' : `/projects/${contextId}`
+        url: customUrl || (context === 'chat' ? '/' : `/projects/${contextId}`)
     };
 
     if (context === 'chat') {
@@ -757,7 +759,7 @@ export const notifyKanbanCardDeadline = async (
         tag: `kanban-deadline-${cardId}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: `/kanban?cardId=${cardId}`
         },
         requireInteraction: true,
         vibrate: [200, 100, 200, 100, 200]
@@ -817,7 +819,8 @@ export const notifyKanbanCardCreated = async (
     boardId: number,
     boardName: string,
     cardTitle: string,
-    listTitle: string
+    listTitle: string,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== creatorId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -845,7 +848,7 @@ export const notifyKanbanCardCreated = async (
         tag: `kanban-card-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         }
     };
 
@@ -859,7 +862,8 @@ export const notifyKanbanComment = async (
     commenterName: string,
     boardId: number,
     cardTitle: string,
-    commentPreview: string
+    commentPreview: string,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== commenterId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -876,7 +880,7 @@ export const notifyKanbanComment = async (
         tag: `kanban-comment-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         }
     };
 
@@ -890,7 +894,8 @@ export const notifyKanbanChecklist = async (
     userName: string,
     boardId: number,
     cardTitle: string,
-    checklistTitle: string
+    checklistTitle: string,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== userId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -904,7 +909,7 @@ export const notifyKanbanChecklist = async (
         tag: `kanban-checklist-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         }
     };
 
@@ -917,7 +922,8 @@ export const notifyKanbanInvite = async (
     inviterId: number,
     inviterName: string,
     boardId: number,
-    boardName: string
+    boardName: string,
+    cardId?: number
 ) => {
     const recipients = invitedUserIds.filter(id => id !== inviterId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -945,7 +951,7 @@ export const notifyKanbanInvite = async (
         tag: `kanban-invite-${boardId}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         },
         requireInteraction: true
     };
@@ -961,7 +967,8 @@ export const notifyKanbanCardMoved = async (
     boardId: number,
     cardTitle: string,
     fromList: string,
-    toList: string
+    toList: string,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== moverId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -977,7 +984,7 @@ export const notifyKanbanCardMoved = async (
         tag: `kanban-move-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         }
     };
 
@@ -990,7 +997,8 @@ export const notifyKanbanCardApproved = async (
     approverId: number,
     approverName: string,
     boardId: number,
-    cardTitle: string
+    cardTitle: string,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== approverId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -1006,7 +1014,7 @@ export const notifyKanbanCardApproved = async (
         tag: `kanban-approve-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         },
         requireInteraction: true
     };
@@ -1020,7 +1028,8 @@ export const notifyKanbanAttachment = async (
     uploaderName: string,
     boardId: number,
     cardTitle: string,
-    fileName: string
+    fileName: string,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== uploaderId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -1034,7 +1043,7 @@ export const notifyKanbanAttachment = async (
         tag: `kanban-attachment-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         },
         requireInteraction: false
     };
@@ -1049,7 +1058,8 @@ export const notifyKanbanChecklistToggle = async (
     boardId: number,
     cardTitle: string,
     itemTitle: string,
-    checked: boolean
+    checked: boolean,
+    cardId?: number
 ) => {
     const recipients = recipientIds.filter(id => id !== togglerId);
     if (recipients.length === 0) return { success: 0, failed: 0 };
@@ -1063,7 +1073,7 @@ export const notifyKanbanChecklistToggle = async (
         tag: `kanban-checklist-toggle-${boardId}-${Date.now()}`,
         data: {
             type: 'kanban',
-            url: '/kanban'
+            url: (boardId && typeof cardId !== 'undefined') ? `/kanban?boardId=&cardId=` : boardId ? `/kanban?boardId=` : '/kanban'
         },
         requireInteraction: false
     };

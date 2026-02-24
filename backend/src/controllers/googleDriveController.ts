@@ -197,6 +197,9 @@ export const listDriveFiles = async (req: Request, res: Response) => {
 
         const drive = google.drive({ version: 'v3', auth });
 
+        // Sanitize inputs to escape single quotes in Drive API query
+        const sanitize = (str: string) => str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
         // Build query
         let query = "trashed = false";
 
@@ -206,7 +209,7 @@ export const listDriveFiles = async (req: Request, res: Response) => {
             query += " and sharedWithMe = true";
         } else {
             if (folderId) {
-                query += ` and '${folderId}' in parents`;
+                query += ` and '${sanitize(String(folderId))}' in parents`;
             } else if (!q) {
                 // Default to root if no search and not looking for starred
                 query += " and 'root' in parents";
@@ -214,7 +217,7 @@ export const listDriveFiles = async (req: Request, res: Response) => {
         }
 
         if (q) {
-            query += ` and name contains '${q}'`;
+            query += ` and name contains '${sanitize(String(q))}'`;
         }
 
         const response = await drive.files.list({

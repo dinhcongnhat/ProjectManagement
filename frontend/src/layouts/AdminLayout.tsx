@@ -13,17 +13,17 @@ import NotificationList from '../components/NotificationList';
 import api from '../config/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 
-/* ── Emotion styled components ── */
+/* ══════════════════════════════════════════════════════════════
+   Emotion styled — fully rebuilt for iOS PWA edge-to-edge
+   ══════════════════════════════════════════════════════════════ */
 
 const LayoutWrapper = styled.div`
   display: flex;
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  width: 100%; height: 100dvh;
-  background: #ffffff;
+  width: 100%;
+  height: 100%;
+  background: #f8fafc;
   overflow: hidden;
-  padding: 0;
-  margin: 0;
+  margin: 0; padding: 0;
   .dark & { background: #0f172a; }
 `;
 
@@ -40,8 +40,6 @@ const SidebarDesktop = styled.aside`
   }
 `;
 
-
-
 const MobileOverlay = styled(motion.div)`
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.4);
@@ -53,64 +51,84 @@ const MobileOverlay = styled(motion.div)`
 const MobileSidebar = styled(motion.aside)`
   position: fixed; left: 0; top: 0;
   width: 280px; max-width: 85vw;
-  height: 100dvh;
-  z-index: 60; background: #ffffff;
+  height: 100%; height: 100dvh;
+  z-index: 60;
+  background: #ffffff;
   box-shadow: 4px 0 24px rgba(0,0,0,0.12);
   display: flex; flex-direction: column;
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: 0;
   .dark & { background: #1e293b; }
   @media (min-width: 1024px) { display: none; }
 `;
 
 const ContentArea = styled.div`
-  flex: 1; display: flex; flex-direction: column;
-  height: 100dvh; overflow: hidden;
+  flex: 1;
+  display: flex; flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f8fafc;
+  .dark & { background: #0f172a; }
   @media (min-width: 1024px) { margin-left: 260px; }
 `;
 
 const HeaderBar = styled.header`
   display: flex; align-items: center;
-  height: calc(56px + env(safe-area-inset-top, 0px));
+  height: 48px;
   padding: 0 12px;
-  padding-top: env(safe-area-inset-top, 0px);
   padding-left: max(12px, env(safe-area-inset-left, 0px));
   padding-right: max(12px, env(safe-area-inset-right, 0px));
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
-  position: sticky; top: 0; z-index: 40;
-  gap: 8px; flex-shrink: 0;
+  flex-shrink: 0;
+  gap: 6px;
+  z-index: 40;
   .dark & { background: #1e293b; border-bottom-color: #334155; }
-  @media (min-width: 768px) { height: 64px; padding: 0 16px; padding-top: 0; gap: 8px; }
-  @media (min-width: 1024px) { padding: 0 24px; padding-top: 0; }
+  @media (min-width: 768px) { height: 56px; padding: 0 16px; gap: 8px; }
+  @media (min-width: 1024px) { height: 60px; padding: 0 24px; }
+
+  @media (display-mode: standalone) {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    @media (min-width: 768px) { height: calc(56px + env(safe-area-inset-top, 0px)); }
+    @media (min-width: 1024px) { height: calc(60px + env(safe-area-inset-top, 0px)); }
+  }
+  @supports (-webkit-touch-callout: none) {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    @media (min-width: 768px) { height: calc(56px + env(safe-area-inset-top, 0px)); }
+    @media (min-width: 1024px) { height: calc(60px + env(safe-area-inset-top, 0px)); }
+  }
 `;
 
 const MainContentStyled = styled.main`
-  flex: 1; overflow-y: auto; overflow-x: hidden;
-  display: block;
-  padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  @media (min-width: 768px) { padding: 24px; padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); }
-  @media (min-width: 1024px) { padding: 32px; padding-bottom: max(32px, env(safe-area-inset-bottom, 0px)); }
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding: 12px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  @media (min-width: 768px) { padding: 20px; }
+  @media (min-width: 1024px) { padding: 32px; }
 `;
 
 const IconBtn = styled(motion.button)`
   display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: 12px;
+  width: 34px; height: 34px; border-radius: 10px;
   border: none; cursor: pointer; position: relative;
   background: #f1f5f9; color: #475569;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
   &:hover { background: #e2e8f0; }
   .dark & { background: #334155; color: #cbd5e1; &:hover { background: #475569; } }
-  @media (min-width: 768px) { width: 40px; height: 40px; }
+  @media (min-width: 768px) { width: 38px; height: 38px; border-radius: 12px; }
 `;
 
 const BadgeEl = styled(motion.span)`
-  position: absolute; top: -2px; right: -2px;
-  min-width: 18px; height: 18px; padding: 0 5px;
+  position: absolute; top: -3px; right: -3px;
+  min-width: 17px; height: 17px; padding: 0 4px;
   background: #ef4444; color: white;
   font-size: 10px; font-weight: 700;
   border-radius: 9px; display: flex;
@@ -175,7 +193,7 @@ const LogoutBtnStyled = styled.button`
 
 const NotificationPanel = styled(motion.div)`
   position: fixed; z-index: 90;
-  inset: 56px 0 0 0;
+  inset: 48px 0 0 0;
   @media (min-width: 768px) {
     position: absolute; inset: auto;
     top: 100%; right: 0; margin-top: 8px;
@@ -186,14 +204,12 @@ const NotificationPanel = styled(motion.div)`
   }
 `;
 
-/* ── Animation ── */
 const pageVariants = {
-    initial: { opacity: 0, y: 10 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' as const } },
-    exit: { opacity: 0, y: -6, transition: { duration: 0.18 } }
+    initial: { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' as const } },
+    exit: { opacity: 0, y: -4, transition: { duration: 0.15 } }
 };
 
-/* ── Nav items ── */
 const adminNavItems = [
     { icon: LayoutDashboard, label: 'Tổng quan', path: '/admin', mobileLabel: 'Tổng quan' },
     { icon: CheckSquare, label: 'Quản lý dự án', path: '/admin/projects', mobileLabel: 'Dự án' },
@@ -216,8 +232,6 @@ const AdminLayout = () => {
     const { socketRef, connected } = useWebSocket(token);
 
     useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
-
-
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {
@@ -283,13 +297,13 @@ const AdminLayout = () => {
             <ContentArea>
                 <HeaderBar>
                     <IconBtn className="flex lg:!hidden" onClick={() => setSidebarOpen(!sidebarOpen)} whileTap={{ scale: 0.9 }}>
-                        <Menu size={20} />
+                        <Menu size={18} />
                     </IconBtn>
                     <div style={{ flex: 1 }} />
                     <ChatPopup />
                     <div style={{ position: 'relative' }} ref={notifRef}>
                         <IconBtn onClick={() => setShowNotifications(!showNotifications)} whileTap={{ scale: 0.9 }}>
-                            <Bell size={20} />
+                            <Bell size={18} />
                             <AnimatePresence>
                                 {unreadCount > 0 && (
                                     <BadgeEl initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}

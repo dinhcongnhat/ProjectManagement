@@ -464,6 +464,10 @@ model Notification {
   
   taskId    Int?
   
+  // Kanban deep-link info
+  kanbanBoardId Int?
+  kanbanCardId  Int?
+  
   // User nhận thông báo
   userId    Int
   user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
@@ -687,6 +691,7 @@ model KanbanAttachment {
   mimeType  String
   minioPath String   // Path in MinIO storage
   source    String   @default("upload") // "upload", "folder", "google-drive"
+  category  String   @default("attachment") // "attachment" or "completion"
   googleDriveFileId String? // For Google Drive files
   googleDriveLink   String? // Web view link for Google Drive files
   createdAt DateTime @default(now())

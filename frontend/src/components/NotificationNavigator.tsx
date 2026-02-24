@@ -23,6 +23,8 @@ const NotificationNavigator = () => {
                 projectId?: number;
                 taskId?: number;
                 tab?: string;
+                boardId?: number;
+                cardId?: number;
             }>;
 
             const prefix = getPrefix();
@@ -44,8 +46,12 @@ const NotificationNavigator = () => {
                 // Activity notifications → kanban page
                 navigate(`${prefix}/kanban`);
             } else if (detail.type === 'kanban') {
-                // Kanban notifications → kanban page
-                navigate(`${prefix}/kanban`);
+                // Kanban notifications → kanban page with IDs
+                const params = new URLSearchParams();
+                if (detail.boardId) params.set('boardId', String(detail.boardId));
+                if (detail.cardId) params.set('cardId', String(detail.cardId));
+                const query = params.toString() ? `?${params.toString()}` : '';
+                navigate(`${prefix}/kanban${query}`);
             } else if (detail.type === 'mention' && detail.projectId) {
                 navigate(`${prefix}/projects/${detail.projectId}?tab=discussion`);
             } else if (detail.type === 'chat') {
@@ -69,6 +75,8 @@ const NotificationNavigator = () => {
 
         const projectId = searchParams.get('projectId');
         const taskId = searchParams.get('taskId');
+        const boardId = searchParams.get('boardId');
+        const cardId = searchParams.get('cardId');
         const prefix = getPrefix();
 
         // Clean up the URL params
@@ -77,6 +85,8 @@ const NotificationNavigator = () => {
         newParams.delete('projectId');
         newParams.delete('taskId');
         newParams.delete('tab');
+        newParams.delete('boardId');
+        newParams.delete('cardId');
         setSearchParams(newParams, { replace: true });
 
         // Navigate after a small delay to ensure app is fully loaded
@@ -102,7 +112,11 @@ const NotificationNavigator = () => {
                 navigate(`${prefix}/kanban`, { replace: true });
             } else if (notificationType === 'kanban') {
                 // Kanban notifications → kanban page
-                navigate(`${prefix}/kanban`, { replace: true });
+                const params = new URLSearchParams();
+                if (boardId) params.set('boardId', boardId);
+                if (cardId) params.set('cardId', cardId);
+                const query = params.toString() ? `?${params.toString()}` : '';
+                navigate(`${prefix}/kanban${query}`, { replace: true });
             } else if (notificationType === 'chat') {
                 // Chat notifications → home
                 navigate(`${prefix}/`, { replace: true });

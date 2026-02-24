@@ -13,39 +13,41 @@ import NotificationList from '../components/NotificationList';
 import api from '../config/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 
-/* ── Emotion styled components ── */
+/* ══════════════════════════════════════════════════════════════
+   Emotion styled — fully rebuilt for iOS PWA edge-to-edge
+   ══════════════════════════════════════════════════════════════ */
 
+/**
+ * The root layout uses a 100dvh approach instead of position:fixed+inset
+ * to avoid iOS standalone-mode bottom-gap bugs.
+ * Background matches the app color so even if there IS a sub-pixel gap
+ * it's invisible.
+ */
 const LayoutWrapper = styled.div`
   display: flex;
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  width: 100%; height: 100dvh;
-  background: #ffffff;
+  width: 100%;
+  height: 100%;
+  background: #f8fafc;
   overflow: hidden;
-  /* Ensure full coverage on notched devices */
-  padding: 0;
-  margin: 0;
+  margin: 0; padding: 0;
   .dark & { background: #0f172a; }
 `;
 
+/* ── Desktop sidebar ── */
 const SidebarDesktop = styled.aside`
   display: none;
   @media (min-width: 1024px) {
-    display: flex;
-    flex-direction: column;
-    width: 260px;
-    min-width: 260px;
-    height: 100vh;
-    height: 100dvh;
-    position: fixed;
-    left: 0; top: 0;
-    z-index: 50;
+    display: flex; flex-direction: column;
+    width: 260px; min-width: 260px;
+    height: 100vh; height: 100dvh;
+    position: fixed; left: 0; top: 0; z-index: 50;
     background: #ffffff;
     border-right: 1px solid #e2e8f0;
     .dark & { background: #1e293b; border-right-color: #334155; }
   }
 `;
 
+/* ── Mobile sidebar overlay ── */
 const MobileOverlay = styled(motion.div)`
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.4);
@@ -54,78 +56,101 @@ const MobileOverlay = styled(motion.div)`
   @media (min-width: 1024px) { display: none; }
 `;
 
+/* ── Mobile sidebar ── */
 const MobileSidebar = styled(motion.aside)`
   position: fixed; left: 0; top: 0;
   width: 280px; max-width: 85vw;
-  height: 100dvh;
+  height: 100%; height: 100dvh;
   z-index: 60;
   background: #ffffff;
   box-shadow: 4px 0 24px rgba(0,0,0,0.12);
   display: flex; flex-direction: column;
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: 0;
   .dark & { background: #1e293b; }
   @media (min-width: 1024px) { display: none; }
 `;
 
+/* ── Content area (header + scroll area) ── */
 const ContentArea = styled.div`
   flex: 1;
   display: flex; flex-direction: column;
-  height: 100dvh;
+  min-width: 0;
+  height: 100%;
   overflow: hidden;
+  background: #f8fafc;
+  .dark & { background: #0f172a; }
   @media (min-width: 1024px) { margin-left: 260px; }
 `;
 
+/* ── Header bar — compact on mobile ── */
 const HeaderBar = styled.header`
   display: flex; align-items: center;
-  height: calc(56px + env(safe-area-inset-top, 0px));
+  height: 48px;
   padding: 0 12px;
-  padding-top: env(safe-area-inset-top, 0px);
   padding-left: max(12px, env(safe-area-inset-left, 0px));
   padding-right: max(12px, env(safe-area-inset-right, 0px));
   background: #ffffff;
   border-bottom: 1px solid #e2e8f0;
-  position: sticky; top: 0; z-index: 40;
-  gap: 8px; flex-shrink: 0;
+  flex-shrink: 0;
+  gap: 6px;
+  z-index: 40;
   .dark & { background: #1e293b; border-bottom-color: #334155; }
-  @media (min-width: 768px) { height: 64px; padding: 0 16px; padding-top: 0; gap: 8px; }
-  @media (min-width: 1024px) { padding: 0 24px; padding-top: 0; }
+  @media (min-width: 768px) { height: 56px; padding: 0 16px; gap: 8px; }
+  @media (min-width: 1024px) { height: 60px; padding: 0 24px; }
+
+  /* iOS PWA: add status-bar inset ONLY in standalone mode */
+  @media (display-mode: standalone) {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    @media (min-width: 768px) { height: calc(56px + env(safe-area-inset-top, 0px)); }
+    @media (min-width: 1024px) { height: calc(60px + env(safe-area-inset-top, 0px)); }
+  }
+  @supports (-webkit-touch-callout: none) {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(48px + env(safe-area-inset-top, 0px));
+    @media (min-width: 768px) { height: calc(56px + env(safe-area-inset-top, 0px)); }
+    @media (min-width: 1024px) { height: calc(60px + env(safe-area-inset-top, 0px)); }
+  }
 `;
 
+/* ── Main scrollable content — NO bottom safe-area padding ── */
 const MainContentStyled = styled.main`
   flex: 1;
-  overflow-y: auto; overflow-x: hidden;
-  display: block;
-  padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  @media (min-width: 768px) { padding: 24px; padding-bottom: max(24px, env(safe-area-inset-bottom, 0px)); }
-  @media (min-width: 1024px) { padding: 32px; padding-bottom: max(32px, env(safe-area-inset-bottom, 0px)); }
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding: 12px;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  @media (min-width: 768px) { padding: 20px; }
+  @media (min-width: 1024px) { padding: 32px; }
 `;
 
+/* ── Compact icon button ── */
 const IconBtn = styled(motion.button)`
   display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: 12px;
+  width: 34px; height: 34px; border-radius: 10px;
   border: none; cursor: pointer; position: relative;
   background: #f1f5f9; color: #475569;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
   &:hover { background: #e2e8f0; }
   &:active { background: #cbd5e1; }
   .dark & { background: #334155; color: #cbd5e1; &:hover { background: #475569; } }
-  @media (min-width: 768px) { width: 40px; height: 40px; }
+  @media (min-width: 768px) { width: 38px; height: 38px; border-radius: 12px; }
 `;
 
 const BadgeEl = styled(motion.span)`
-  position: absolute; top: -2px; right: -2px;
-  min-width: 18px; height: 18px; padding: 0 5px;
+  position: absolute; top: -3px; right: -3px;
+  min-width: 17px; height: 17px; padding: 0 4px;
   background: #ef4444; color: white;
   font-size: 10px; font-weight: 700;
   border-radius: 9px; display: flex;
   align-items: center; justify-content: center;
 `;
 
+/* ── Sidebar internals (unchanged from original) ── */
 const SidebarLogo = styled.div`
   padding: 20px 16px 16px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -133,9 +158,7 @@ const SidebarLogo = styled.div`
   .dark & { border-bottom-color: #334155; }
 `;
 
-const SidebarNavSection = styled.div`
-  padding: 8px 12px;
-`;
+const SidebarNavSection = styled.div`padding: 8px 12px;`;
 
 const SidebarNavLabel = styled.p`
   font-size: 11px; font-weight: 600; color: #94a3b8;
@@ -186,7 +209,7 @@ const LogoutBtn = styled.button`
 
 const NotificationPanel = styled(motion.div)`
   position: fixed; z-index: 90;
-  inset: 56px 0 0 0;
+  inset: 48px 0 0 0;
   @media (min-width: 768px) {
     position: absolute; inset: auto;
     top: 100%; right: 0; margin-top: 8px;
@@ -197,23 +220,25 @@ const NotificationPanel = styled(motion.div)`
   }
 `;
 
-/* ── Animation ── */
+/* ── page transition ── */
 const pageVariants = {
-    initial: { opacity: 0, y: 10 },
-    animate: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' as const } },
-    exit: { opacity: 0, y: -6, transition: { duration: 0.18 } }
+    initial: { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' as const } },
+    exit: { opacity: 0, y: -4, transition: { duration: 0.15 } }
 };
 
 /* ── Nav items ── */
 const navItems = [
     { icon: LayoutDashboard, label: 'Tổng quan', path: '/', mobileLabel: 'Tổng quan' },
-    { icon: CheckSquare, label: 'Quản lý công việc', path: '/projects', mobileLabel: 'Dự án' },
+    { icon: CheckSquare, label: 'Quản lý dự án', path: '/projects', mobileLabel: 'Dự án' },
     { icon: Columns3, label: 'Làm việc nhóm', path: '/kanban', mobileLabel: 'Nhóm' },
     { icon: ListTodo, label: 'Công việc cá nhân', path: '/my-tasks', mobileLabel: 'Việc tôi' },
     { icon: FolderOpen, label: 'Thư mục', path: '/folders', mobileLabel: 'Thư mục' },
 ];
 
-/* ── Main Layout Component ── */
+/* ══════════════════════════════════════════════════════════════
+   Main Layout Component
+   ══════════════════════════════════════════════════════════════ */
 const MainLayout = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
@@ -227,8 +252,6 @@ const MainLayout = () => {
 
     // Close sidebar on route change
     useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
-
-
 
     // Click outside notification panel
     useEffect(() => {
@@ -315,13 +338,13 @@ const MainLayout = () => {
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         whileTap={{ scale: 0.9 }}
                     >
-                        <Menu size={20} />
+                        <Menu size={18} />
                     </IconBtn>
                     <div style={{ flex: 1 }} />
                     <ChatPopup />
                     <div style={{ position: 'relative' }} ref={notifRef}>
                         <IconBtn onClick={() => setShowNotifications(!showNotifications)} whileTap={{ scale: 0.9 }}>
-                            <Bell size={20} />
+                            <Bell size={18} />
                             <AnimatePresence>
                                 {unreadCount > 0 && (
                                     <BadgeEl

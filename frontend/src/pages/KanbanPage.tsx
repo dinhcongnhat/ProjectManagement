@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import ReactDOM from 'react-dom';
+import { createPortal } from 'react-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useSearchParams } from 'react-router-dom';
 import api, { API_URL } from '../config/api';
 import {
     Plus, X, MoreHorizontal, Users, Calendar, MessageSquare, CheckSquare,
     Trash2, Edit3, ChevronLeft, UserPlus, Clock,
     Star, ShieldCheck, Paperclip, Download, Eye, FileText, Image, Film, HardDrive, FolderOpen,
-    BarChart3, Layout
+    BarChart3, Layout, Upload, ClipboardCheck, Search
 } from 'lucide-react';
 import {
     DndContext,
@@ -122,6 +123,7 @@ interface KanbanAttachment {
     mimeType: string;
     minioPath: string;
     source: string;
+    category: string; // 'attachment' or 'completion'
     googleDriveFileId?: string;
     googleDriveLink?: string;
     createdAt: string;
@@ -134,7 +136,7 @@ const KanbanOnlyOfficeViewer: React.FC<{
     attachmentId: number;
     fileName: string;
     onClose: () => void;
-}> = ({ attachmentId, fileName, onClose }) => {
+}> = ({ attachmentId, onClose }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const editorRef = useRef<HTMLDivElement>(null);
@@ -194,34 +196,44 @@ const KanbanOnlyOfficeViewer: React.FC<{
         return () => { cancelled = true; editorInstanceRef.current = null; };
     }, [attachmentId]);
 
-    return (
-        <div className="fixed inset-0 z-[10001] bg-black/90 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 bg-black/40 shrink-0">
-                <span className="text-white text-sm font-medium truncate">{fileName}</span>
-                <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/10 text-gray-300 hover:text-white transition-colors">
-                    <X className="w-5 h-5" />
-                </button>
-            </div>
-            <div className="flex-1 relative">
+    return createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100001, background: '#fff', display: 'flex', flexDirection: 'column' }}>
+            {/* Floating close button */}
+            <button
+                onClick={onClose}
+                className="absolute z-[100002] bg-gray-800/80 hover:bg-gray-700 text-white rounded-xl transition-colors shadow-lg"
+                style={{
+                    top: 'max(12px, env(safe-area-inset-top, 12px))',
+                    right: 'max(12px, env(safe-area-inset-right, 12px))',
+                    padding: '10px',
+                }}
+                title="Đóng (ESC)"
+            >
+                <X size={22} />
+            </button>
+
+            {/* Editor area */}
+            <div className="flex-1 w-full h-full relative overflow-hidden">
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center text-white">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-3"></div>
-                            <p>Đang tải OnlyOffice...</p>
+                    <div className="absolute inset-0 flex items-center justify-center bg-white" style={{ zIndex: 10 }}>
+                        <div className="text-center text-gray-800">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                            <p className="text-sm font-medium">Đang tải OnlyOffice...</p>
                         </div>
                     </div>
                 )}
                 {error && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center text-white">
-                            <p className="text-red-400 mb-2">{error}</p>
-                            <button onClick={onClose} className="px-4 py-2 bg-gray-700 rounded-lg text-sm hover:bg-gray-600">Đóng</button>
+                    <div className="absolute inset-0 flex items-center justify-center bg-white" style={{ zIndex: 10 }}>
+                        <div className="text-center text-gray-800">
+                            <p className="text-red-500 mb-2 text-sm font-medium">{error}</p>
+                            <button onClick={onClose} className="px-4 py-2 bg-gray-700 text-white rounded-lg text-sm hover:bg-gray-600">Đóng</button>
                         </div>
                     </div>
                 )}
-                <div ref={editorRef} id={`kanban-onlyoffice-editor-${attachmentId}`} className="w-full h-full" />
+                <div ref={editorRef} id={`kanban-onlyoffice-editor-${attachmentId}`} style={{ width: '100%', height: '100%', display: loading || error ? 'none' : 'block' }} />
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -286,7 +298,7 @@ const MoveCardMenu: React.FC<{
         };
     }, [onClose, anchorRef]);
 
-    return ReactDOM.createPortal(
+    return createPortal(
         <div
             ref={menuRef}
             style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
@@ -400,10 +412,10 @@ const SortableCard: React.FC<{
             <div className="flex items-center gap-2 mt-2 flex-wrap">
                 {card.dueDate && (
                     <span className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${card.completed
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
-                            : new Date(card.dueDate) < new Date()
-                                ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
-                                : isDark ? 'bg-gray-600 text-gray-300' : 'bg-gray-100 text-gray-600'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                        : new Date(card.dueDate) < new Date()
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                            : isDark ? 'bg-gray-600 text-gray-300' : 'bg-gray-100 text-gray-600'
                         }`}>
                         <Clock className="w-3 h-3" />
                         {new Date(card.dueDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
@@ -422,7 +434,7 @@ const SortableCard: React.FC<{
                 )}
                 {card.checklistTotal > 0 && (
                     <span className={`flex items-center gap-0.5 text-xs ${card.checklistChecked === card.checklistTotal
-                            ? 'text-green-600' : isDark ? 'text-gray-400' : 'text-gray-500'
+                        ? 'text-green-600' : isDark ? 'text-gray-400' : 'text-gray-500'
                         }`}>
                         <CheckSquare className="w-3 h-3" />
                         {card.checklistChecked}/{card.checklistTotal}
@@ -508,7 +520,7 @@ const SortableList: React.FC<{
             <div
                 ref={setNodeRef}
                 style={style}
-                className={`flex-shrink-0 w-full sm:w-72 rounded-xl flex flex-col max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-200px)] ${isDark ? 'bg-gray-800' : 'bg-gray-100'
+                className={`w-full sm:flex-1 sm:min-w-0 rounded-xl flex flex-col max-h-[calc(100vh-180px)] sm:max-h-[calc(100vh-200px)] ${isDark ? 'bg-gray-800' : 'bg-gray-100'
                     }`}
             >
                 {/* List Header */}
@@ -648,8 +660,8 @@ const SortableList: React.FC<{
                     <button
                         onClick={() => onAddCard(list.id)}
                         className={`mx-3 mb-3 p-2 rounded-lg text-sm flex items-center gap-1 ${isDark
-                                ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
-                                : 'text-gray-500 hover:bg-gray-200 hover:text-gray-700'
+                            ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                            : 'text-gray-500 hover:bg-gray-200 hover:text-gray-700'
                             }`}
                     >
                         <Plus className="w-4 h-4" /> Thêm thẻ
@@ -705,7 +717,9 @@ const KanbanPage: React.FC = () => {
     const [previewIsOffice, setPreviewIsOffice] = useState(false);
     const [kanbanOnlyOfficeId, setKanbanOnlyOfficeId] = useState<number | null>(null);
     const attachFileRef = React.useRef<HTMLInputElement>(null);
+    const completionFileRef = React.useRef<HTMLInputElement>(null);
     const attachMenuRef = React.useRef<HTMLDivElement>(null);
+    const [uploadingCompletion, setUploadingCompletion] = useState(false);
 
     // Member management
     const [showMembers, setShowMembers] = useState(false);
@@ -719,6 +733,40 @@ const KanbanPage: React.FC = () => {
     // Mobile column tab
     const [mobileActiveListIndex, setMobileActiveListIndex] = useState(0);
     const mobileColumnRef = useRef<HTMLDivElement>(null);
+
+    // Search
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<(KanbanCard & { listTitle: string; boardTitle: string; boardId: number })[]>([]);
+    const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+    const searchRef = useRef<HTMLDivElement>(null);
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Date filter: 'all' hoặc 'week-N-YYYY-MM' (ví dụ: 'week-1-2025-02')
+    const [dateFilter, setDateFilter] = useState<string>('all');
+    // Month picker for date filter (0-based month)
+    const [filterMonth, setFilterMonth] = useState<{ year: number; month: number }>(() => {
+        const now = new Date();
+        return { year: now.getFullYear(), month: now.getMonth() };
+    });
+    const [showDateDropdown, setShowDateDropdown] = useState(false);
+    const dateDropdownRef = React.useRef<HTMLDivElement>(null);
+
+    // Download dropdown
+    const [downloadMenuAttachmentId, setDownloadMenuAttachmentId] = useState<number | null>(null);
+    const downloadMenuRef = React.useRef<HTMLDivElement>(null);
+
+    // Completion upload menu
+    const [showCompletionMenu, setShowCompletionMenu] = useState(false);
+    const completionMenuRef = React.useRef<HTMLDivElement>(null);
+    const [showCompletionFilePicker, setShowCompletionFilePicker] = useState(false);
+    const [showCompletionDrivePicker, setShowCompletionDrivePicker] = useState(false);
+
+    // Save to folder confirm dialog
+    const [pendingFolderSaveAttachment, setPendingFolderSaveAttachment] = useState<KanbanAttachment | null>(null);
+    const [folderSaveStatus, setFolderSaveStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
+
+    // URL params for deep-link navigation from notifications
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -747,6 +795,15 @@ const KanbanPage: React.FC = () => {
         const handleClickOutside = (e: MouseEvent) => {
             if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
                 setShowAttachMenu(false);
+            }
+            if (downloadMenuRef.current && !downloadMenuRef.current.contains(e.target as Node)) {
+                setDownloadMenuAttachmentId(null);
+            }
+            if (dateDropdownRef.current && !dateDropdownRef.current.contains(e.target as Node)) {
+                setShowDateDropdown(false);
+            }
+            if (completionMenuRef.current && !completionMenuRef.current.contains(e.target as Node)) {
+                setShowCompletionMenu(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -796,6 +853,160 @@ const KanbanPage: React.FC = () => {
             socket.off('kanban:board_updated', handleBoardUpdated);
         };
     }, [socketRef, connected, selectedBoard?.id, fetchBoard]);
+
+    // Deep-link from notifications: ?boardId=X&cardId=Y
+    useEffect(() => {
+        const boardId = searchParams.get('boardId');
+        const cardId = searchParams.get('cardId');
+        if (boardId) {
+            const bid = Number(boardId);
+            // Load the board
+            (async () => {
+                try {
+                    const res = await api.get(`/kanban/boards/${bid}`);
+                    setSelectedBoard(res.data);
+                    setView('board');
+                    // If cardId specified, open the card detail modal
+                    if (cardId) {
+                        const cid = Number(cardId);
+                        // Make sure to find card in the returned data, not state (since state might not be updated yet)
+                        const card = res.data.lists
+                            ?.flatMap((l: KanbanList) => l.cards)
+                            ?.find((c: KanbanCard) => c.id === cid);
+                        if (card) {
+                            // Small delay to let board render
+                            setTimeout(() => openCardDetail(card), 300);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error loading board from notification:', err);
+                }
+            })();
+            // Clear URL params so they don't re-trigger
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams, setSearchParams]);
+
+    // Global search across all boards
+    const handleSearch = useCallback(async (query: string) => {
+        if (query.trim().length < 2) {
+            setSearchResults([]);
+            setShowSearchDropdown(false);
+            return;
+        }
+        try {
+            const res = await api.get('/kanban/boards');
+            const allBoards: KanbanBoard[] = res.data;
+            const results: (KanbanCard & { listTitle: string; boardTitle: string; boardId: number })[] = [];
+            const q = query.toLowerCase();
+            for (const board of allBoards) {
+                // Fetch full board with cards
+                const boardRes = await api.get(`/kanban/boards/${board.id}`);
+                const fullBoard: KanbanBoard = boardRes.data;
+                for (const list of fullBoard.lists) {
+                    for (const card of list.cards) {
+                        if (card.title.toLowerCase().includes(q) || (card.description || '').toLowerCase().includes(q)) {
+                            results.push({ ...card, listTitle: list.title, boardTitle: fullBoard.title, boardId: fullBoard.id });
+                        }
+                    }
+                }
+            }
+            setSearchResults(results.slice(0, 10));
+            setShowSearchDropdown(results.length > 0);
+        } catch (error) {
+            console.error('Error searching:', error);
+        }
+    }, []);
+
+    const onSearchInputChange = (value: string) => {
+        setSearchQuery(value);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => handleSearch(value), 300);
+    };
+
+    const navigateToSearchResult = async (result: KanbanCard & { listTitle: string; boardTitle: string; boardId: number }) => {
+        setShowSearchDropdown(false);
+        setSearchQuery('');
+        try {
+            const res = await api.get(`/kanban/boards/${result.boardId}`);
+            setSelectedBoard(res.data);
+            setView('board');
+            // Find the card in the fresh data
+            const card = res.data.lists
+                ?.flatMap((l: KanbanList) => l.cards)
+                ?.find((c: KanbanCard) => c.id === result.id);
+            if (card) {
+                setTimeout(() => openCardDetail(card), 200);
+            }
+        } catch (error) {
+            console.error('Error navigating to search result:', error);
+        }
+    };
+
+    // Close search dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+                setShowSearchDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Date filter logic — filter theo tuần trong tháng
+    // dateFilter format: 'all' | 'week-{weekNum}-{year}-{month}'
+    // weekNum = 1..4, month = 0-based (JS Date)
+    const getWeekRangeOfMonth = (year: number, month: number, weekNum: number) => {
+        // weekNum: 1-based (Tuần 1 = ngày 1-7, Tuần 2 = 8-14, Tuần 3 = 15-21, Tuần 4 = 22+)
+        const startDay = (weekNum - 1) * 7 + 1;
+        const start = new Date(year, month, startDay, 0, 0, 0, 0);
+        let end: Date;
+        if (weekNum === 4) {
+            end = new Date(year, month + 1, 0, 23, 59, 59, 999);
+        } else {
+            end = new Date(year, month, startDay + 6, 23, 59, 59, 999);
+        }
+        return { start, end };
+    };
+
+    const getFilteredCards = useCallback((cards: KanbanCard[]) => {
+        if (dateFilter === 'all') return cards;
+        const parts = dateFilter.split('-'); // ['week', weekNum, year, month]
+        if (parts.length !== 4 || parts[0] !== 'week') return cards;
+        const weekNum = Number(parts[1]);
+        const year = Number(parts[2]);
+        const month = Number(parts[3]);
+        const { start, end } = getWeekRangeOfMonth(year, month, weekNum);
+        return cards.filter(card => {
+            if (!card.dueDate) return false;
+            const due = new Date(card.dueDate);
+            return due >= start && due <= end;
+        });
+    }, [dateFilter]);
+
+    // Tạo danh sách 4 tuần của tháng được chọn trong filter
+    const getWeekFilterOptions = (year: number, month: number) => {
+        return [
+            { value: `week-1-${year}-${month}`, label: 'Tuần 1', range: getWeekRangeOfMonth(year, month, 1) },
+            { value: `week-2-${year}-${month}`, label: 'Tuần 2', range: getWeekRangeOfMonth(year, month, 2) },
+            { value: `week-3-${year}-${month}`, label: 'Tuần 3', range: getWeekRangeOfMonth(year, month, 3) },
+            { value: `week-4-${year}-${month}`, label: 'Tuần 4', range: getWeekRangeOfMonth(year, month, 4) },
+        ];
+    };
+
+    const getFilterLabel = () => {
+        if (dateFilter === 'all') return 'Tất cả';
+        const parts = dateFilter.split('-');
+        if (parts.length === 4) {
+            const weekNum = Number(parts[1]);
+            const year = Number(parts[2]);
+            const month = Number(parts[3]);
+            const monthName = new Date(year, month, 1).toLocaleDateString('vi-VN', { month: 'long' });
+            return `T${weekNum} - ${monthName} ${year}`;
+        }
+        return 'Tất cả';
+    };
 
     // ==================== BOARD ACTIONS ====================
     const handleCreateBoard = async () => {
@@ -967,7 +1178,18 @@ const KanbanPage: React.FC = () => {
         setSelectedCard(card);
         setEditCardTitle(card.title);
         setEditCardDescription(card.description || '');
-        setEditCardDueDate(card.dueDate ? new Date(card.dueDate).toISOString().slice(0, 16) : '');
+        // Convert to local datetime format (not UTC) for datetime-local input
+        if (card.dueDate) {
+            const d = new Date(card.dueDate);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            setEditCardDueDate(`${year}-${month}-${day}T${hours}:${minutes}`);
+        } else {
+            setEditCardDueDate('');
+        }
         setEditingCard(false);
 
         // Fetch comments, checklist and attachments
@@ -1060,6 +1282,25 @@ const KanbanPage: React.FC = () => {
         }
     };
 
+    // Upload completion documents (separate category)
+    const handleUploadCompletionDoc = async (files: FileList | File[]) => {
+        if (!selectedCard || !files || files.length === 0) return;
+        setUploadingCompletion(true);
+        try {
+            const formData = new FormData();
+            Array.from(files).forEach(file => formData.append('files', file));
+            formData.append('category', 'completion');
+            const res = await api.post(`/kanban/cards/${selectedCard.id}/attachments`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setCardAttachments(prev => [...res.data, ...prev]);
+        } catch (error) {
+            console.error('Error uploading completion document:', error);
+        } finally {
+            setUploadingCompletion(false);
+        }
+    };
+
     const handleAttachFromFolder = async (selectedFiles: SelectedFile[]) => {
         if (!selectedCard || selectedFiles.length === 0) return;
         setUploadingAttachment(true);
@@ -1081,6 +1322,49 @@ const KanbanPage: React.FC = () => {
         }
     };
 
+    // Upload completion from folder (Kho dữ liệu)
+    const handleAttachCompletionFromFolder = async (selectedFiles: SelectedFile[]) => {
+        if (!selectedCard || selectedFiles.length === 0) return;
+        setUploadingCompletion(true);
+        try {
+            const res = await api.post(`/kanban/cards/${selectedCard.id}/attachments/from-folder`, {
+                files: selectedFiles.map(f => ({
+                    id: f.id,
+                    name: f.name,
+                    mimeType: f.mimeType,
+                    size: f.size,
+                    minioPath: f.minioPath
+                })),
+                category: 'completion'
+            });
+            setCardAttachments(prev => [...res.data, ...prev]);
+        } catch (error) {
+            console.error('Error attaching completion from folder:', error);
+        } finally {
+            setUploadingCompletion(false);
+            setShowCompletionFilePicker(false);
+        }
+    };
+
+    // Upload completion from Google Drive
+    const handleAttachCompletionFromDrive = async (files: File[]) => {
+        if (!selectedCard || files.length === 0) return;
+        setUploadingCompletion(true);
+        try {
+            const formData = new FormData();
+            files.forEach(file => formData.append('files', file));
+            formData.append('category', 'completion');
+            const res = await api.post(`/kanban/cards/${selectedCard.id}/attachments`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setCardAttachments(prev => [...res.data, ...prev]);
+        } catch (error) {
+            console.error('Error attaching completion from Drive:', error);
+        } finally {
+            setUploadingCompletion(false);
+            setShowCompletionDrivePicker(false);
+        }
+    };
     const handleAttachFromDrive = async (files: File[]) => {
         if (!selectedCard || files.length === 0) return;
         // Google Drive files come as File objects from GoogleDriveBrowser
@@ -1100,6 +1384,7 @@ const KanbanPage: React.FC = () => {
             setShowDrivePicker(false);
         }
     };
+
 
     const handleDeleteAttachment = async (attachmentId: number) => {
         try {
@@ -1132,7 +1417,9 @@ const KanbanPage: React.FC = () => {
         }
     };
 
-    const handleDownloadAttachment = async (attachment: KanbanAttachment) => {
+    // Download về máy tính
+    const handleDownloadToDevice = async (attachment: KanbanAttachment) => {
+        setDownloadMenuAttachmentId(null);
         try {
             const res = await api.get(`/kanban/attachments/${attachment.id}/presigned-url`);
             if (res.data.isGoogleDrive) {
@@ -1141,12 +1428,52 @@ const KanbanPage: React.FC = () => {
                 const link = document.createElement('a');
                 link.href = res.data.url;
                 link.download = attachment.fileName;
+                document.body.appendChild(link);
                 link.click();
+                document.body.removeChild(link);
             }
         } catch (error) {
-            console.error('Error downloading attachment:', error);
+            console.error('Error downloading attachment to device:', error);
         }
     };
+
+    // Download về thư mục (lưu vào Kho dữ liệu) - show 2-step confirm dialog
+    const handleDownloadToFolder = async (attachment: KanbanAttachment) => {
+        setDownloadMenuAttachmentId(null);
+        // Step 1: show confirm dialog
+        setPendingFolderSaveAttachment(attachment);
+        setFolderSaveStatus('idle');
+    };
+
+    // Step 2: perform actual save after confirm
+    const handleConfirmFolderSave = async () => {
+        if (!pendingFolderSaveAttachment) return;
+        setFolderSaveStatus('saving');
+        try {
+            const res = await api.get(`/kanban/attachments/${pendingFolderSaveAttachment.id}/presigned-url`);
+            if (res.data.isGoogleDrive) {
+                setFolderSaveStatus('error');
+                return;
+            }
+            const blobRes = await fetch(res.data.url);
+            const blob = await blobRes.blob();
+            const file = new File([blob], pendingFolderSaveAttachment.fileName, { type: pendingFolderSaveAttachment.mimeType });
+            const formData = new FormData();
+            formData.append('file', file);
+            await api.post('/folders/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setFolderSaveStatus('done');
+            // Auto-close after 2 seconds
+            setTimeout(() => { setPendingFolderSaveAttachment(null); setFolderSaveStatus('idle'); }, 2000);
+        } catch (error) {
+            console.error('Error saving to folder:', error);
+            setFolderSaveStatus('error');
+        }
+    };
+
+    // Legacy alias (dùng cho nút trong preview modal)
+    const handleDownloadAttachment = handleDownloadToDevice;
 
     const getAttachmentIcon = (fileName: string, mimeType: string) => {
         const ext = fileName.split('.').pop()?.toLowerCase() || '';
@@ -1270,34 +1597,26 @@ const KanbanPage: React.FC = () => {
         // Move card between lists in local state
         setSelectedBoard(prev => {
             if (!prev) return null;
+            const sourceList = prev.lists.find(l => l.id === sourceListId);
+            const cardToMove = sourceList?.cards.find(c => c.id === activeCardId);
+            if (!cardToMove) return prev;
+
             const newLists = prev.lists.map(list => {
                 if (list.id === sourceListId) {
                     return { ...list, cards: list.cards.filter(c => c.id !== activeCardId) };
                 }
                 if (list.id === targetListId) {
-                    const cardToMove = prev.lists
-                        .find(l => l.id === sourceListId)
-                        ?.cards.find(c => c.id === activeCardId);
-                    if (!cardToMove) return list;
-
-                    let newIndex = list.cards.length; // Default: append to end
-
+                    const newCards = [...list.cards];
+                    // Determine insertion index
+                    let insertIndex = newCards.length; // default: append to end
                     if (overIdStr.startsWith('card-')) {
                         const overCardId = Number(overIdStr.replace('card-', ''));
-                        const overIndex = list.cards.findIndex(c => c.id === overCardId);
+                        const overIndex = newCards.findIndex(c => c.id === overCardId);
                         if (overIndex >= 0) {
-                            // Determine if the dragged item is below the over item
-                            // by comparing the translated rect positions
-                            const isBelowOverItem =
-                                active.rect.current.translated &&
-                                over.rect &&
-                                active.rect.current.translated.top > over.rect.top + over.rect.height / 2;
-                            newIndex = isBelowOverItem ? overIndex + 1 : overIndex;
+                            insertIndex = overIndex;
                         }
                     }
-
-                    const newCards = [...list.cards];
-                    newCards.splice(newIndex, 0, {
+                    newCards.splice(insertIndex, 0, {
                         ...cardToMove,
                         listId: targetListId
                     });
@@ -1497,8 +1816,8 @@ const KanbanPage: React.FC = () => {
                                         onKeyDown={e => { if (e.key === 'Enter') handleCreateBoard(); }}
                                         placeholder="Nhập tiêu đề..."
                                         className={`w-full px-3 py-2 rounded-lg border text-sm ${isDark
-                                                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
+                                            ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                            : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
                                             }`}
                                     />
                                 </div>
@@ -1512,8 +1831,8 @@ const KanbanPage: React.FC = () => {
                                         placeholder="Mô tả bảng (tùy chọn)..."
                                         rows={2}
                                         className={`w-full px-3 py-2 rounded-lg border text-sm resize-none ${isDark
-                                                ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
+                                            ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                            : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
                                             }`}
                                     />
                                 </div>
@@ -1572,11 +1891,10 @@ const KanbanPage: React.FC = () => {
                             <button
                                 key={list.id}
                                 onClick={() => setMobileActiveListIndex(idx)}
-                                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                                    mobileActiveListIndex === idx
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
-                                }`}
+                                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${mobileActiveListIndex === idx
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
+                                    }`}
                             >
                                 {list.title}
                                 <span className={`ml-1 ${mobileActiveListIndex === idx ? 'text-blue-100' : isDark ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -1588,8 +1906,8 @@ const KanbanPage: React.FC = () => {
                     </div>
                 )}
 
-                {/* Board Content - Desktop: horizontal scroll, Mobile: single column with swipe */}
-                <div className="flex-1 overflow-hidden sm:overflow-y-hidden sm:overflow-x-auto p-2 sm:p-4 sm:scroll-smooth">
+                {/* Board Content - Desktop: no horizontal scroll, 4 cols fill width, Mobile: single column with swipe */}
+                <div className="flex-1 overflow-hidden sm:overflow-y-hidden p-2 sm:p-4">
                     <DndContext
                         sensors={sensors}
                         collisionDetection={closestCorners}
@@ -1597,36 +1915,39 @@ const KanbanPage: React.FC = () => {
                         onDragOver={handleDragOver}
                         onDragEnd={handleDragEnd}
                     >
-                        {/* Desktop: horizontal row of columns */}
-                        <div className="hidden sm:flex flex-row gap-4 h-full items-start pb-0">
+                        {/* Desktop: columns fill full width equally */}
+                        <div className="hidden sm:flex flex-row gap-3 h-full items-start">
                             <SortableContext
                                 items={selectedBoard.lists.map(l => `list-${l.id}`)}
                                 strategy={horizontalListSortingStrategy}
                             >
-                                {selectedBoard.lists.map(list => (
-                                    <SortableList
-                                        key={list.id}
-                                        list={list}
-                                        isDark={isDark}
-                                        onCardClick={openCardDetail}
-                                        onAddCard={(listId) => {
-                                            setAddingCardToList(listId);
-                                            setNewCardTitle('');
-                                            setNewCardDueDate('');
-                                        }}
-                                        onEditTitle={handleEditListTitle}
-                                        onDeleteList={handleDeleteList}
-                                        addingCardToList={addingCardToList}
-                                        newCardTitle={newCardTitle}
-                                        newCardDueDate={newCardDueDate}
-                                        setNewCardTitle={setNewCardTitle}
-                                        setNewCardDueDate={setNewCardDueDate}
-                                        setAddingCardToList={setAddingCardToList}
-                                        handleCreateCard={handleCreateCard}
-                                        allLists={selectedBoard.lists}
-                                        onMoveCard={handleMoveCard}
-                                    />
-                                ))}
+                                {selectedBoard.lists.map(list => {
+                                    const filteredList = dateFilter === 'all' ? list : { ...list, cards: getFilteredCards(list.cards) };
+                                    return (
+                                        <SortableList
+                                            key={list.id}
+                                            list={filteredList}
+                                            isDark={isDark}
+                                            onCardClick={openCardDetail}
+                                            onAddCard={(listId) => {
+                                                setAddingCardToList(listId);
+                                                setNewCardTitle('');
+                                                setNewCardDueDate('');
+                                            }}
+                                            onEditTitle={handleEditListTitle}
+                                            onDeleteList={handleDeleteList}
+                                            addingCardToList={addingCardToList}
+                                            newCardTitle={newCardTitle}
+                                            newCardDueDate={newCardDueDate}
+                                            setNewCardTitle={setNewCardTitle}
+                                            setNewCardDueDate={setNewCardDueDate}
+                                            setAddingCardToList={setAddingCardToList}
+                                            handleCreateCard={handleCreateCard}
+                                            allLists={selectedBoard.lists}
+                                            onMoveCard={handleMoveCard}
+                                        />
+                                    );
+                                })}
                             </SortableContext>
 
                             {/* Add list column removed - 4 default columns are sufficient */}
@@ -1666,30 +1987,34 @@ const KanbanPage: React.FC = () => {
                                 items={selectedBoard.lists[mobileActiveListIndex]?.cards.map(c => `card-${c.id}`) || []}
                                 strategy={verticalListSortingStrategy}
                             >
-                                {selectedBoard.lists[mobileActiveListIndex] && (
-                                    <SortableList
-                                        key={selectedBoard.lists[mobileActiveListIndex].id}
-                                        list={selectedBoard.lists[mobileActiveListIndex]}
-                                        isDark={isDark}
-                                        onCardClick={openCardDetail}
-                                        onAddCard={(listId) => {
-                                            setAddingCardToList(listId);
-                                            setNewCardTitle('');
-                                            setNewCardDueDate('');
-                                        }}
-                                        onEditTitle={handleEditListTitle}
-                                        onDeleteList={handleDeleteList}
-                                        addingCardToList={addingCardToList}
-                                        newCardTitle={newCardTitle}
-                                        newCardDueDate={newCardDueDate}
-                                        setNewCardTitle={setNewCardTitle}
-                                        setNewCardDueDate={setNewCardDueDate}
-                                        setAddingCardToList={setAddingCardToList}
-                                        handleCreateCard={handleCreateCard}
-                                        allLists={selectedBoard.lists}
-                                        onMoveCard={handleMoveCard}
-                                    />
-                                )}
+                                {selectedBoard.lists[mobileActiveListIndex] && (() => {
+                                    const mList = selectedBoard.lists[mobileActiveListIndex];
+                                    const filteredMobileList = dateFilter === 'all' ? mList : { ...mList, cards: getFilteredCards(mList.cards) };
+                                    return (
+                                        <SortableList
+                                            key={mList.id}
+                                            list={filteredMobileList}
+                                            isDark={isDark}
+                                            onCardClick={openCardDetail}
+                                            onAddCard={(listId) => {
+                                                setAddingCardToList(listId);
+                                                setNewCardTitle('');
+                                                setNewCardDueDate('');
+                                            }}
+                                            onEditTitle={handleEditListTitle}
+                                            onDeleteList={handleDeleteList}
+                                            addingCardToList={addingCardToList}
+                                            newCardTitle={newCardTitle}
+                                            newCardDueDate={newCardDueDate}
+                                            setNewCardTitle={setNewCardTitle}
+                                            setNewCardDueDate={setNewCardDueDate}
+                                            setAddingCardToList={setAddingCardToList}
+                                            handleCreateCard={handleCreateCard}
+                                            allLists={selectedBoard.lists}
+                                            onMoveCard={handleMoveCard}
+                                        />
+                                    );
+                                })()}
                             </SortableContext>
 
                             {/* Mobile add list removed */}
@@ -1705,7 +2030,7 @@ const KanbanPage: React.FC = () => {
                         {/* Drag Overlay */}
                         <DragOverlay>
                             {activeCard && (
-                                <div className={`p-3 rounded-lg shadow-xl w-[80vw] sm:w-72 ${isDark ? 'bg-gray-700' : 'bg-white'}`}>
+                                <div className={`p-3 rounded-lg shadow-xl w-[80vw] sm:w-[22vw] ${isDark ? 'bg-gray-700' : 'bg-white'}`}>
                                     <p className={`text-sm font-medium ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>
                                         {activeCard.title}
                                     </p>
@@ -1733,8 +2058,8 @@ const KanbanPage: React.FC = () => {
                                     onChange={e => setMemberSearch(e.target.value)}
                                     placeholder="Tìm kiếm người dùng..."
                                     className={`w-full px-3 py-2 rounded-lg border text-sm mb-3 ${isDark
-                                            ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                            : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
+                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                        : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
                                         }`}
                                 />
 
@@ -1874,8 +2199,8 @@ const KanbanPage: React.FC = () => {
                                                 placeholder="Thêm mô tả..."
                                                 rows={4}
                                                 className={`w-full px-3 py-2 rounded-lg border text-sm resize-none ${isDark
-                                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                        : 'bg-gray-50 border-gray-300 text-gray-800 placeholder-gray-400'
+                                                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                                    : 'bg-gray-50 border-gray-300 text-gray-800 placeholder-gray-400'
                                                     }`}
                                             />
                                         ) : (
@@ -1886,8 +2211,8 @@ const KanbanPage: React.FC = () => {
                                                     }
                                                 }}
                                                 className={`text-sm min-h-[60px] p-3 rounded-lg ${(selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id || selectedBoard?.members.some(m => m.user.id === user?.id && m.role === 'ADMIN')) ? 'cursor-pointer' : ''} ${isDark
-                                                        ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
-                                                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                                                    ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700'
+                                                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                                                     }`}
                                             >
                                                 {selectedCard.description || (selectedCard.creatorId === user?.id || selectedBoard?.ownerId === user?.id ? 'Nhấp để thêm mô tả...' : 'Chưa có mô tả')}
@@ -1906,8 +2231,8 @@ const KanbanPage: React.FC = () => {
                                                 value={editCardDueDate}
                                                 onChange={e => setEditCardDueDate(e.target.value)}
                                                 className={`px-3 py-2 rounded-lg border text-sm ${isDark
-                                                        ? 'bg-gray-700 border-gray-600 text-white'
-                                                        : 'bg-white border-gray-300 text-gray-800'
+                                                    ? 'bg-gray-700 border-gray-600 text-white'
+                                                    : 'bg-white border-gray-300 text-gray-800'
                                                     }`}
                                             />
                                         </div>
@@ -1980,8 +2305,8 @@ const KanbanPage: React.FC = () => {
                                                 onKeyDown={e => { if (e.key === 'Enter') handleAddChecklistItem(); }}
                                                 placeholder="Thêm mục..."
                                                 className={`flex-1 px-3 py-1.5 rounded-lg border text-sm ${isDark
-                                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                        : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
+                                                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                                    : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
                                                     }`}
                                             />
                                             <button
@@ -2007,8 +2332,8 @@ const KanbanPage: React.FC = () => {
                                                 placeholder="Viết bình luận..."
                                                 rows={2}
                                                 className={`flex-1 px-3 py-2 rounded-lg border text-sm resize-none ${isDark
-                                                        ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                                                        : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
+                                                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                                                    : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
                                                     }`}
                                             />
                                         </div>
@@ -2061,11 +2386,11 @@ const KanbanPage: React.FC = () => {
                                         </div>
                                     </div>
 
-                                    {/* Attachments */}
+                                    {/* Attachments (regular) */}
                                     <div>
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className={`text-sm font-semibold flex items-center gap-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                                                <Paperclip className="w-4 h-4" /> Đính kèm ({cardAttachments.length})
+                                                <Paperclip className="w-4 h-4" /> Tài liệu đính kèm ({cardAttachments.filter(a => a.category !== 'completion').length})
                                             </h3>
                                             <div className="relative" ref={attachMenuRef}>
                                                 <input
@@ -2114,9 +2439,9 @@ const KanbanPage: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {cardAttachments.length > 0 ? (
+                                        {cardAttachments.filter(a => a.category !== 'completion').length > 0 ? (
                                             <div className="space-y-2 max-h-60 overflow-y-auto">
-                                                {cardAttachments.map(attachment => (
+                                                {cardAttachments.filter(a => a.category !== 'completion').map(attachment => (
                                                     <div key={attachment.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg group ${isDark ? 'bg-gray-700/50 hover:bg-gray-700' : 'bg-gray-50 hover:bg-gray-100'}`}>
                                                         <div className="shrink-0">
                                                             {getAttachmentIcon(attachment.fileName, attachment.mimeType)}
@@ -2139,13 +2464,33 @@ const KanbanPage: React.FC = () => {
                                                             >
                                                                 <Eye className="w-3.5 h-3.5" />
                                                             </button>
-                                                            <button
-                                                                onClick={() => handleDownloadAttachment(attachment)}
-                                                                className={`p-1.5 rounded ${isDark ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
-                                                                title="Tải xuống"
-                                                            >
-                                                                <Download className="w-3.5 h-3.5" />
-                                                            </button>
+                                                            <div className="relative" ref={downloadMenuAttachmentId === attachment.id ? downloadMenuRef : undefined}>
+                                                                <button
+                                                                    onClick={() => setDownloadMenuAttachmentId(downloadMenuAttachmentId === attachment.id ? null : attachment.id)}
+                                                                    className={`p-1.5 rounded ${isDark ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                                                                    title="Tải xuống"
+                                                                >
+                                                                    <Download className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                {downloadMenuAttachmentId === attachment.id && (
+                                                                    <div className={`absolute right-0 bottom-full mb-1 rounded-lg shadow-xl border z-[200] py-1 min-w-[180px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                                        <button
+                                                                            onClick={() => handleDownloadToFolder(attachment)}
+                                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                                        >
+                                                                            <FolderOpen size={14} className="text-amber-500" />
+                                                                            Lưu về thư mục
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDownloadToDevice(attachment)}
+                                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                                        >
+                                                                            <HardDrive size={14} className="text-blue-500" />
+                                                                            Lưu về máy tính
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                             {(attachment.uploadedBy.id === user?.id || selectedBoard?.ownerId === user?.id) && (
                                                                 <button
                                                                     onClick={() => handleDeleteAttachment(attachment.id)}
@@ -2162,6 +2507,163 @@ const KanbanPage: React.FC = () => {
                                         ) : (
                                             <p className={`text-sm italic ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                                 Chưa có file đính kèm
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Completion Documents */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className={`text-sm font-semibold flex items-center gap-2 ${isDark ? 'text-green-400' : 'text-green-700'}`}>
+                                                <ClipboardCheck className="w-4 h-4" /> Tài liệu hoàn thành ({cardAttachments.filter(a => a.category === 'completion').length})
+                                            </h3>
+                                            <div className="relative" ref={completionMenuRef}>
+                                                <input
+                                                    ref={completionFileRef}
+                                                    type="file"
+                                                    multiple
+                                                    className="hidden"
+                                                    onChange={e => {
+                                                        if (e.target.files) handleUploadCompletionDoc(e.target.files);
+                                                        e.target.value = '';
+                                                    }}
+                                                />
+                                                <button
+                                                    onClick={() => setShowCompletionMenu(!showCompletionMenu)}
+                                                    disabled={uploadingCompletion}
+                                                    className={`px-2 py-1 rounded text-xs font-medium flex items-center gap-1 ${isDark ? 'bg-green-900/40 text-green-400 hover:bg-green-900/60' : 'bg-green-50 text-green-700 hover:bg-green-100'}`}
+                                                >
+                                                    {uploadingCompletion ? 'Đang tải...' : (
+                                                        <><Upload className="w-3 h-3" /> Thêm</>
+                                                    )}
+                                                </button>
+                                                {showCompletionMenu && (
+                                                    <div className={`absolute right-0 top-full mt-1 rounded-lg shadow-xl border z-[60] py-1 min-w-[180px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                        <button
+                                                            onClick={() => { setShowCompletionMenu(false); completionFileRef.current?.click(); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <HardDrive size={16} className="text-blue-500" />
+                                                            File từ thiết bị
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setShowCompletionMenu(false); setShowCompletionFilePicker(true); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <FolderOpen size={16} className="text-amber-500" />
+                                                            Từ Kho dữ liệu
+                                                        </button>
+                                                        <div className={`border-t my-1 ${isDark ? 'border-gray-600' : 'border-gray-100'}`}></div>
+                                                        <button
+                                                            onClick={() => { setShowCompletionMenu(false); setShowCompletionDrivePicker(true); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <GoogleDriveIcon size={16} />
+                                                            Google Drive
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* FilePicker for completion docs from folder */}
+                                        {showCompletionFilePicker && token && (
+                                            <FilePickerDialog
+                                                isOpen={showCompletionFilePicker}
+                                                onClose={() => setShowCompletionFilePicker(false)}
+                                                onSelect={(files) => {
+                                                    handleAttachCompletionFromFolder(files);
+                                                    setShowCompletionFilePicker(false);
+                                                }}
+                                                token={token}
+                                                multiple={true}
+                                            />
+                                        )}
+                                        {showCompletionDrivePicker && (
+                                            <div
+                                                className="fixed inset-0 z-[10000] flex items-center justify-center p-4 sm:p-6 bg-black/50 backdrop-blur-sm"
+                                                onClick={() => setShowCompletionDrivePicker(false)}
+                                            >
+                                                <div
+                                                    className="w-full max-w-4xl max-h-[90vh] bg-white dark:bg-gray-800 rounded-xl shadow-2xl overflow-hidden"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <GoogleDriveBrowser
+                                                        onClose={() => setShowCompletionDrivePicker(false)}
+                                                        mode="select"
+                                                        onSelectFiles={(files) => {
+                                                            handleAttachCompletionFromDrive(files);
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {cardAttachments.filter(a => a.category === 'completion').length > 0 ? (
+                                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {cardAttachments.filter(a => a.category === 'completion').map(attachment => (
+                                                    <div key={attachment.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg group border ${isDark ? 'bg-green-900/20 border-green-800/40 hover:bg-green-900/30' : 'bg-green-50/50 border-green-200 hover:bg-green-50'}`}>
+                                                        <div className="shrink-0">
+                                                            {getAttachmentIcon(attachment.fileName, attachment.mimeType)}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className={`text-xs sm:text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                                                                {attachment.fileName}
+                                                            </p>
+                                                            <p className="text-[10px] sm:text-xs text-gray-500">
+                                                                {formatFileSize(attachment.fileSize)} • {attachment.uploadedBy.name}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                            <button
+                                                                onClick={() => handleViewAttachment(attachment)}
+                                                                className={`p-1.5 rounded ${isDark ? 'hover:bg-green-900/40 text-gray-400' : 'hover:bg-green-100 text-gray-500'}`}
+                                                                title="Xem"
+                                                            >
+                                                                <Eye className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <div className="relative" ref={downloadMenuAttachmentId === attachment.id ? downloadMenuRef : undefined}>
+                                                                <button
+                                                                    onClick={() => setDownloadMenuAttachmentId(downloadMenuAttachmentId === attachment.id ? null : attachment.id)}
+                                                                    className={`p-1.5 rounded ${isDark ? 'hover:bg-green-900/40 text-gray-400' : 'hover:bg-green-100 text-gray-500'}`}
+                                                                    title="Tải xuống"
+                                                                >
+                                                                    <Download className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                {downloadMenuAttachmentId === attachment.id && (
+                                                                    <div className={`absolute right-0 bottom-full mb-1 rounded-lg shadow-xl border z-[200] py-1 min-w-[180px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                                        <button
+                                                                            onClick={() => handleDownloadToFolder(attachment)}
+                                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                                        >
+                                                                            <FolderOpen size={14} className="text-amber-500" />
+                                                                            Lưu về thư mục
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDownloadToDevice(attachment)}
+                                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                                        >
+                                                                            <HardDrive size={14} className="text-blue-500" />
+                                                                            Lưu về máy tính
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            {(attachment.uploadedBy.id === user?.id || selectedBoard?.ownerId === user?.id) && (
+                                                                <button
+                                                                    onClick={() => handleDeleteAttachment(attachment.id)}
+                                                                    className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
+                                                                    title="Xóa"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className={`text-sm italic ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                Chưa có tài liệu hoàn thành
                                             </p>
                                         )}
                                     </div>
@@ -2456,15 +2958,14 @@ const KanbanPage: React.FC = () => {
                                         <div
                                             key={i}
                                             style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
-                                            className={`text-center py-1.5 text-[10px] border-r ${isDark ? 'border-gray-700/50' : 'border-gray-100'} ${
-                                                isToday(d) ? (isDark ? 'bg-blue-900/40 font-bold text-blue-300' : 'bg-blue-50 font-bold text-blue-700') :
+                                            className={`text-center py-1.5 text-[10px] border-r ${isDark ? 'border-gray-700/50' : 'border-gray-100'} ${isToday(d) ? (isDark ? 'bg-blue-900/40 font-bold text-blue-300' : 'bg-blue-50 font-bold text-blue-700') :
                                                 isSunday(d) ? (isDark ? 'bg-red-900/10 text-red-400' : 'bg-red-50/50 text-red-400') :
-                                                isSaturday(d) ? (isDark ? 'bg-orange-900/10 text-orange-400' : 'bg-orange-50/50 text-orange-400') :
-                                                isDark ? 'text-gray-400' : 'text-gray-500'
-                                            }`}
+                                                    isSaturday(d) ? (isDark ? 'bg-orange-900/10 text-orange-400' : 'bg-orange-50/50 text-orange-400') :
+                                                        isDark ? 'text-gray-400' : 'text-gray-500'
+                                                }`}
                                         >
                                             <div className="font-medium">{d.getDate()}/{d.getMonth() + 1}</div>
-                                            <div className="text-[9px] opacity-70">{['CN','T2','T3','T4','T5','T6','T7'][d.getDay()]}</div>
+                                            <div className="text-[9px] opacity-70">{['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.getDay()]}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -2510,7 +3011,7 @@ const KanbanPage: React.FC = () => {
                                         const isOverdue = endDate && endDate < now && !card.completed;
 
                                         return (
-                                            <div key={card.id} className={`flex border-b group ${isDark ? 'border-gray-700/30 hover:bg-gray-700/20' : 'border-gray-50 hover:bg-gray-50/80'}`}>
+                                            <div key={card.id} className={`flex border-b group cursor-pointer ${isDark ? 'border-gray-700/30 hover:bg-gray-700/20' : 'border-gray-50 hover:bg-gray-50/80'}`} onClick={() => openCardDetail(card)}>
                                                 <div className={`w-[220px] min-w-[220px] px-3 py-2 border-r flex items-center gap-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                                                     {card.completed ? (
                                                         <CheckSquare className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
@@ -2536,10 +3037,9 @@ const KanbanPage: React.FC = () => {
                                                     {/* Background grid */}
                                                     <div className="absolute inset-0 flex">
                                                         {days.map((d, i) => (
-                                                            <div key={i} style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }} className={`border-r ${isDark ? 'border-gray-700/20' : 'border-gray-50'} ${
-                                                                isToday(d) ? (isDark ? 'bg-blue-900/10' : 'bg-blue-50/30') :
+                                                            <div key={i} style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }} className={`border-r ${isDark ? 'border-gray-700/20' : 'border-gray-50'} ${isToday(d) ? (isDark ? 'bg-blue-900/10' : 'bg-blue-50/30') :
                                                                 isSunday(d) || isSaturday(d) ? (isDark ? 'bg-gray-700/10' : 'bg-gray-50/30') : ''
-                                                            }`} />
+                                                                }`} />
                                                         ))}
                                                     </div>
                                                     {/* Today line */}
@@ -2550,9 +3050,8 @@ const KanbanPage: React.FC = () => {
                                                     })()}
                                                     {/* Bar */}
                                                     <div
-                                                        className={`absolute top-1/2 -translate-y-1/2 h-4 rounded ${barColor} ${
-                                                            card.completed ? 'opacity-50' : isOverdue ? 'opacity-90 ring-1 ring-red-400' : 'opacity-80 group-hover:opacity-100'
-                                                        } transition-opacity shadow-sm z-[2]`}
+                                                        className={`absolute top-1/2 -translate-y-1/2 h-4 rounded ${barColor} ${card.completed ? 'opacity-50' : isOverdue ? 'opacity-90 ring-1 ring-red-400' : 'opacity-80 group-hover:opacity-100'
+                                                            } transition-opacity shadow-sm z-[2] cursor-pointer hover:ring-2 hover:ring-white/40`}
                                                         style={{ left: `${startPercent}%`, width: `${widthPercent}%`, minWidth: hasDueDate ? '6px' : '12px' }}
                                                         title={`${card.title}${endDate ? `\nDeadline: ${endDate.toLocaleDateString('vi-VN')}` : '\nKhông có deadline'}`}
                                                     >
@@ -2579,36 +3078,165 @@ const KanbanPage: React.FC = () => {
     const renderBoardHeader = () => {
         if (!selectedBoard) return null;
         return (
-            <div className={`flex items-center gap-2 px-2 sm:px-4 py-2 sm:py-3 border-b ${isDark ? 'border-gray-700 bg-gray-800/80' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
-                <button
-                    onClick={() => { setView('boards'); setSelectedBoard(null); }}
-                    className={`p-1 sm:p-1.5 rounded-lg shrink-0 ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
-                >
-                    <ChevronLeft className="w-5 h-5" />
-                </button>
-                <h2 className={`text-sm sm:text-lg font-bold truncate flex-1 min-w-0 ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                    {selectedBoard.title}
-                </h2>
-                <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-                    <div className="hidden md:flex -space-x-2 mr-2">
-                        {selectedBoard.members.slice(0, 5).map(m => (
-                            <div key={m.user.id} className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold ring-2 ring-white dark:ring-gray-800" title={m.user.name}>
-                                {m.user.avatarUrl ? <img src={resolveAvatarUrl(m.user.avatarUrl)} alt={m.user.name} className="w-full h-full rounded-full object-cover" /> : m.user.name.charAt(0).toUpperCase()}
-                            </div>
-                        ))}
-                    </div>
-                    {/* View toggle */}
-                    <div className={`flex rounded-lg border p-0.5 ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}`}>
-                        <button onClick={() => setView('board')} className={`p-1.5 rounded-md transition-all ${view === 'board' ? 'bg-blue-600 text-white shadow-sm' : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`} title="Kanban">
-                            <Layout className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => setView('gantt')} className={`p-1.5 rounded-md transition-all ${view === 'gantt' ? 'bg-blue-600 text-white shadow-sm' : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`} title="Gantt">
-                            <BarChart3 className="w-4 h-4" />
-                        </button>
-                    </div>
-                    <button onClick={() => { setShowMembers(true); fetchAllUsers(); }} className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
-                        <UserPlus className="w-4 h-4" /> <span className="hidden sm:inline">Mời</span>
+            <div className={`px-2 sm:px-4 py-2 sm:py-3 border-b ${isDark ? 'border-gray-700 bg-gray-800/80' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => { setView('boards'); setSelectedBoard(null); setDateFilter('all'); }}
+                        className={`p-1 sm:p-1.5 rounded-lg shrink-0 ${isDark ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                    >
+                        <ChevronLeft className="w-5 h-5" />
                     </button>
+                    <h2 className={`text-sm sm:text-lg font-bold truncate flex-1 min-w-0 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        {selectedBoard.title}
+                    </h2>
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                        <div className="hidden md:flex -space-x-2 mr-2">
+                            {selectedBoard.members.slice(0, 5).map(m => (
+                                <div key={m.user.id} className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold ring-2 ring-white dark:ring-gray-800" title={m.user.name}>
+                                    {m.user.avatarUrl ? <img src={resolveAvatarUrl(m.user.avatarUrl)} alt={m.user.name} className="w-full h-full rounded-full object-cover" /> : m.user.name.charAt(0).toUpperCase()}
+                                </div>
+                            ))}
+                        </div>
+                        {/* View toggle */}
+                        <div className={`flex rounded-lg border p-0.5 ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}`}>
+                            <button onClick={() => setView('board')} className={`p-1.5 rounded-md transition-all ${view === 'board' ? 'bg-blue-600 text-white shadow-sm' : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`} title="Kanban">
+                                <Layout className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setView('gantt')} className={`p-1.5 rounded-md transition-all ${view === 'gantt' ? 'bg-blue-600 text-white shadow-sm' : isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`} title="Gantt">
+                                <BarChart3 className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <button onClick={() => { setShowMembers(true); fetchAllUsers(); }} className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-xs sm:text-sm ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                            <UserPlus className="w-4 h-4" /> <span className="hidden sm:inline">Mời</span>
+                        </button>
+                    </div>
+                </div>
+                {/* Search bar + Date filter row */}
+                <div className="flex items-center gap-2 mt-2">
+                    {/* Date filter - Professional Dropdown */}
+                    <div className="relative" ref={dateDropdownRef}>
+                        <button
+                            onClick={() => setShowDateDropdown(!showDateDropdown)}
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${dateFilter !== 'all'
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                : isDark ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                }`}
+                        >
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>{getFilterLabel()}</span>
+                            <svg className={`w-3 h-3 transition-transform ${showDateDropdown ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                        </button>
+
+                        {showDateDropdown && (
+                            <div className={`absolute left-0 top-full mt-1 rounded-xl shadow-2xl border z-[100] overflow-hidden ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                                }`} style={{ minWidth: '260px' }}>
+                                {/* Header: Month navigation */}
+                                <div className={`px-3 py-2 border-b flex items-center justify-between ${isDark ? 'border-gray-700 bg-gray-750' : 'border-gray-100 bg-gray-50'}`}>
+                                    <button
+                                        onClick={() => setFilterMonth(prev => {
+                                            const d = new Date(prev.year, prev.month - 1, 1);
+                                            return { year: d.getFullYear(), month: d.getMonth() };
+                                        })}
+                                        className={`p-1 rounded-md ${isDark ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                                    >
+                                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                    </button>
+                                    <span className={`text-sm font-semibold ${isDark ? 'text-gray-200' : 'text-gray-700'}`}>
+                                        {new Date(filterMonth.year, filterMonth.month, 1).toLocaleDateString('vi-VN', { month: 'long', year: 'numeric' })}
+                                    </span>
+                                    <button
+                                        onClick={() => setFilterMonth(prev => {
+                                            const d = new Date(prev.year, prev.month + 1, 1);
+                                            return { year: d.getFullYear(), month: d.getMonth() };
+                                        })}
+                                        className={`p-1 rounded-md ${isDark ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
+                                    >
+                                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" /></svg>
+                                    </button>
+                                </div>
+
+                                {/* All option */}
+                                <button
+                                    onClick={() => { setDateFilter('all'); setShowDateDropdown(false); }}
+                                    className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors border-b ${isDark ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-100 hover:bg-gray-50'
+                                        } ${dateFilter === 'all' ? (isDark ? 'bg-blue-900/30 text-blue-400' : 'bg-blue-50 text-blue-600') : isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                                >
+                                    <div className={`w-2 h-2 rounded-full ${dateFilter === 'all' ? 'bg-blue-500' : isDark ? 'bg-gray-600' : 'bg-gray-300'}`} />
+                                    <span className="text-sm font-medium">Tất cả thẻ</span>
+                                </button>
+
+                                {/* 4 weeks */}
+                                <div className="py-1">
+                                    {getWeekFilterOptions(filterMonth.year, filterMonth.month).map((opt, idx) => {
+                                        const isSelected = dateFilter === opt.value;
+                                        const startDate = opt.range.start.getDate();
+                                        const endDate = opt.range.end.getDate();
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                onClick={() => { setDateFilter(opt.value); setShowDateDropdown(false); }}
+                                                className={`w-full px-4 py-2 text-left flex items-center justify-between transition-colors ${isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+                                                    } ${isSelected ? (isDark ? 'bg-blue-900/30' : 'bg-blue-50') : ''}`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-blue-500' : isDark ? 'bg-gray-600' : 'bg-gray-300'}`} />
+                                                    <div>
+                                                        <p className={`text-sm font-medium ${isSelected ? (isDark ? 'text-blue-400' : 'text-blue-600') : isDark ? 'text-gray-200' : 'text-gray-700'}`}>
+                                                            {opt.label}
+                                                        </p>
+                                                        <p className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                            {startDate}/{filterMonth.month + 1} – {endDate}/{idx === 3 ? filterMonth.month + 1 : filterMonth.month + 1}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {isSelected && (
+                                                    <svg className="w-4 h-4 text-blue-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    {/* Global search */}
+                    <div className="relative flex-1 max-w-xs" ref={searchRef}>
+                        <div className={`flex items-center rounded-lg border px-2 py-1 ${isDark ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}`}>
+                            <Search className={`w-3.5 h-3.5 mr-1.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`} />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={e => onSearchInputChange(e.target.value)}
+                                placeholder="Tìm thẻ..."
+                                className={`bg-transparent outline-none text-xs w-full ${isDark ? 'text-gray-200 placeholder:text-gray-500' : 'text-gray-700 placeholder:text-gray-400'}`}
+                            />
+                            {searchQuery && (
+                                <button onClick={() => { setSearchQuery(''); setSearchResults([]); setShowSearchDropdown(false); }}
+                                    className={`ml-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-600'}`}
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            )}
+                        </div>
+                        {/* Search dropdown */}
+                        {showSearchDropdown && searchResults.length > 0 && (
+                            <div className={`absolute top-full left-0 right-0 mt-1 rounded-lg border shadow-xl max-h-72 overflow-y-auto z-50 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                {searchResults.map(result => (
+                                    <button
+                                        key={`${result.boardId}-${result.id}`}
+                                        onClick={() => navigateToSearchResult(result)}
+                                        className={`w-full text-left px-3 py-2.5 border-b last:border-b-0 hover:bg-opacity-50 transition-colors ${isDark ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-100 hover:bg-gray-50'}`}
+                                    >
+                                        <div className={`text-xs font-medium truncate ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>{result.title}</div>
+                                        <div className={`text-[10px] mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            {result.boardTitle} → {result.listTitle}
+                                            {result.dueDate && ` · ${new Date(result.dueDate).toLocaleDateString('vi-VN')}`}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -2618,6 +3246,85 @@ const KanbanPage: React.FC = () => {
     return (
         <div className={`h-full ${view === 'board' || view === 'gantt' ? '-mx-4 -mb-4 sm:mx-0 sm:mb-0 -mt-4 sm:mt-0' : ''}`}>
             {view === 'boards' ? renderBoardsList() : view === 'gantt' ? renderGanttView() : renderBoardView()}
+
+            {/* Save to Folder Confirm Dialog */}
+            {pendingFolderSaveAttachment && (
+                <div className="fixed inset-0 z-[10100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className={`w-full max-w-sm rounded-2xl shadow-2xl p-6 ${isDark ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}>
+                        {folderSaveStatus === 'idle' && (
+                            <>
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className={`p-2.5 rounded-xl ${isDark ? 'bg-amber-900/30' : 'bg-amber-50'}`}>
+                                        <FolderOpen size={22} className="text-amber-500" />
+                                    </div>
+                                    <div>
+                                        <h3 className={`font-semibold text-sm ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>
+                                            Lưu vào Kho dữ liệu
+                                        </h3>
+                                        <p className={`text-xs mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                            File sẽ được lưu vào thư mục gốc của bạn
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className={`p-3 rounded-lg mb-4 text-sm ${isDark ? 'bg-gray-700/50 text-gray-300' : 'bg-gray-50 text-gray-700'}`}>
+                                    <span className="font-medium">📄 {pendingFolderSaveAttachment.fileName}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => { setPendingFolderSaveAttachment(null); setFolderSaveStatus('idle'); }}
+                                        className={`flex-1 py-2 rounded-lg text-sm font-medium border ${isDark ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                                    >
+                                        Hủy
+                                    </button>
+                                    <button
+                                        onClick={handleConfirmFolderSave}
+                                        className="flex-1 py-2 rounded-lg text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white flex items-center justify-center gap-2"
+                                    >
+                                        <FolderOpen size={15} />
+                                        Lưu ngay
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                        {folderSaveStatus === 'saving' && (
+                            <div className="flex flex-col items-center gap-3 py-4">
+                                <div className="w-10 h-10 rounded-full border-4 border-amber-200 border-t-amber-500 animate-spin" />
+                                <p className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                                    Đang lưu vào Kho dữ liệu...
+                                </p>
+                            </div>
+                        )}
+                        {folderSaveStatus === 'done' && (
+                            <div className="flex flex-col items-center gap-3 py-4">
+                                <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                                    <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </div>
+                                <p className={`text-sm font-semibold ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>Đã lưu thành công!</p>
+                                <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>File đã có trong Kho dữ liệu của bạn</p>
+                            </div>
+                        )}
+                        {folderSaveStatus === 'error' && (
+                            <div className="flex flex-col items-center gap-3 py-2">
+                                <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                                    <X size={22} className="text-red-500" />
+                                </div>
+                                <p className={`text-sm font-semibold ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>Lưu thất bại</p>
+                                <p className={`text-xs text-center ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                                    File Google Drive không thể lưu vào thư mục. Hãy dùng "Lưu về máy tính".
+                                </p>
+                                <button
+                                    onClick={() => { setPendingFolderSaveAttachment(null); setFolderSaveStatus('idle'); }}
+                                    className="mt-1 px-4 py-1.5 rounded-lg bg-gray-200 dark:bg-gray-700 text-sm font-medium hover:opacity-80"
+                                >
+                                    Đóng
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

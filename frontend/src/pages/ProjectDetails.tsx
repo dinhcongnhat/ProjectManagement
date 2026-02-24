@@ -283,6 +283,7 @@ const ProjectDetails = () => {
     const isFollower = project.followers?.some(fol => fol.id === user?.id) || false;
     const canEditSubProject = isManager || isImplementer || isCooperator;
     const canApprove = (isManager || isFollower) && project.status === 'PENDING_APPROVAL';
+    const isAdmin = user?.role === 'ADMIN';
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50">
@@ -584,7 +585,7 @@ const ProjectDetails = () => {
                                     </div>
 
                                     {/* Action Buttons */}
-                                    {isManager && (
+                                    {(isManager || isAdmin) && (
                                         <div className="flex flex-wrap gap-2 mb-4">
                                             {project.children && project.children.length > 0 && (
                                                 <button
@@ -692,8 +693,8 @@ const ProjectDetails = () => {
                                                                             key={page}
                                                                             onClick={() => setSubProjectPage(page)}
                                                                             className={`min-w-[36px] h-9 text-xs font-medium rounded-lg transition-colors ${subProjectPage === page
-                                                                                    ? 'bg-blue-600 text-white'
-                                                                                    : 'border border-gray-200 hover:bg-gray-100 text-gray-600'
+                                                                                ? 'bg-blue-600 text-white'
+                                                                                : 'border border-gray-200 hover:bg-gray-100 text-gray-600'
                                                                                 }`}
                                                                         >
                                                                             {page}

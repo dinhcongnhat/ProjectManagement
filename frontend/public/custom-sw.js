@@ -1,6 +1,6 @@
-// Version: 1.0.183
+// Version: 1.0.214
 
-const CACHE_NAME = 'pwa-cache-1770886737672';
+const CACHE_NAME = 'pwa-cache-1771894306238';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

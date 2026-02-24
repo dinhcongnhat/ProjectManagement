@@ -23,6 +23,7 @@ interface AttachmentPickerProps {
     onFilesSelected: (files: File[]) => void;
     onFolderFilesSelected?: (files: SelectedFile[]) => void;
     onLinkSelected?: (link: { name: string; url: string; type: 'google-drive' }) => void;
+    onKanbanCardSelected?: () => void;
     accept?: string;
     multiple?: boolean;
     className?: string;
@@ -36,6 +37,7 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
     onFilesSelected,
     onFolderFilesSelected,
     onLinkSelected,
+    onKanbanCardSelected,
     accept,
     multiple = true,
     className = '',
@@ -163,6 +165,22 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
                                 >
                                     <GoogleDriveIcon />
                                     <span className="text-gray-700">Google Drive</span>
+                                </button>
+                            </>
+                        )}
+                        {onKanbanCardSelected && (
+                            <>
+                                <div className="border-t border-gray-100 my-1"></div>
+                                <button
+                                    onClick={() => { setIsOpen(false); onKanbanCardSelected(); }}
+                                    className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                >
+                                    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="3" y1="9" x2="21" y2="9"></line>
+                                        <line x1="9" y1="21" x2="9" y2="9"></line>
+                                    </svg>
+                                    <span className="text-gray-700">Thẻ làm việc nhóm</span>
                                 </button>
                             </>
                         )}

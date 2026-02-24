@@ -349,25 +349,36 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const handleFolderFilesSelected = async (files: SelectedFile[]) => {
         if (files.length === 0) return;
 
-        // Download each file and add to selectedFiles
+        setUploading(true);
         try {
-            const downloadedFiles: File[] = [];
-            for (const file of files) {
-                const response = await fetch(`${API_URL}/folders/files/${file.id}/stream`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const fileObj = new File([blob], file.name, { type: file.mimeType });
-                    downloadedFiles.push(fileObj);
-                }
-            }
-            if (downloadedFiles.length > 0) {
-                setSelectedFiles(prev => [...prev, ...downloadedFiles]);
+            const fileIds = files.map(f => f.id);
+            const response = await fetch(`${API_URL}/projects/${projectId}/attachments/from-folder`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    fileIds,
+                    category: activeCategory
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                showSuccess(data.message || 'Đã đính kèm file từ thư mục');
+                setShowFilePicker(false);
+                fetchAttachments();
+                onRefresh?.();
+            } else {
+                const err = await response.json();
+                showError(err.message || 'Lỗi khi đính kèm từ thư mục');
             }
         } catch (error) {
-            console.error('Error downloading files from folder:', error);
-            showError('Lỗi khi tải file từ thư mục');
+            console.error('Error attaching from folder:', error);
+            showError('Lỗi kết nối khi đính kèm từ thư mục');
+        } finally {
+            setUploading(false);
         }
     };
 

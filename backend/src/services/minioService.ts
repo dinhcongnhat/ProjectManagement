@@ -150,7 +150,10 @@ export const uploadFile = async (
             // File doesn't exist, that's fine
         }
 
-        await minioClient.putObject(bucketName, finalFileName, fileStream, undefined, finalMetaData);
+        // Determine size for MinIO (required for Buffer uploads, optional for Streams)
+        const objectSize: number | undefined = Buffer.isBuffer(fileStream) ? (fileStream as Buffer).length : undefined;
+
+        await minioClient.putObject(bucketName, finalFileName, fileStream, objectSize, finalMetaData);
         console.log(`File '${finalFileName}' uploaded successfully.`);
         return finalFileName;
     } catch (error) {
@@ -177,7 +180,8 @@ export const uploadAudioFile = async (
         finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
         finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
 
-        await minioClient.putObject(audioBucketName, audioFileName, fileStream, undefined, finalMetaData);
+        const audioObjectSize: number | undefined = Buffer.isBuffer(fileStream) ? (fileStream as Buffer).length : undefined;
+        await minioClient.putObject(audioBucketName, audioFileName, fileStream, audioObjectSize, finalMetaData);
         console.log(`Audio file '${audioFileName}' uploaded successfully.`);
         return audioFileName;
     } catch (error) {
@@ -247,7 +251,8 @@ export const uploadDiscussionFile = async (
         finalMetaData['X-Amz-Meta-Original-Filename'] = encodeURIComponent(fileNameOnly);
         finalMetaData['Content-Disposition'] = `inline; filename*=UTF-8''${encodeURIComponent(fileNameOnly)}`;
 
-        await minioClient.putObject(bucketName, discussionFileName, fileStream, undefined, finalMetaData);
+        const discussionObjectSize: number | undefined = Buffer.isBuffer(fileStream) ? (fileStream as Buffer).length : undefined;
+        await minioClient.putObject(bucketName, discussionFileName, fileStream, discussionObjectSize, finalMetaData);
         console.log(`Discussion file '${discussionFileName}' uploaded successfully.`);
         return discussionFileName;
     } catch (error) {

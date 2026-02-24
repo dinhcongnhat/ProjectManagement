@@ -1100,9 +1100,15 @@ export const createSubProject = async (req: AuthRequest, res: Response) => {
                 creatorName = creator?.name || 'Admin';
             }
 
-            // Helper function to send notification ONLY (no email for sub-projects)
-            const notifyOnly = async (targetUserId: number, role: 'manager' | 'implementer' | 'cooperator') => {
-                // Send push notification only - no email for sub-projects
+            // Helper function to send notification and email for sub-projects
+            const notifyAndEmail = async (targetUserId: number, role: 'manager' | 'implementer' | 'cooperator') => {
+                // Get user info for email
+                const user = await prisma.user.findUnique({
+                    where: { id: targetUserId },
+                    select: { name: true, email: true }
+                });
+
+                // Send push notification
                 await notifyProjectAssignment(
                     targetUserId,
                     project.id,
@@ -1110,18 +1116,34 @@ export const createSubProject = async (req: AuthRequest, res: Response) => {
                     creatorName,
                     role
                 );
+
+                // Send email if user has email
+                if (user?.email) {
+                    await sendProjectAssignmentEmail(
+                        user.email,
+                        user.name,
+                        project.id,
+                        name,
+                        code,
+                        role,
+                        creatorName,
+                        startDate ? new Date(startDate) : null,
+                        endDate ? new Date(endDate) : null,
+                        description || null
+                    );
+                }
             };
 
-            // Notify manager (push notification only, no email for sub-projects)
+            // Notify manager
             if (Number(managerId) !== userId) {
-                await notifyOnly(Number(managerId), 'manager');
+                await notifyAndEmail(Number(managerId), 'manager');
             }
 
             // Notify implementers
             if (Array.isArray(implementerIds)) {
                 for (const implId of implementerIds) {
                     if (Number(implId) !== userId) {
-                        await notifyOnly(Number(implId), 'implementer');
+                        await notifyAndEmail(Number(implId), 'implementer');
                     }
                 }
             }
@@ -1130,7 +1152,7 @@ export const createSubProject = async (req: AuthRequest, res: Response) => {
             if (Array.isArray(cooperatorIds)) {
                 for (const coopId of cooperatorIds) {
                     if (Number(coopId) !== userId) {
-                        await notifyOnly(Number(coopId), 'cooperator');
+                        await notifyAndEmail(Number(coopId), 'cooperator');
                     }
                 }
             }

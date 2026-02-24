@@ -11,6 +11,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useDialog } from './ui/Dialog';
 import { FileDownloadButton } from './ui/DownloadOptions';
 import { AttachmentPicker } from './ui/AttachmentPicker';
+import { KanbanCardPickerModal } from './ui/KanbanCardPickerModal';
 import api, { API_URL } from '../config/api';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -559,22 +560,24 @@ const ImageViewer: React.FC<{
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    return (
+    return createPortal(
         <div
             ref={containerRef}
-            className="fixed inset-0 bg-black/95 z-[10000] flex flex-col"
+            className="fixed inset-0 bg-black/95 z-[99999] flex flex-col"
             onClick={handleBackgroundClick}
         >
             {/* Top Controls */}
-            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent z-10">
+            <div
+                className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center bg-gradient-to-b from-black/50 to-transparent z-10 pt-12 md:pt-6"
+            >
                 <div className="flex items-center gap-2 text-white/80 text-sm">
                     <span>{Math.round(scale * 100)}%</span>
                 </div>
                 <button
                     onClick={onClose}
-                    className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
+                    className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-colors"
                 >
-                    <X size={24} />
+                    <X size={28} />
                 </button>
             </div>
 
@@ -607,7 +610,10 @@ const ImageViewer: React.FC<{
             </div>
 
             {/* Bottom Controls */}
-            <div className="absolute bottom-0 left-0 right-0 p-4 flex justify-center items-center gap-2 bg-gradient-to-t from-black/50 to-transparent">
+            <div
+                className="absolute bottom-0 left-0 right-0 p-4 pb-6 flex justify-center items-center gap-2 bg-gradient-to-t from-black/50 to-transparent"
+                style={{ paddingBottom: '2rem' }}
+            >
                 <div className="flex items-center gap-1 bg-black/50 rounded-full p-1">
                     <button
                         onClick={handleZoomOut}
@@ -644,10 +650,14 @@ const ImageViewer: React.FC<{
             </div>
 
             {/* Help text */}
-            <div className="absolute bottom-20 left-0 right-0 text-center text-white/50 text-xs">
-                Cuộn chuột để zoom • Kéo để di chuyển • Double-click để phóng to/thu nhỏ • ESC để đóng
+            <div
+                className="absolute bottom-24 left-0 right-0 text-center text-white/50 text-xs pointer-events-none"
+                style={{ marginBottom: '0px' }}
+            >
+                Cuộn chuột để zoom • Kéo để di chuyển • Nháy đúp vào Ảnh để thu/phóng • ESC để đóng
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 
@@ -730,6 +740,7 @@ const ChatPopup: React.FC = () => {
     // File viewer state
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [showOnlyOffice, setShowOnlyOffice] = useState<{ messageId: number; filename: string } | null>(null);
+    const [showKanbanPicker, setShowKanbanPicker] = useState<number | null>(null);
 
     // Group creation state
     const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -1894,16 +1905,27 @@ const ChatPopup: React.FC = () => {
         const mobileChat = mobileActiveChat;
         const members = window?.conversation.members || mobileChat?.conversation.members || [];
 
+        // Option to tag everyone
+        const allOption: any = {
+            user: { id: -1, name: 'all', email: 'Mọi người trong nhóm' }
+        };
+
         if (!mentionQuery) {
-            return members.filter(m => m.user.id !== user?.id).slice(0, 5);
+            return [allOption, ...members.filter(m => m.user.id !== user?.id).slice(0, 4)];
         }
 
-        return members
+        const query = mentionQuery.toLowerCase();
+        let results = members
             .filter(m =>
                 m.user.id !== user?.id &&
-                m.user.name.toLowerCase().includes(mentionQuery.toLowerCase())
-            )
-            .slice(0, 5);
+                m.user.name.toLowerCase().includes(query)
+            );
+
+        if ('all'.includes(query)) {
+            return [allOption, ...results.slice(0, 4)];
+        }
+
+        return results.slice(0, 5);
     };
 
     // Render text with clickable URLs
@@ -2779,8 +2801,45 @@ const ChatPopup: React.FC = () => {
                     </div>
                 );
 
-            default:
+            default: {
+                if (!msg.content) return null;
+                // Check if it's a Kanban card link pattern
+                const kanbanMatch = msg.content.match(/📌 Thẻ công việc: \*\*(.*?)\*\*\n📚 Bảng: (.*?)\n.*?boardId=(\d+).*?cardId=(\d+)/);
+                if (kanbanMatch) {
+                    const [_, cardTitle, boardTitle, boardId, cardId] = kanbanMatch;
+                    return (
+                        <div
+                            className={`flex flex-col gap-2 p-3 rounded-xl cursor-pointer transition-all w-full max-w-[260px] ${isOwn
+                                ? 'bg-white/10 border border-white/20 hover:bg-white/20 text-white'
+                                : 'bg-white border border-gray-200 hover:border-purple-300 shadow-sm text-gray-800'
+                                }`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                window.location.href = `/kanban?boardId=${boardId}&cardId=${cardId}`;
+                            }}
+                        >
+                            <div className="flex items-start gap-2">
+                                <div className={`shrink-0 p-1.5 rounded-lg ${isOwn ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-600'}`}>
+                                    <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <line x1="3" y1="9" x2="21" y2="9"></line>
+                                        <line x1="9" y1="21" x2="9" y2="9"></line>
+                                    </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="font-semibold text-sm line-clamp-2 leading-tight mb-1">{cardTitle}</h4>
+                                    <div className={`flex items-center gap-1 text-xs ${isOwn ? 'text-white/70' : 'text-gray-500'} line-clamp-1`}>
+                                        <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><rect x="7" y="7" width="3" height="9"></rect><rect x="14" y="7" width="3" height="5"></rect></svg>
+                                        <span className="truncate">Bảng: {boardTitle}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
                 return <p className="whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>;
+            }
         }
     };
 
@@ -3020,11 +3079,11 @@ const ChatPopup: React.FC = () => {
                                                             <div className="relative">
                                                                 {/* Reply preview - if this message is a reply */}
                                                                 {msg.replyTo && (
-                                                                    <div 
-                                                                        className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 cursor-pointer ${isOwn 
-                                                                            ? 'bg-blue-700/50 border-blue-300 text-blue-100' 
+                                                                    <div
+                                                                        className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 cursor-pointer ${isOwn
+                                                                            ? 'bg-blue-700/50 border-blue-300 text-blue-100'
                                                                             : 'bg-gray-100 border-gray-400 text-gray-600'
-                                                                        }`}
+                                                                            }`}
                                                                         onClick={() => {
                                                                             const el = document.getElementById(`msg-${msg.replyTo!.id}`);
                                                                             if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('bg-yellow-100'); setTimeout(() => el.classList.remove('bg-yellow-100'), 2000); }
@@ -3035,9 +3094,9 @@ const ChatPopup: React.FC = () => {
                                                                             {msg.replyTo.messageType === 'TEXT' && msg.replyTo.content
                                                                                 ? decryptMessage(msg.replyTo.content)
                                                                                 : msg.replyTo.messageType === 'IMAGE' ? '📷 Hình ảnh'
-                                                                                : msg.replyTo.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
-                                                                                : msg.replyTo.messageType === 'FILE' ? '📎 File'
-                                                                                : msg.replyTo.content || 'Tin nhắn'}
+                                                                                    : msg.replyTo.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                                                        : msg.replyTo.messageType === 'FILE' ? '📎 File'
+                                                                                            : msg.replyTo.content || 'Tin nhắn'}
                                                                         </div>
                                                                     </div>
                                                                 )}
@@ -3251,9 +3310,9 @@ const ChatPopup: React.FC = () => {
                                                 {replyingTo[conversationId]!.messageType === 'TEXT' && replyingTo[conversationId]!.content
                                                     ? decryptMessage(replyingTo[conversationId]!.content!)
                                                     : replyingTo[conversationId]!.messageType === 'IMAGE' ? '📷 Hình ảnh'
-                                                    : replyingTo[conversationId]!.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
-                                                    : replyingTo[conversationId]!.messageType === 'FILE' ? '📎 File'
-                                                    : 'Tin nhắn'}
+                                                        : replyingTo[conversationId]!.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                            : replyingTo[conversationId]!.messageType === 'FILE' ? '📎 File'
+                                                                : 'Tin nhắn'}
                                             </div>
                                         </div>
                                         <button
@@ -3265,196 +3324,195 @@ const ChatPopup: React.FC = () => {
                                     </div>
                                 )}
                                 <div className="p-2">
-                                {isRecording === conversationId ? (
-                                    <div className="flex items-center gap-2 px-1 py-1">
-                                        <div
-                                            className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center animate-pulse shrink-0"
-                                            style={{ transform: `scale(${1 + audioLevel * 0.3})` }}
-                                        >
-                                            <Mic size={16} className="text-white" />
-                                        </div>
-                                        <span className="text-xs font-medium text-red-600">{formatTime(recordingTime)}</span>
-                                        <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0">
-                                            {Array.from({ length: 15 }).map((_, i) => (
-                                                <div
-                                                    key={i}
-                                                    className="w-0.5 bg-red-400 rounded-full transition-all"
-                                                    style={{ height: `${Math.max(3, Math.random() * 16 * audioLevel)}px` }}
-                                                />
-                                            ))}
-                                        </div>
-                                        {/* Nút hủy ghi âm */}
-                                        <button
-                                            onClick={() => {
-                                                if (mediaRecorderRef.current) {
-                                                    mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
-                                                    mediaRecorderRef.current = null;
-                                                }
-                                                if (recordingIntervalRef.current) {
-                                                    clearInterval(recordingIntervalRef.current);
-                                                }
-                                                audioChunksRef.current = [];
-                                                setIsRecording(null);
-                                                setRecordingTime(0);
-                                                setAudioLevel(0);
-                                            }}
-                                            className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors shrink-0"
-                                            title="Hủy"
-                                        >
-                                            <X size={16} className="text-gray-600" />
-                                        </button>
-                                        {/* Nút gửi tin nhắn thoại */}
-                                        <button
-                                            onClick={stopRecording}
-                                            className="p-1.5 bg-blue-500 hover:bg-blue-600 rounded-full transition-colors shrink-0"
-                                            title="Gửi tin nhắn thoại"
-                                        >
-                                            <Send size={16} className="text-white" />
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-1">
-                                        {/* Emoji Picker */}
-                                        <div className="relative shrink-0">
-                                            <button
-                                                onClick={() => setShowEmojiPicker(showEmojiPicker === conversationId ? null : conversationId)}
-                                                className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
-                                                title="Chọn emoji"
+                                    {isRecording === conversationId ? (
+                                        <div className="flex items-center gap-2 px-1 py-1">
+                                            <div
+                                                className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center animate-pulse shrink-0"
+                                                style={{ transform: `scale(${1 + audioLevel * 0.3})` }}
                                             >
-                                                <Smile size={18} />
-                                            </button>
-
-                                            {/* Emoji Picker Popup */}
-                                            {showEmojiPicker === conversationId && (
-                                                <>
-                                                    <div className="fixed inset-0 z-[9990]" onClick={() => setShowEmojiPicker(null)} />
-                                                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border p-2 z-[9991] w-64 max-h-48 overflow-y-auto">
-                                                        <div className="grid grid-cols-8 gap-0.5">
-                                                            {COMMON_EMOJIS.map((emoji, i) => (
-                                                                <button
-                                                                    key={i}
-                                                                    onClick={() => {
-                                                                        setMessageInputs(prev => ({
-                                                                            ...prev,
-                                                                            [conversationId]: (prev[conversationId] || '') + emoji
-                                                                        }));
-                                                                        setShowEmojiPicker(null);
-                                                                    }}
-                                                                    className="text-lg p-1 hover:bg-gray-100 rounded transition-colors"
-                                                                >
-                                                                    {emoji}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-
-                                        {/* File Upload */}
-                                        <AttachmentPicker
-                                            token={token || ''}
-                                            onFilesSelected={(files) => {
-                                                if (files.length > 0) {
-                                                    handleFileUpload(conversationId, files[0]);
-                                                }
-                                            }}
-                                            onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
-                                            multiple={false}
-                                            buttonClassName="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
-                                            iconSize={18}
-                                        />
-
-                                        {/* Text Input with Mention Popup */}
-                                        <div className="relative flex-1 min-w-0">
-                                            <textarea
-                                                ref={el => { inputRefs.current[conversationId] = el; }}
-                                                value={messageInput}
-                                                onChange={(e) => {
-                                                    handleInputChange(conversationId, e.target.value);
-                                                    // Auto-resize
-                                                    e.target.style.height = 'auto';
-                                                    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
-                                                }}
-                                                onPaste={(e) => handlePaste(e, conversationId)}
-                                                onKeyDown={(e) => {
-                                                    if (showMentionPopup === conversationId) {
-                                                        const suggestions = getMentionSuggestions(conversationId);
-                                                        if (e.key === 'Escape') {
-                                                            e.preventDefault();
-                                                            setShowMentionPopup(null);
-                                                        } else if (e.key === 'Enter' && suggestions.length > 0) {
-                                                            e.preventDefault();
-                                                            insertMention(conversationId, suggestions[0].user.name);
-                                                        }
-                                                    } else if (e.key === 'Enter' && !e.shiftKey) {
-                                                        e.preventDefault();
-                                                        sendMessage(conversationId, messageInput);
-                                                        // Reset height after send
-                                                        e.currentTarget.style.height = 'auto';
+                                                <Mic size={16} className="text-white" />
+                                            </div>
+                                            <span className="text-xs font-medium text-red-600">{formatTime(recordingTime)}</span>
+                                            <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0">
+                                                {Array.from({ length: 15 }).map((_, i) => (
+                                                    <div
+                                                        key={i}
+                                                        className="w-0.5 bg-red-400 rounded-full transition-all"
+                                                        style={{ height: `${Math.max(3, Math.random() * 16 * audioLevel)}px` }}
+                                                    />
+                                                ))}
+                                            </div>
+                                            {/* Nút hủy ghi âm */}
+                                            <button
+                                                onClick={() => {
+                                                    if (mediaRecorderRef.current) {
+                                                        mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+                                                        mediaRecorderRef.current = null;
                                                     }
+                                                    if (recordingIntervalRef.current) {
+                                                        clearInterval(recordingIntervalRef.current);
+                                                    }
+                                                    audioChunksRef.current = [];
+                                                    setIsRecording(null);
+                                                    setRecordingTime(0);
+                                                    setAudioLevel(0);
                                                 }}
-                                                placeholder="Aa"
-                                                rows={1}
-                                                className="w-full px-3 py-1.5 bg-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
-                                                style={{ minHeight: '36px', maxHeight: '120px' }}
-                                                data-conversation-id={conversationId}
+                                                className="p-1.5 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors shrink-0"
+                                                title="Hủy"
+                                            >
+                                                <X size={16} className="text-gray-600" />
+                                            </button>
+                                            {/* Nút gửi tin nhắn thoại */}
+                                            <button
+                                                onClick={stopRecording}
+                                                className="p-1.5 bg-blue-500 hover:bg-blue-600 rounded-full transition-colors shrink-0"
+                                                title="Gửi tin nhắn thoại"
+                                            >
+                                                <Send size={16} className="text-white" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1">
+                                            {/* Emoji Picker */}
+                                            <div className="relative shrink-0">
+                                                <button
+                                                    onClick={() => setShowEmojiPicker(showEmojiPicker === conversationId ? null : conversationId)}
+                                                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
+                                                    title="Chọn emoji"
+                                                >
+                                                    <Smile size={18} />
+                                                </button>
+
+                                                {/* Emoji Picker Popup */}
+                                                {showEmojiPicker === conversationId && (
+                                                    <>
+                                                        <div className="fixed inset-0 z-[9990]" onClick={() => setShowEmojiPicker(null)} />
+                                                        <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border p-2 z-[9991] w-64 max-h-48 overflow-y-auto">
+                                                            <div className="grid grid-cols-8 gap-0.5">
+                                                                {COMMON_EMOJIS.map((emoji, i) => (
+                                                                    <button
+                                                                        key={i}
+                                                                        onClick={() => {
+                                                                            setMessageInputs(prev => ({
+                                                                                ...prev,
+                                                                                [conversationId]: (prev[conversationId] || '') + emoji
+                                                                            }));
+                                                                            setShowEmojiPicker(null);
+                                                                        }}
+                                                                        className="text-lg p-1 hover:bg-gray-100 rounded transition-colors"
+                                                                    >
+                                                                        {emoji}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            {/* File Upload */}
+                                            <AttachmentPicker
+                                                token={token || ''}
+                                                onFilesSelected={(files) => {
+                                                    if (files.length > 0) handleFileUpload(conversationId, files[0]);
+                                                }}
+                                                onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
+                                                onKanbanCardSelected={() => setShowKanbanPicker(conversationId)}
+                                                multiple={false}
+                                                buttonClassName="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
+                                                iconSize={20}
                                             />
 
-                                            {/* Mention Popup */}
-                                            {showMentionPopup === conversationId && (
-                                                <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-56 max-h-48 overflow-y-auto">
-                                                    {getMentionSuggestions(conversationId).length > 0 ? (
-                                                        getMentionSuggestions(conversationId).map((member) => (
-                                                            <button
-                                                                key={member.user.id}
-                                                                onClick={() => insertMention(conversationId, member.user.name)}
-                                                                className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 transition-colors text-left"
-                                                            >
-                                                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                                                                    {member.user.id ? (
-                                                                        <img src={`${API_URL}/users/${member.user.id}/avatar`} alt="" className="w-full h-full object-cover" />
-                                                                    ) : (
-                                                                        <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="text-sm font-medium text-gray-800 truncate">{member.user.name}</div>
-                                                                    <div className="text-xs text-gray-500 truncate">{member.user.email}</div>
-                                                                </div>
-                                                            </button>
-                                                        ))
-                                                    ) : (
-                                                        <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy người dùng</div>
-                                                    )}
-                                                </div>
-                                            )}
+                                            {/* Text Input with Mention Popup */}
+                                            <div className="relative flex-1 min-w-0">
+                                                <textarea
+                                                    ref={el => { inputRefs.current[conversationId] = el; }}
+                                                    value={messageInput}
+                                                    onChange={(e) => {
+                                                        handleInputChange(conversationId, e.target.value);
+                                                        // Auto-resize
+                                                        e.target.style.height = 'auto';
+                                                        e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                                                    }}
+                                                    onPaste={(e) => handlePaste(e, conversationId)}
+                                                    onKeyDown={(e) => {
+                                                        if (showMentionPopup === conversationId) {
+                                                            const suggestions = getMentionSuggestions(conversationId);
+                                                            if (e.key === 'Escape') {
+                                                                e.preventDefault();
+                                                                setShowMentionPopup(null);
+                                                            } else if (e.key === 'Enter' && suggestions.length > 0) {
+                                                                e.preventDefault();
+                                                                insertMention(conversationId, suggestions[0].user.name);
+                                                            }
+                                                        } else if (e.key === 'Enter' && !e.shiftKey) {
+                                                            e.preventDefault();
+                                                            sendMessage(conversationId, messageInput);
+                                                            // Reset height after send
+                                                            e.currentTarget.style.height = 'auto';
+                                                        }
+                                                    }}
+                                                    placeholder="Aa"
+                                                    rows={1}
+                                                    className="w-full px-3 py-1.5 bg-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
+                                                    style={{ minHeight: '36px', maxHeight: '120px' }}
+                                                    data-conversation-id={conversationId}
+                                                />
+
+                                                {/* Mention Popup */}
+                                                {showMentionPopup === conversationId && (
+                                                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-56 max-h-48 overflow-y-auto">
+                                                        {getMentionSuggestions(conversationId).length > 0 ? (
+                                                            getMentionSuggestions(conversationId).map((member) => (
+                                                                <button
+                                                                    key={member.user.id}
+                                                                    onClick={() => insertMention(conversationId, member.user.name)}
+                                                                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 transition-colors text-left"
+                                                                >
+                                                                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                                        {member.user.id > 0 ? (
+                                                                            <img src={`${API_URL}/users/${member.user.id}/avatar`} alt="" className="w-full h-full object-cover" />
+                                                                        ) : (
+                                                                            <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-sm font-medium text-gray-800 truncate">{member.user.id === -1 ? 'Nhắc cả nhóm (@all)' : member.user.name}</div>
+                                                                        <div className="text-xs text-gray-500 truncate">{member.user.email}</div>
+                                                                    </div>
+                                                                </button>
+                                                            ))
+                                                        ) : (
+                                                            <div className="px-3 py-2 text-sm text-gray-500">Không tìm thấy người dùng</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Voice Button - Always visible */}
+                                            <button
+                                                onClick={() => startRecording(conversationId)}
+                                                className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
+                                                title="Ghi âm"
+                                            >
+                                                <Mic size={18} />
+                                            </button>
+
+                                            {/* Send Button - Always visible */}
+                                            <button
+                                                onClick={() => sendMessage(conversationId, messageInput)}
+                                                disabled={!messageInput.trim()}
+                                                className={`p-1.5 rounded-full transition-all shrink-0 ${messageInput.trim()
+                                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                    }`}
+                                                title="Gửi"
+                                            >
+                                                <Send size={18} />
+                                            </button>
                                         </div>
-
-                                        {/* Voice Button - Always visible */}
-                                        <button
-                                            onClick={() => startRecording(conversationId)}
-                                            className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
-                                            title="Ghi âm"
-                                        >
-                                            <Mic size={18} />
-                                        </button>
-
-                                        {/* Send Button - Always visible */}
-                                        <button
-                                            onClick={() => sendMessage(conversationId, messageInput)}
-                                            disabled={!messageInput.trim()}
-                                            className={`p-1.5 rounded-full transition-all shrink-0 ${messageInput.trim()
-                                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                                }`}
-                                            title="Gửi"
-                                        >
-                                            <Send size={18} />
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -3627,7 +3685,7 @@ const ChatPopup: React.FC = () => {
         const otherStatus = getOtherUserStatus();
 
         return (
-            <div className={`fixed inset-0 z-[100] flex flex-col h-[100dvh] ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
+            <div className={`fixed inset-0 z-[100] flex flex-col ${isDark ? 'bg-gray-900' : 'bg-white'}`}>
                 {/* Header - Clean Design with safe area */}
                 <div className="bg-blue-600 shrink-0 shadow-sm" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
                     <div className="flex items-center gap-3 px-3 py-2.5">
@@ -3829,7 +3887,7 @@ const ChatPopup: React.FC = () => {
                                                     className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 ${isOwn
                                                         ? 'bg-blue-600/50 border-blue-300 text-blue-100'
                                                         : isDark ? 'bg-gray-600 border-gray-400 text-gray-300' : 'bg-gray-200 border-gray-400 text-gray-600'
-                                                    }`}
+                                                        }`}
                                                     onClick={() => {
                                                         const el = document.getElementById(`msg-${msg.replyTo!.id}`);
                                                         if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
@@ -3840,9 +3898,9 @@ const ChatPopup: React.FC = () => {
                                                         {msg.replyTo.messageType === 'TEXT' && msg.replyTo.content
                                                             ? decryptMessage(msg.replyTo.content)
                                                             : msg.replyTo.messageType === 'IMAGE' ? '📷 Hình ảnh'
-                                                            : msg.replyTo.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
-                                                            : msg.replyTo.messageType === 'FILE' ? '📎 File'
-                                                            : msg.replyTo.content || 'Tin nhắn'}
+                                                                : msg.replyTo.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                                    : msg.replyTo.messageType === 'FILE' ? '📎 File'
+                                                                        : msg.replyTo.content || 'Tin nhắn'}
                                                     </div>
                                                 </div>
                                             )}
@@ -4061,9 +4119,9 @@ const ChatPopup: React.FC = () => {
                                     {replyingTo[conversationId]!.messageType === 'TEXT' && replyingTo[conversationId]!.content
                                         ? decryptMessage(replyingTo[conversationId]!.content!)
                                         : replyingTo[conversationId]!.messageType === 'IMAGE' ? '📷 Hình ảnh'
-                                        : replyingTo[conversationId]!.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
-                                        : replyingTo[conversationId]!.messageType === 'FILE' ? '📎 File'
-                                        : 'Tin nhắn'}
+                                            : replyingTo[conversationId]!.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                                : replyingTo[conversationId]!.messageType === 'FILE' ? '📎 File'
+                                                    : 'Tin nhắn'}
                                 </div>
                             </div>
                             <button
@@ -4075,183 +4133,183 @@ const ChatPopup: React.FC = () => {
                         </div>
                     )}
                     <div className="px-3 py-2">
-                    {isRecording === conversationId ? (
-                        <div className="flex items-center gap-3 px-3 py-2">
-                            <div
-                                className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center animate-pulse"
-                                style={{ transform: `scale(${1 + audioLevel * 0.2})` }}
-                            >
-                                <Mic size={24} className="text-white" />
-                            </div>
-                            <span className="text-lg font-medium text-red-600">{formatTime(recordingTime)}</span>
-                            <div className="flex-1 flex items-center justify-center gap-0.5">
-                                {Array.from({ length: 20 }).map((_, i) => (
-                                    <div
-                                        key={i}
-                                        className="w-1 bg-red-400 rounded-full transition-all"
-                                        style={{ height: `${Math.max(4, Math.random() * 20 * audioLevel)}px` }}
-                                    />
-                                ))}
-                            </div>
-                            {/* Nút hủy ghi âm */}
-                            <button
-                                onClick={() => {
-                                    if (mediaRecorderRef.current) {
-                                        mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
-                                        mediaRecorderRef.current = null;
-                                    }
-                                    if (recordingIntervalRef.current) {
-                                        clearInterval(recordingIntervalRef.current);
-                                    }
-                                    audioChunksRef.current = [];
-                                    setIsRecording(null);
-                                    setRecordingTime(0);
-                                    setAudioLevel(0);
-                                }}
-                                className={`p-3 rounded-full transition-colors ${isDark ? 'bg-gray-700 hover:bg-gray-600 active:bg-gray-500' : 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300'}`}
-                                title="Hủy"
-                            >
-                                <X size={24} className={isDark ? 'text-gray-300' : 'text-gray-600'} />
-                            </button>
-                            {/* Nút gửi tin nhắn thoại */}
-                            <button
-                                onClick={stopRecording}
-                                className="p-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 rounded-full transition-colors"
-                                title="Gửi"
-                            >
-                                <Send size={24} className="text-white" />
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="file"
-                                id={`mobile-camera-input-${conversationId}`}
-                                accept="image/*"
-                                capture="environment"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                        handleFileUpload(conversationId, file);
-                                        e.target.value = '';
-                                    }
-                                }}
-                                className="hidden"
-                            />
-                            <AttachmentPicker
-                                token={token || ''}
-                                onFilesSelected={(files) => {
-                                    if (files.length > 0) {
-                                        handleFileUpload(conversationId, files[0]);
-                                    }
-                                }}
-                                onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
-                                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.7z,.tar,.gz"
-                                multiple={false}
-                                buttonClassName={`p-2 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
-                                iconSize={20}
-                            />
-                            <button
-                                onClick={() => {
-                                    const input = document.getElementById(`mobile-camera-input-${conversationId}`) as HTMLInputElement;
-                                    if (input) {
-                                        input.value = '';
-                                        input.click();
-                                    }
-                                }}
-                                className={`p-2 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
-                                title="Chụp ảnh từ camera"
-                            >
-                                <Camera size={20} />
-                            </button>
-
-                            {/* Mobile Text Input with Mention Popup */}
-                            <div className="relative flex-1 min-w-0">
-                                <textarea
-                                    ref={el => { inputRefs.current[conversationId] = el; }}
-                                    value={messageInput}
-                                    onChange={(e) => {
-                                        handleInputChange(conversationId, e.target.value);
-                                        // Auto-resize
-                                        e.target.style.height = 'auto';
-                                        e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                        {isRecording === conversationId ? (
+                            <div className="flex items-center gap-3 px-3 py-2">
+                                <div
+                                    className="w-12 h-12 rounded-full bg-red-500 flex items-center justify-center animate-pulse"
+                                    style={{ transform: `scale(${1 + audioLevel * 0.2})` }}
+                                >
+                                    <Mic size={24} className="text-white" />
+                                </div>
+                                <span className="text-lg font-medium text-red-600">{formatTime(recordingTime)}</span>
+                                <div className="flex-1 flex items-center justify-center gap-0.5">
+                                    {Array.from({ length: 20 }).map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className="w-1 bg-red-400 rounded-full transition-all"
+                                            style={{ height: `${Math.max(4, Math.random() * 20 * audioLevel)}px` }}
+                                        />
+                                    ))}
+                                </div>
+                                {/* Nút hủy ghi âm */}
+                                <button
+                                    onClick={() => {
+                                        if (mediaRecorderRef.current) {
+                                            mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+                                            mediaRecorderRef.current = null;
+                                        }
+                                        if (recordingIntervalRef.current) {
+                                            clearInterval(recordingIntervalRef.current);
+                                        }
+                                        audioChunksRef.current = [];
+                                        setIsRecording(null);
+                                        setRecordingTime(0);
+                                        setAudioLevel(0);
                                     }}
-                                    onPaste={(e) => handlePaste(e, conversationId)}
-                                    onKeyDown={(e) => {
-                                        if (showMentionPopup === conversationId) {
-                                            const suggestions = getMentionSuggestions(conversationId);
-                                            if (e.key === 'Escape') {
-                                                e.preventDefault();
-                                                setShowMentionPopup(null);
-                                            } else if (e.key === 'Enter' && suggestions.length > 0) {
-                                                e.preventDefault();
-                                                insertMention(conversationId, suggestions[0].user.name);
-                                            }
-                                        } else if (e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault();
-                                            sendMessage(conversationId, messageInput);
-                                            // Reset height after send
-                                            e.currentTarget.style.height = 'auto';
+                                    className={`p-3 rounded-full transition-colors ${isDark ? 'bg-gray-700 hover:bg-gray-600 active:bg-gray-500' : 'bg-gray-100 hover:bg-gray-200 active:bg-gray-300'}`}
+                                    title="Hủy"
+                                >
+                                    <X size={24} className={isDark ? 'text-gray-300' : 'text-gray-600'} />
+                                </button>
+                                {/* Nút gửi tin nhắn thoại */}
+                                <button
+                                    onClick={stopRecording}
+                                    className="p-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 rounded-full transition-colors"
+                                    title="Gửi"
+                                >
+                                    <Send size={24} className="text-white" />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="file"
+                                    id={`mobile-camera-input-${conversationId}`}
+                                    accept="image/*"
+                                    capture="environment"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            handleFileUpload(conversationId, file);
+                                            e.target.value = '';
                                         }
                                     }}
-                                    placeholder="Nhập tin nhắn..."
-                                    rows={1}
-                                    className={`w-full px-4 py-2.5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:shadow-sm text-base transition-all border border-transparent resize-none overflow-hidden ${isDark ? 'bg-gray-800 text-white placeholder-gray-500 focus:bg-gray-700 focus:border-blue-700' : 'bg-gray-100 text-gray-800 focus:bg-white focus:border-blue-200'}`}
-                                    style={{ minHeight: '44px', maxHeight: '120px' }}
-                                    data-mobile-conversation-id={conversationId}
+                                    className="hidden"
                                 />
+                                <AttachmentPicker
+                                    token={token || ''}
+                                    onFilesSelected={(files) => {
+                                        if (files.length > 0) {
+                                            handleFileUpload(conversationId, files[0]);
+                                        }
+                                    }}
+                                    onLinkSelected={(link) => handleLinkUpload(conversationId, link)}
+                                    accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar,.7z,.tar,.gz"
+                                    multiple={false}
+                                    buttonClassName={`p-2 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
+                                    iconSize={20}
+                                />
+                                <button
+                                    onClick={() => {
+                                        const input = document.getElementById(`mobile-camera-input-${conversationId}`) as HTMLInputElement;
+                                        if (input) {
+                                            input.value = '';
+                                            input.click();
+                                        }
+                                    }}
+                                    className={`p-2 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
+                                    title="Chụp ảnh từ camera"
+                                >
+                                    <Camera size={20} />
+                                </button>
 
-                                {/* Mobile Mention Popup */}
-                                {showMentionPopup === conversationId && (
-                                    <div className={`absolute bottom-full left-0 mb-2 rounded-lg shadow-xl border py-1 z-[9999] w-64 max-h-48 overflow-y-auto ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
-                                        {getMentionSuggestions(conversationId).length > 0 ? (
-                                            getMentionSuggestions(conversationId).map((member) => (
-                                                <button
-                                                    key={member.user.id}
-                                                    onClick={() => insertMention(conversationId, member.user.name)}
-                                                    className={`w-full px-3 py-2 flex items-center gap-2 transition-colors text-left ${isDark ? 'hover:bg-gray-700 active:bg-gray-600' : 'hover:bg-blue-50 active:bg-blue-100'}`}
-                                                >
-                                                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
-                                                        {member.user.avatarUrl ? (
-                                                            <img src={resolveAttachmentUrl(member.user.avatarUrl) || ''} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className={`text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{member.user.name}</div>
-                                                        <div className={`text-xs truncate ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{member.user.email}</div>
-                                                    </div>
-                                                </button>
-                                            ))
-                                        ) : (
-                                            <div className={`px-3 py-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Không tìm thấy người dùng</div>
-                                        )}
-                                    </div>
-                                )}
+                                {/* Mobile Text Input with Mention Popup */}
+                                <div className="relative flex-1 min-w-0">
+                                    <textarea
+                                        ref={el => { inputRefs.current[conversationId] = el; }}
+                                        value={messageInput}
+                                        onChange={(e) => {
+                                            handleInputChange(conversationId, e.target.value);
+                                            // Auto-resize
+                                            e.target.style.height = 'auto';
+                                            e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+                                        }}
+                                        onPaste={(e) => handlePaste(e, conversationId)}
+                                        onKeyDown={(e) => {
+                                            if (showMentionPopup === conversationId) {
+                                                const suggestions = getMentionSuggestions(conversationId);
+                                                if (e.key === 'Escape') {
+                                                    e.preventDefault();
+                                                    setShowMentionPopup(null);
+                                                } else if (e.key === 'Enter' && suggestions.length > 0) {
+                                                    e.preventDefault();
+                                                    insertMention(conversationId, suggestions[0].user.name);
+                                                }
+                                            } else if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                sendMessage(conversationId, messageInput);
+                                                // Reset height after send
+                                                e.currentTarget.style.height = 'auto';
+                                            }
+                                        }}
+                                        placeholder="Nhập tin nhắn..."
+                                        rows={1}
+                                        className={`w-full px-4 py-2.5 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:shadow-sm text-base transition-all border border-transparent resize-none overflow-hidden ${isDark ? 'bg-gray-800 text-white placeholder-gray-500 focus:bg-gray-700 focus:border-blue-700' : 'bg-gray-100 text-gray-800 placeholder-gray-400 focus:bg-white'}`}
+                                        style={{ minHeight: '44px', maxHeight: '120px' }}
+                                        data-mobile-conversation-id={conversationId}
+                                    />
+
+                                    {/* Mobile Mention Popup */}
+                                    {showMentionPopup === conversationId && (
+                                        <div className={`absolute bottom-full left-0 mb-2 rounded-lg shadow-xl border py-1 z-[9999] w-64 max-h-48 overflow-y-auto ${isDark ? 'bg-gray-800 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                            {getMentionSuggestions(conversationId).length > 0 ? (
+                                                getMentionSuggestions(conversationId).map((member) => (
+                                                    <button
+                                                        key={member.user.id}
+                                                        onClick={() => insertMention(conversationId, member.user.name)}
+                                                        className={`w-full px-3 py-2 flex items-center gap-2 transition-colors text-left ${isDark ? 'hover:bg-gray-700 active:bg-gray-600' : 'hover:bg-blue-50 active:bg-blue-100'}`}
+                                                    >
+                                                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
+                                                            {member.user.avatarUrl ? (
+                                                                <img src={resolveAttachmentUrl(member.user.avatarUrl) || ''} alt="" className="w-full h-full object-cover" />
+                                                            ) : (
+                                                                <span className="text-blue-600 font-medium text-sm">{member.user.name.charAt(0).toUpperCase()}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className={`text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{member.user.name}</div>
+                                                            <div className={`text-xs truncate ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>{member.user.email}</div>
+                                                        </div>
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <div className={`px-3 py-2 text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Không tìm thấy người dùng</div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* Send Button - Gradient Design */}
+                                <button
+                                    onClick={() => sendMessage(conversationId, messageInput)}
+                                    disabled={!messageInput.trim()}
+                                    className={`p-2.5 rounded-xl transition-all duration-300 shrink-0 ${messageInput.trim()
+                                        ? 'bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-sm'
+                                        : (isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-400')
+                                        }`}
+                                >
+                                    <Send size={20} />
+                                </button>
+                                {/* Mic Button - Always visible */}
+                                <button
+                                    onClick={() => startRecording(conversationId)}
+                                    className={`p-2.5 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
+                                    title="Ghi âm"
+                                >
+                                    <Mic size={20} />
+                                </button>
                             </div>
-                            {/* Send Button - Gradient Design */}
-                            <button
-                                onClick={() => sendMessage(conversationId, messageInput)}
-                                disabled={!messageInput.trim()}
-                                className={`p-2.5 rounded-xl transition-all duration-300 shrink-0 ${messageInput.trim()
-                                    ? 'bg-blue-600 hover:bg-blue-700 active:scale-95 text-white shadow-sm'
-                                    : (isDark ? 'bg-gray-700 text-gray-500' : 'bg-gray-200 text-gray-400')
-                                    }`}
-                            >
-                                <Send size={20} />
-                            </button>
-                            {/* Mic Button - Always visible */}
-                            <button
-                                onClick={() => startRecording(conversationId)}
-                                className={`p-2.5 rounded-full transition-colors shrink-0 ${isDark ? 'hover:bg-gray-700 active:bg-gray-600 text-gray-400' : 'hover:bg-gray-100 active:bg-gray-200 text-gray-500'}`}
-                                title="Ghi âm"
-                            >
-                                <Mic size={20} />
-                            </button>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
                 </div>
                 {/* Safe area spacer removed - edge to edge for PWA */}
                 {/* Mobile Info Overlay */}
@@ -4437,7 +4495,7 @@ const ChatPopup: React.FC = () => {
             if (u.id === user?.id) return false;
             if (!forwardSearch.trim()) return true;
             return u.name?.toLowerCase().includes(forwardSearch.toLowerCase()) ||
-                   u.username?.toLowerCase().includes(forwardSearch.toLowerCase());
+                u.username?.toLowerCase().includes(forwardSearch.toLowerCase());
         });
 
         const totalSelected = forwardSelectedIds.length + forwardSelectedUserIds.length;
@@ -4463,10 +4521,10 @@ const ChatPopup: React.FC = () => {
                             {forwardingMessage.messageType === 'TEXT' && forwardingMessage.content
                                 ? decryptMessage(forwardingMessage.content)
                                 : forwardingMessage.messageType === 'IMAGE' ? '📷 Hình ảnh'
-                                : forwardingMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
-                                : forwardingMessage.messageType === 'FILE' ? '📎 File'
-                                : forwardingMessage.messageType === 'LINK' ? '🔗 Link'
-                                : forwardingMessage.content || 'Tin nhắn'}
+                                    : forwardingMessage.messageType === 'VOICE' ? '🎤 Tin nhắn thoại'
+                                        : forwardingMessage.messageType === 'FILE' ? '📎 File'
+                                            : forwardingMessage.messageType === 'LINK' ? '🔗 Link'
+                                                : forwardingMessage.content || 'Tin nhắn'}
                         </div>
                     </div>
 
@@ -4597,7 +4655,7 @@ const ChatPopup: React.FC = () => {
                             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${totalSelected > 0
                                 ? 'bg-blue-600 text-white hover:bg-blue-700'
                                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            }`}
+                                }`}
                         >
                             Chuyển tiếp
                         </button>
@@ -4851,8 +4909,9 @@ const ChatPopup: React.FC = () => {
                                     top: 0,
                                     left: 0,
                                     right: 0,
-                                    bottom: 0,
-                                    height: '100dvh', // Full height
+                                    width: '100%',
+                                    // Bỏ 100dvh để dùng insets
+                                    height: '100%', // Use 100% height for mobile, relying on flex column and safe areas
                                     borderTopLeftRadius: '0px',
                                     borderTopRightRadius: '0px'
                                 } : {
@@ -5102,17 +5161,17 @@ const ChatPopup: React.FC = () => {
                                                                     </button>
                                                                     {/* Only ADMIN can delete group conversations; anyone can delete private */}
                                                                     {(conv.type !== 'GROUP' || user?.role === 'ADMIN') && (
-                                                                    <button
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            setConversationMenuOpen(null);
-                                                                            deleteConversation(conv.id);
-                                                                        }}
-                                                                        className={`w-full px-4 py-2 text-left text-red-600 flex items-center gap-2 text-sm ${isDark ? 'hover:bg-red-900/30' : 'hover:bg-red-50'}`}
-                                                                    >
-                                                                        <Trash2 size={16} />
-                                                                        Xóa cuộc trò chuyện
-                                                                    </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                setConversationMenuOpen(null);
+                                                                                deleteConversation(conv.id);
+                                                                            }}
+                                                                            className={`w-full px-4 py-2 text-left text-red-600 flex items-center gap-2 text-sm ${isDark ? 'hover:bg-red-900/30' : 'hover:bg-red-50'}`}
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                            Xóa cuộc trò chuyện
+                                                                        </button>
                                                                     )}
                                                                 </div>
                                                             </>
@@ -5259,6 +5318,19 @@ const ChatPopup: React.FC = () => {
                     />
                 )}
             </>, document.body)}
+
+            {/* Kanban Card Picker */}
+            {showKanbanPicker !== null && (
+                <KanbanCardPickerModal
+                    isOpen={true}
+                    onClose={() => setShowKanbanPicker(null)}
+                    onSelect={(card) => {
+                        const content = `📌 Thẻ công việc: **${card.cardTitle}**\n📚 Bảng: ${card.boardTitle}\n🔗 ${window.location.origin}/kanban?boardId=${card.boardId}&cardId=${card.cardId}`;
+                        sendMessage(showKanbanPicker, content);
+                        setShowKanbanPicker(null);
+                    }}
+                />
+            )}
         </>
     );
 };

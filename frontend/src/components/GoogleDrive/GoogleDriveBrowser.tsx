@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { googleDriveService } from '../../services/googleDriveService';
 import { Folder, ChevronRight, Search, Check, Loader2, LogOut, X, List, LayoutGrid, Star, Users } from 'lucide-react';
@@ -68,6 +68,8 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
     const [breadcrumbs, setBreadcrumbs] = useState<{ id: string, name: string }[]>([{ id: 'root', name: 'My Drive' }]);
     const [currentFolderId, setCurrentFolderId] = useState<string>('root');
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [selectedFiles, setSelectedFiles] = useState<DriveFile[]>([]);
     const [isLinking, setIsLinking] = useState(false);
     const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -167,16 +169,35 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
         }
     };
 
+    // Debounce search query - only update after 500ms of no typing
+    useEffect(() => {
+        if (searchTimerRef.current) {
+            clearTimeout(searchTimerRef.current);
+        }
+        searchTimerRef.current = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery);
+        }, 500);
+        return () => {
+            if (searchTimerRef.current) {
+                clearTimeout(searchTimerRef.current);
+            }
+        };
+    }, [searchQuery]);
+
     // Load files when auth is confirmed or folder changes or tab changes
     useEffect(() => {
         if (isAuthenticated === true) {
-            loadFiles(currentFolderId, searchQuery);
+            loadFiles(currentFolderId, debouncedSearchQuery);
         }
-    }, [currentFolderId, isAuthenticated, searchQuery, activeTab]);
+    }, [currentFolderId, isAuthenticated, debouncedSearchQuery, activeTab]);
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
-        // Triggered by useEffect deps
+        // Immediately trigger search on form submit (Enter key)
+        if (searchTimerRef.current) {
+            clearTimeout(searchTimerRef.current);
+        }
+        setDebouncedSearchQuery(searchQuery);
     };
 
     const handleFolderClick = (file: DriveFile) => {
@@ -184,6 +205,7 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
             setBreadcrumbs([...breadcrumbs, { id: file.id, name: file.name }]);
             setCurrentFolderId(file.id);
             setSearchQuery('');
+            setDebouncedSearchQuery('');
         }
     };
 
@@ -192,6 +214,7 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
         setBreadcrumbs(newBreadcrumbs);
         setCurrentFolderId(newBreadcrumbs[newBreadcrumbs.length - 1].id);
         setSearchQuery('');
+        setDebouncedSearchQuery('');
     };
 
     const toggleSelection = (file: DriveFile) => {
@@ -396,14 +419,14 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
             {/* Navigation Tabs */}
             <div className="px-6 pt-2 pb-0 flex gap-6 border-b border-gray-100 bg-white">
                 <button
-                    onClick={() => { setActiveTab('my-drive'); setCurrentFolderId('root'); setBreadcrumbs([{ id: 'root', name: 'My Drive' }]); }}
+                    onClick={() => { setActiveTab('my-drive'); setCurrentFolderId('root'); setBreadcrumbs([{ id: 'root', name: 'My Drive' }]); setSearchQuery(''); setDebouncedSearchQuery(''); }}
                     className={`pb-3 text-sm font-medium transition-colors relative ${activeTab === 'my-drive' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-900'}`}
                 >
                     Files
                     {activeTab === 'my-drive' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>}
                 </button>
                 <button
-                    onClick={() => { setActiveTab('starred'); setSearchQuery(''); }}
+                    onClick={() => { setActiveTab('starred'); setSearchQuery(''); setDebouncedSearchQuery(''); }}
                     className={`pb-3 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${activeTab === 'starred' ? 'text-amber-500' : 'text-gray-500 hover:text-amber-500'}`}
                 >
                     <Star size={14} className={activeTab === 'starred' ? "fill-current" : ""} />
@@ -411,7 +434,7 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
                     {activeTab === 'starred' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-500 rounded-t-full"></div>}
                 </button>
                 <button
-                    onClick={() => { setActiveTab('shared-with-me'); setCurrentFolderId('root'); setBreadcrumbs([{ id: 'root', name: 'Shared with me' }]); }}
+                    onClick={() => { setActiveTab('shared-with-me'); setCurrentFolderId('root'); setBreadcrumbs([{ id: 'root', name: 'Shared with me' }]); setSearchQuery(''); setDebouncedSearchQuery(''); }}
                     className={`pb-3 text-sm font-medium transition-colors relative flex items-center gap-1.5 ${activeTab === 'shared-with-me' ? 'text-green-600' : 'text-gray-500 hover:text-green-600'}`}
                 >
                     <Users size={14} />
@@ -758,25 +781,25 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
             {/* Image Viewer */}
             {viewingImage && (
                 <div className="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-sm flex flex-col animate-in fade-in duration-300">
-                    <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0 z-10">
-                        <div className="flex items-center gap-3 text-white/90">
-                            <div className="p-1.5 bg-white/10 rounded-lg backdrop-blur-md">
+                    <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 pt-12 md:pt-6 bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0 z-10">
+                        <div className="flex items-center gap-2 sm:gap-3 text-white/90 min-w-0 flex-1 mr-3">
+                            <div className="p-1.5 bg-white/10 rounded-lg backdrop-blur-md flex-shrink-0">
                                 <GoogleDriveIcon />
                             </div>
-                            <span className="font-medium text-lg leading-tight drop-shadow-md">{viewingImage.name}</span>
+                            <span className="font-medium text-sm sm:text-lg leading-tight drop-shadow-md truncate">{viewingImage.name}</span>
                         </div>
                         <button
                             onClick={() => {
                                 if (viewingImage.url) URL.revokeObjectURL(viewingImage.url);
                                 setViewingImage(null);
                             }}
-                            className="p-2.5 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition-all hover:rotate-90 duration-300"
+                            className="flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-all hover:rotate-90 duration-300 active:bg-white/20"
                         >
-                            <X size={28} strokeWidth={1.5} />
+                            <X size={32} strokeWidth={1.5} />
                         </button>
                     </div>
 
-                    <div className="flex-1 flex items-center justify-center p-8 overflow-hidden" onClick={() => {
+                    <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-hidden" onClick={() => {
                         if (viewingImage.url) URL.revokeObjectURL(viewingImage.url);
                         setViewingImage(null);
                     }}>

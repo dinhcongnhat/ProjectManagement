@@ -84,11 +84,7 @@ body {
   background-color: #f8fafc;
   min-height: 100vh;
   min-height: 100dvh;
-}
-
-#root {
-  min-height: 100vh;
-  min-height: 100dvh;
+  overscroll-behavior: none;
 }
 
 /* Dark mode base styles */
@@ -724,6 +720,10 @@ html.dark [style*="white"] {
   color: rgb(34 211 238) !important;
 }
 
+.dark .text-emerald-600 {
+  color: rgb(52 211 153) !important;
+}
+
 .dark .text-amber-600 {
   color: rgb(251 191 36) !important;
 }
@@ -746,6 +746,7 @@ html.dark [style*="white"] {
 
 /* Border colors for colored cards */
 .dark .border-cyan-100,
+.dark .border-emerald-100,
 .dark .border-amber-100,
 .dark .border-violet-100,
 .dark .border-pink-100,
@@ -756,6 +757,8 @@ html.dark [style*="white"] {
 
 /* Gradient cards in admin */
 .dark [class*="bg-gradient-to-br"][class*="from-cyan-50"],
+.dark [class*="bg-gradient-to-br"][class*="from-blue-50"],
+.dark [class*="bg-gradient-to-br"][class*="from-emerald-50"],
 .dark [class*="bg-gradient-to-br"][class*="from-amber-50"],
 .dark [class*="bg-gradient-to-br"][class*="from-violet-50"],
 .dark [class*="bg-gradient-to-br"][class*="from-pink-50"],
@@ -1066,14 +1069,6 @@ header {
     padding-top: env(safe-area-inset-top, 0px);
     box-sizing: border-box;
   }
-
-  .pwa-safe-bottom {
-    padding-bottom: 0 !important;
-  }
-
-  .pb-safe {
-    padding-bottom: 0 !important;
-  }
 }
 
 /* Ensure body doesn't overflow */
@@ -1243,28 +1238,33 @@ body {
 
   /* PWA Standalone Mode - Apply safe areas */
   @media (display-mode: standalone) {
-    body {
-      padding-top: 0;
-      padding-bottom: 0;
-      padding-left: env(safe-area-inset-left, 0px);
-      padding-right: env(safe-area-inset-right, 0px);
-      /* Ensure no gray gap at bottom */
-      min-height: 100dvh;
+    html {
+      background-color: #f8fafc;
     }
 
-    /* Root container in standalone mode */
-    #root {
-      min-height: 100dvh;
-      height: 100dvh;
-      overflow: hidden;
+    .dark html,
+    html.dark {
+      background-color: #0f172a;
     }
+
+    body {
+      padding: 0 !important;
+      margin: 0 !important;
+      overflow: hidden;
+      background-color: #f8fafc;
+    }
+
+    .dark body {
+      background-color: #0f172a !important;
+    }
+
+    /* #root positioning is handled by final overrides section at bottom of file */
   }
 
   /* iOS Safari standalone mode detection */
   @supports (-webkit-touch-callout: none) {
     @media (display-mode: standalone) {
 
-      /* Safe area is already handled by the @supports(padding-top: env(safe-area-inset-top)) rule above */
       /* Full screen modals should respect safe area */
       .fixed.inset-0.z-50,
       .fixed.inset-0.z-\[50\] {
@@ -1288,13 +1288,7 @@ body {
   }
 
   .pwa-safe-bottom {
-    padding-bottom: 0;
-  }
-
-  @media (display-mode: standalone) {
-    .pwa-safe-bottom {
-      padding-bottom: 0 !important;
-    }
+    padding-bottom: 0 !important;
   }
 
   /* Mobile-first utilities */
@@ -1373,6 +1367,17 @@ body {
     padding-bottom: 0 !important;
   }
 
+  /* OnlyOffice mobile iframe optimization */
+  @media (max-width: 768px) {
+
+    #onlyoffice-editor iframe,
+    #discussion-onlyoffice-editor iframe {
+      width: 100% !important;
+      height: 100% !important;
+      border: none !important;
+    }
+  }
+
   /* Backdrop blur support check */
   @supports (backdrop-filter: blur(10px)) {
     .backdrop-blur-safe {
@@ -1427,7 +1432,7 @@ body {
     }
   }
 
-  /* Safe area bottom for input fields on mobile - disabled for edge-to-edge */
+  /* Safe area bottom - disabled for edge-to-edge */
   .safe-area-bottom {
     padding-bottom: 0 !important;
   }
@@ -1585,5 +1590,72 @@ body {
   /* Animation delay utilities */
   .animation-delay-200 {
     animation-delay: 0.2s;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FINAL OVERRIDES — iOS PWA edge-to-edge
+   Uses position:fixed + inset:0 instead of height units.
+   This approach is immune to all iOS viewport bugs because
+   it anchors to all 4 edges — no height math at all.
+   ══════════════════════════════════════════════════════════════ */
+
+:root {
+  --sat: env(safe-area-inset-top);
+  --sar: env(safe-area-inset-right);
+  --sab: env(safe-area-inset-bottom);
+  --sal: env(safe-area-inset-left);
+}
+
+html {
+  overflow: hidden;
+  background-color: #f8fafc;
+  -webkit-text-size-adjust: 100%;
+}
+
+html.dark {
+  background-color: #0f172a;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  background-color: #f8fafc;
+}
+
+.dark body {
+  background-color: #0f172a !important;
+}
+
+/* position:fixed + all 4 edges = guaranteed full-screen.
+   No height units, no dvh, no -webkit-fill-available.
+   Cannot leave a gap. */
+#root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }

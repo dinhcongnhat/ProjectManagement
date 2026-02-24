@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, AlertCircle } from 'lucide-react';
 import { API_URL } from '../config/api';
 
@@ -165,37 +166,42 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
         };
     }, [attachmentId, fileName, token]);
 
-    return (
-        <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
-            {/* Close button - floating on top right */}
+    return createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, background: '#000', display: 'flex', flexDirection: 'column' }}>
+            {/* Floating close button */}
             <button
                 onClick={onClose}
-                className="absolute top-2 right-2 z-[10000] p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-lg"
+                className="absolute z-[100000] bg-gray-800/80 hover:bg-gray-700 text-white rounded-xl transition-colors shadow-lg"
+                style={{
+                    top: 'max(12px, env(safe-area-inset-top, 12px))',
+                    right: 'max(12px, env(safe-area-inset-right, 12px))',
+                    padding: '10px',
+                }}
                 title="Đóng (ESC)"
             >
-                <X size={20} />
+                <X size={22} />
             </button>
 
             {/* Content Area */}
-            <div className="flex-1 relative flex items-center justify-center bg-black/90">
+            <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
                 {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900" style={{ zIndex: 10 }}>
                         <div className="text-center">
-                            <Loader2 size={48} className="animate-spin text-blue-500 mx-auto mb-4" />
-                            <p className="text-gray-300 font-medium">Đang tải tài liệu...</p>
-                            <p className="text-gray-500 text-sm mt-1">{fileName}</p>
+                            <Loader2 size={40} className="animate-spin text-blue-500 mx-auto mb-3" />
+                            <p className="text-gray-300 font-medium text-sm">Đang tải tài liệu...</p>
+                            <p className="text-gray-500 text-xs mt-1">{fileName}</p>
                         </div>
                     </div>
                 )}
 
                 {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900" style={{ zIndex: 10 }}>
                         <div className="text-center p-6 max-w-md">
-                            <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-                            <p className="text-red-400 font-medium mb-2">{error}</p>
+                            <AlertCircle size={40} className="text-red-500 mx-auto mb-3" />
+                            <p className="text-red-400 font-medium mb-2 text-sm">{error}</p>
                             <button
                                 onClick={onClose}
-                                className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                                className="mt-3 px-5 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 text-sm"
                             >
                                 Đóng
                             </button>
@@ -214,12 +220,12 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
                 ) : (
                     <div
                         ref={editorRef}
-                        className="w-full h-full bg-white"
-                        style={{ minHeight: '100vh', display: loading || error ? 'none' : 'block' }}
+                        style={{ width: '100%', height: '100%', background: '#fff', display: loading || error ? 'none' : 'block' }}
                     />
                 )}
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

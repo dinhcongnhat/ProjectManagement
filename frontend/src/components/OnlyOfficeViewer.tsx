@@ -144,6 +144,7 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
                     ...(isMobile && {
                         width: '100%',
                         height: '100%',
+                        type: 'mobile',
                         editorConfig: {
                             ...data.config.editorConfig,
                             customization: {
@@ -155,6 +156,7 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
                                 leftMenu: false,
                                 rightMenu: false,
                                 statusBar: false,
+                                toolbar: false,
                             },
                             mobile: true,
                         }
@@ -177,23 +179,71 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
     }, [scriptLoaded, attachmentId, token]);
 
     return createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black flex flex-col">
-            {/* Close button - floating on top right */}
-            <button
-                onClick={onClose}
-                className="absolute top-2 right-2 z-[10000] p-2 bg-gray-800/80 hover:bg-gray-700 text-white rounded-lg transition-colors shadow-lg"
-                title="Đóng (ESC)"
+        <div
+            className="fixed inset-0 z-[9999] bg-black flex flex-col"
+            style={{
+                /* Ensure full-screen on notched iPhones */
+                paddingTop: 0,
+                paddingBottom: 0,
+            }}
+        >
+            {/* Header bar for mobile with close button */}
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    paddingTop: isMobile ? 'max(6px, env(safe-area-inset-top, 6px))' : '6px',
+                    background: 'rgba(17,24,39,0.95)',
+                    backdropFilter: 'blur(8px)',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    flexShrink: 0,
+                    zIndex: 10000,
+                    minHeight: isMobile ? '40px' : '44px',
+                }}
             >
-                <X size={20} />
-            </button>
+                <span style={{
+                    color: '#94a3b8',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    paddingLeft: '4px',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    flex: 1,
+                }}>
+                    Xem tài liệu
+                </span>
+                <button
+                    onClick={onClose}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: 'rgba(255,255,255,0.1)',
+                        color: '#e2e8f0',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        transition: 'background 0.15s',
+                    }}
+                    title="Đóng (ESC)"
+                >
+                    <X size={18} />
+                </button>
+            </div>
 
-            {/* Editor Container - Full screen */}
-            <div className="flex-1 relative">
+            {/* Editor Container - takes remaining space */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                 {loading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                         <div className="text-center">
-                            <Loader2 size={48} className="animate-spin text-blue-500 mx-auto mb-4" />
-                            <p className="text-gray-300 font-medium">Đang tải tài liệu...</p>
+                            <Loader2 size={40} className="animate-spin text-blue-500 mx-auto mb-3" />
+                            <p className="text-gray-300 font-medium text-sm">Đang tải tài liệu...</p>
                         </div>
                     </div>
                 )}
@@ -201,11 +251,11 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
                 {error && (
                     <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
                         <div className="text-center p-6 max-w-md">
-                            <AlertCircle size={48} className="text-red-500 mx-auto mb-4" />
-                            <p className="text-red-400 font-medium mb-2">{error}</p>
+                            <AlertCircle size={40} className="text-red-500 mx-auto mb-3" />
+                            <p className="text-red-400 font-medium mb-2 text-sm">{error}</p>
                             <button
                                 onClick={onClose}
-                                className="mt-4 px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+                                className="mt-3 px-5 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 text-sm"
                             >
                                 Đóng
                             </button>
@@ -216,8 +266,11 @@ export const OnlyOfficeViewer = ({ attachmentId, onClose, token }: OnlyOfficeVie
                 <div
                     id="onlyoffice-editor"
                     ref={editorRef}
-                    className="w-full h-full"
-                    style={{ display: loading || error ? 'none' : 'block', minHeight: '100vh' }}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        display: loading || error ? 'none' : 'block',
+                    }}
                 />
             </div>
         </div>,

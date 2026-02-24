@@ -138,10 +138,9 @@ const UpdateChecker = () => {
             localStorage.removeItem('app_version');
 
             // 5. Hard reload - works on both desktop and mobile
-            // Using location.replace with cache-busting to force fresh load
-            const url = new URL(window.location.href);
-            url.searchParams.set('_updated', Date.now().toString());
-            window.location.replace(url.toString());
+            // Do NOT add query params like ?_updated=... here, as it breaks the iOS PWA scope 
+            // and turns off Push Notifications in OS Settings!
+            window.location.reload();
         } catch (err) {
             console.error('[UpdateChecker] Error during update:', err);
             // Fallback: simple reload

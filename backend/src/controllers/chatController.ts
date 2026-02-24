@@ -710,8 +710,13 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                     ? (conversation.name || 'Nhóm chat')
                     : message.sender.name;
 
-                // Decrypt message for push notification preview
                 const decryptedContent = decryptMessage(content.trim());
+                let kanbanRedirectUrl = undefined;
+                const kanbanMatch = decryptedContent.match(/📌 Thẻ công việc: \*\*(.*?)\*\*\n📚 Bảng: (.*?)\n.*?boardId=(\d+).*?cardId=(\d+)/);
+                if (kanbanMatch) {
+                    kanbanRedirectUrl = `/kanban?boardId=${kanbanMatch[3]}&cardId=${kanbanMatch[4]}`;
+                }
+
                 const messagePreview = decryptedContent.length > 50
                     ? decryptedContent.substring(0, 50) + '...'
                     : decryptedContent;
@@ -723,28 +728,48 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                     Number(id),
                     displayName,
                     messagePreview,
-                    conversation.type === 'GROUP'
+                    conversation.type === 'GROUP',
+                    kanbanRedirectUrl
                 );
 
                 // Check for mentions and send separate notifications
-                const mentionPattern = /@(\S+)/g;
+                const mentionPattern = /@\[([^\]]+)\]|@(\S+)/g;
                 let match;
                 while ((match = mentionPattern.exec(decryptedContent)) !== null) {
-                    const mentionedName = match[1];
+                    const mentionedName = match[1] || match[2];
                     if (mentionedName) {
-                        // Find user by name
-                        const mentionedUser = await prisma.user.findFirst({
-                            where: { name: { contains: mentionedName, mode: 'insensitive' } }
-                        });
-                        if (mentionedUser && mentionedUser.id !== userId) {
-                            await notifyMention(
-                                mentionedUser.id,
-                                message.sender.name,
-                                'chat',
-                                Number(id),
-                                displayName,
-                                messagePreview
-                            );
+                        if (mentionedName.toLowerCase() === 'all') {
+                            // Tag all
+                            const otherMembers = memberIds.filter(id => id !== userId);
+                            if (otherMembers.length > 0) {
+                                for (const oId of otherMembers) {
+                                    await notifyMention(
+                                        oId,
+                                        message.sender.name,
+                                        'chat',
+                                        Number(id),
+                                        displayName,
+                                        messagePreview,
+                                        kanbanRedirectUrl
+                                    );
+                                }
+                            }
+                        } else {
+                            // Find user by name
+                            const mentionedUser = await prisma.user.findFirst({
+                                where: { name: { contains: mentionedName, mode: 'insensitive' } }
+                            });
+                            if (mentionedUser && mentionedUser.id !== userId && memberIds.includes(mentionedUser.id)) {
+                                await notifyMention(
+                                    mentionedUser.id,
+                                    message.sender.name,
+                                    'chat',
+                                    Number(id),
+                                    displayName,
+                                    messagePreview,
+                                    kanbanRedirectUrl
+                                );
+                            }
                         }
                     }
                 }
