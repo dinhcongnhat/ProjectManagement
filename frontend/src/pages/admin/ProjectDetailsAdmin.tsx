@@ -104,6 +104,7 @@ const ProjectDetailsAdmin = () => {
     const [editingSubProject, setEditingSubProject] = useState<any>(null);
     const [users, setUsers] = useState<{ id: number; name: string; role: string }[]>([]);
     const [currentChildPage, setCurrentChildPage] = useState(1);
+    const [unreadDiscussionCount, setUnreadDiscussionCount] = useState(0);
     const CHILDREN_PER_PAGE = 10;
     const { showConfirm, showSuccess, showError } = useDialog();
 
@@ -341,7 +342,7 @@ const ProjectDetailsAdmin = () => {
                         {[
                             { id: 'info', label: 'Thông tin', icon: FileText },
                             { id: 'workflow', label: 'Tiến trình', icon: Target },
-                            { id: 'discussion', label: 'Thảo luận', icon: MessageSquare },
+                            { id: 'discussion', label: 'Thảo luận', icon: MessageSquare, badge: unreadDiscussionCount },
                             { id: 'activity', label: 'Lịch sử', icon: History }
                         ].map(tab => {
                             const Icon = tab.icon;
@@ -349,14 +350,24 @@ const ProjectDetailsAdmin = () => {
                             return (
                                 <button
                                     key={tab.id}
-                                    onClick={() => setActiveTab(tab.id as any)}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium transition-all ${isActive
+                                    onClick={() => {
+                                        setActiveTab(tab.id as any);
+                                        if (tab.id === 'discussion') {
+                                            setUnreadDiscussionCount(0);
+                                        }
+                                    }}
+                                    className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium transition-all relative ${isActive
                                         ? 'bg-blue-600 text-white shadow-md'
                                         : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                                         }`}
                                 >
                                     <Icon size={18} />
                                     <span className="hidden sm:inline">{tab.label}</span>
+                                    {'badge' in tab && tab.badge && tab.badge > 0 && !isActive && (
+                                        <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1.5 flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full shadow-lg shadow-red-500/30 animate-pulse">
+                                            {tab.badge > 99 ? '99+' : tab.badge}
+                                        </span>
+                                    )}
                                 </button>
                             );
                         })}
@@ -731,11 +742,15 @@ const ProjectDetailsAdmin = () => {
                     />
                 )}
 
-                {activeTab === 'discussion' && (
+                <div style={{ display: activeTab === 'discussion' ? 'block' : 'none' }}>
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700 sticky top-4" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' }}>
-                        <DiscussionPanel projectId={project.id} />
+                        <DiscussionPanel
+                            projectId={project.id}
+                            isVisible={activeTab === 'discussion'}
+                            onUnreadCountChange={setUnreadDiscussionCount}
+                        />
                     </div>
-                )}
+                </div>
 
                 {activeTab === 'activity' && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700 sticky top-4">

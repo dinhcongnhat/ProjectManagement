@@ -35,7 +35,12 @@ import {
     deleteCardAttachment,
     getAttachmentPresignedUrl,
     getUpcomingCards,
-    searchCards
+    searchCards,
+    uploadCardFolder,
+    getCardFolderContents,
+    downloadCardFolderAsZip,
+    deleteCardFolder,
+    uploadCardFolderFromStorage
 } from '../controllers/kanbanController.js';
 
 const router = Router();
@@ -94,5 +99,12 @@ router.post('/cards/:cardId/attachments/from-folder', uploadCardAttachmentFromFo
 router.post('/cards/:cardId/attachments/from-drive', uploadCardAttachmentFromDrive);
 router.delete('/attachments/:id', deleteCardAttachment);
 router.get('/attachments/:id/presigned-url', getAttachmentPresignedUrl);
+
+// Folder uploads
+router.post('/cards/:cardId/attachments/folder', upload.array('files', 500), uploadCardFolder);
+router.post('/cards/:cardId/attachments/folder-from-storage', uploadCardFolderFromStorage);
+router.get('/cards/:cardId/attachments/folder/contents', getCardFolderContents);
+router.get('/cards/:cardId/attachments/folder/download', downloadCardFolderAsZip);
+router.delete('/cards/:cardId/attachments/folder', deleteCardFolder);
 
 export default router;

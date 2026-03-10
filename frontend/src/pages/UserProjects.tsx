@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle, FolderTree, ChevronRight, ChevronDown, Search, X, PlusCircle } from 'lucide-react';
+import { Briefcase, Calendar, User, CheckCircle2, Clock, AlertCircle, FolderTree, ChevronRight, ChevronDown, Search, X, PlusCircle, Pencil, Trash2, Save, Loader2, MoreVertical } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import { useDialog } from '../components/ui/Dialog';
 import { CreateProjectModal } from '../components/CreateProjectModal';
+import { EditSubProjectModal } from '../components/EditSubProjectModal';
 
 interface SubProject {
     id: number;
@@ -48,14 +49,27 @@ const UserProjects = () => {
     const [subProjectPages, setSubProjectPages] = useState<Record<number, number>>({});
     const searchRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
-    const { showError } = useDialog();
+    const { showError, showConfirm, showSuccess } = useDialog();
     const [showCreateModal, setShowCreateModal] = useState(false);
+    // Edit/Delete state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingProject, setEditingProject] = useState<Project | null>(null);
+    const [editFormData, setEditFormData] = useState({ name: '', priority: 'NORMAL', status: 'IN_PROGRESS', description: '' });
+    const [isSaving, setIsSaving] = useState(false);
+    const [users, setUsers] = useState<any[]>([]);
+    const [showEditSubModal, setShowEditSubModal] = useState(false);
+    const [editingSubProject, setEditingSubProject] = useState<any>(null);
+    const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
                 setShowSearchDropdown(false);
+            }
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                setOpenMenuId(null);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -104,6 +118,104 @@ const UserProjects = () => {
     useEffect(() => {
         if (token && user) fetchProjects();
     }, [token, user, fetchProjects]);
+
+    // Fetch users for edit modals
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                const response = await fetch(`${API_URL}/users`, { headers: { Authorization: `Bearer ${token}` } });
+                const data = await response.json();
+                if (Array.isArray(data)) setUsers(data);
+            } catch (error) { console.error('Error fetching users:', error); }
+        };
+        if (token) fetchUsers();
+    }, [token]);
+
+    // Edit/Delete handlers
+    const openEditProjectModal = (project: Project) => {
+        setEditingProject(project);
+        setEditFormData({
+            name: project.name || '',
+            priority: (project as any).priority || 'NORMAL',
+            status: project.status || 'IN_PROGRESS',
+            description: (project as any).description || '',
+        });
+        setShowEditModal(true);
+        setOpenMenuId(null);
+    };
+
+    const handleUpdateProject = async () => {
+        if (!editingProject) return;
+        setIsSaving(true);
+        try {
+            const response = await fetch(`${API_URL}/projects/${editingProject.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(editFormData),
+            });
+            if (response.ok) {
+                setShowEditModal(false);
+                setEditingProject(null);
+                fetchProjects();
+                showSuccess('Cập nhật dự án thành công!');
+            } else {
+                showError('Cập nhật dự án thất bại');
+            }
+        } catch (error) {
+            showError('Lỗi kết nối server');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDeleteProject = async (project: Project) => {
+        setOpenMenuId(null);
+        const childrenCount = project.children?.length || 0;
+        const message = childrenCount > 0
+            ? `Dự án "${project.name}" có ${childrenCount} dự án con. Xóa dự án sẽ xóa TẤT CẢ dự án con bên trong. Bạn có chắc chắn?`
+            : `Bạn có chắc chắn muốn xóa dự án "${project.name}"?`;
+        const confirmed = await showConfirm(message);
+        if (!confirmed) return;
+        try {
+            const response = await fetch(`${API_URL}/projects/${project.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                const result = await response.json();
+                if (result.deletedChildren > 0) {
+                    showSuccess(`Đã xóa dự án và ${result.deletedChildren} dự án con`);
+                } else {
+                    showSuccess('Đã xóa dự án thành công');
+                }
+                fetchProjects();
+            } else {
+                showError('Xóa dự án thất bại');
+            }
+        } catch (error) {
+            showError('Lỗi kết nối server');
+        }
+    };
+
+    const handleDeleteSubProject = async (subProject: SubProject) => {
+        setOpenMenuId(null);
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn xóa dự án con "${subProject.name}"?`);
+        if (!confirmed) return;
+        try {
+            const response = await fetch(`${API_URL}/projects/${subProject.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (response.ok) {
+                showSuccess('Đã xóa dự án con thành công');
+                fetchProjects();
+            } else {
+                showError('Xóa dự án con thất bại');
+            }
+        } catch (error) {
+            showError('Lỗi kết nối server');
+        }
+    };
 
     const handleProgressChange = async (projectId: number, newProgress: number) => {
         setUpdatingProgress(projectId);
@@ -396,13 +508,43 @@ const UserProjects = () => {
                                                             })()}
                                                         </div>
                                                     </div>
-                                                    <Link
-                                                        to={`/projects/${project.id}`}
-                                                        className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 transition-all duration-200"
-                                                    >
-                                                        Chi tiết
-                                                        <ChevronRight size={16} />
-                                                    </Link>
+                                                    <div className="flex items-center gap-2">
+                                                        <Link
+                                                            to={`/projects/${project.id}`}
+                                                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/30 hover:from-blue-700 hover:to-indigo-700 transition-all duration-200"
+                                                        >
+                                                            Chi tiết
+                                                            <ChevronRight size={16} />
+                                                        </Link>
+                                                        {/* Edit/Delete dropdown */}
+                                                        <div className="relative" ref={openMenuId === project.id ? menuRef : undefined}>
+                                                            <button
+                                                                onClick={() => setOpenMenuId(openMenuId === project.id ? null : project.id)}
+                                                                className="p-2.5 rounded-xl border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors"
+                                                                title="Thêm thao tác"
+                                                            >
+                                                                <MoreVertical size={16} />
+                                                            </button>
+                                                            {openMenuId === project.id && (
+                                                                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-2xl border border-gray-100 py-1 z-50 min-w-[160px]">
+                                                                    <button
+                                                                        onClick={() => openEditProjectModal(project)}
+                                                                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                                                                    >
+                                                                        <Pencil size={14} />
+                                                                        Chỉnh sửa
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteProject(project)}
+                                                                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                        Xóa dự án
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -508,28 +650,46 @@ const UserProjects = () => {
                                                         <div className="px-5 lg:px-6 py-4 bg-gray-50/50 space-y-2">
                                                             {paginatedChildren.map(child => (
                                                                 <div key={child.id} className="space-y-2">
-                                                                    <Link
-                                                                        to={`/projects/${child.id}`}
-                                                                        className="flex items-center gap-3 p-3 bg-white rounded-xl hover:bg-orange-50 border border-gray-100 hover:border-orange-200 transition-all group"
-                                                                    >
-                                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white flex-shrink-0 ${child.status === 'COMPLETED' ? 'bg-green-500' :
-                                                                            child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
-                                                                            }`}>
-                                                                            <FolderTree size={14} />
-                                                                        </div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-orange-600">{child.name}</p>
-                                                                            <p className="text-xs text-gray-500">{child.code}</p>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className={`text-xs font-bold ${child.status === 'COMPLETED' ? 'text-green-600' :
-                                                                                child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
+                                                                    <div className="flex items-center gap-2 bg-white rounded-xl border border-gray-100 hover:border-orange-200 transition-all group">
+                                                                        <Link
+                                                                            to={`/projects/${child.id}`}
+                                                                            className="flex items-center gap-3 p-3 flex-1 min-w-0 hover:bg-orange-50 rounded-l-xl transition-colors"
+                                                                        >
+                                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white flex-shrink-0 ${child.status === 'COMPLETED' ? 'bg-green-500' :
+                                                                                child.status === 'PENDING_APPROVAL' ? 'bg-orange-500' : 'bg-blue-500'
                                                                                 }`}>
-                                                                                {child.progress}%
-                                                                            </span>
-                                                                            <ChevronRight size={14} className="text-gray-400 group-hover:text-orange-600" />
+                                                                                <FolderTree size={14} />
+                                                                            </div>
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <p className="text-sm font-medium text-gray-800 truncate group-hover:text-orange-600">{child.name}</p>
+                                                                                <p className="text-xs text-gray-500">{child.code}</p>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className={`text-xs font-bold ${child.status === 'COMPLETED' ? 'text-green-600' :
+                                                                                    child.status === 'PENDING_APPROVAL' ? 'text-orange-600' : 'text-blue-600'
+                                                                                    }`}>
+                                                                                    {child.progress}%
+                                                                                </span>
+                                                                                <ChevronRight size={14} className="text-gray-400 group-hover:text-orange-600" />
+                                                                            </div>
+                                                                        </Link>
+                                                                        <div className="flex items-center gap-1 pr-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                                            <button
+                                                                                onClick={() => { setEditingSubProject(child); setShowEditSubModal(true); }}
+                                                                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                                title="Chỉnh sửa dự án con"
+                                                                            >
+                                                                                <Pencil size={14} />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => handleDeleteSubProject(child)}
+                                                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                                                title="Xóa dự án con"
+                                                                            >
+                                                                                <Trash2 size={14} />
+                                                                            </button>
                                                                         </div>
-                                                                    </Link>
+                                                                    </div>
 
                                                                     {/* Grandchildren (3rd level) */}
                                                                     {child.children && child.children.length > 0 && (
@@ -693,6 +853,94 @@ const UserProjects = () => {
                     }}
                 />
             )}
+
+            {/* Edit Project Modal */}
+            {showEditModal && editingProject && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/50" onClick={() => setShowEditModal(false)} />
+                    <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg p-6 z-10">
+                        <div className="flex items-center justify-between mb-5">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <Pencil size={18} className="text-blue-600" />
+                                Chỉnh sửa dự án
+                            </h3>
+                            <button onClick={() => setShowEditModal(false)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                <X size={18} className="text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tên dự án</label>
+                                <input
+                                    type="text"
+                                    value={editFormData.name}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trạng thái</label>
+                                    <select
+                                        value={editFormData.status}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, status: e.target.value }))}
+                                        className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                                    >
+                                        <option value="IN_PROGRESS">Đang thực hiện</option>
+                                        <option value="PENDING_APPROVAL">Chờ duyệt</option>
+                                        <option value="COMPLETED">Hoàn thành</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Độ ưu tiên</label>
+                                    <select
+                                        value={editFormData.priority}
+                                        onChange={(e) => setEditFormData(prev => ({ ...prev, priority: e.target.value }))}
+                                        className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                                    >
+                                        <option value="NORMAL">Bình thường</option>
+                                        <option value="HIGH">Cao</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mô tả</label>
+                                <textarea
+                                    rows={3}
+                                    value={editFormData.description}
+                                    onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
+                                    className="w-full px-3 py-2 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 mt-6">
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleUpdateProject}
+                                disabled={isSaving || !editFormData.name.trim()}
+                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                                {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Sub-Project Modal */}
+            <EditSubProjectModal
+                isOpen={showEditSubModal}
+                onClose={() => { setShowEditSubModal(false); setEditingSubProject(null); }}
+                onSuccess={fetchProjects}
+                subProject={editingSubProject}
+                users={users}
+            />
         </div>
     );
 };

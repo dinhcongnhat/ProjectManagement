@@ -313,15 +313,33 @@ export const GoogleDriveBrowser: React.FC<GoogleDriveBrowserProps> = ({
             try {
                 const downloadedFiles: File[] = [];
                 for (const file of selectedFiles) {
+                    // Skip non-exportable Google Apps types
+                    const nonExportableTypes = [
+                        'application/vnd.google-apps.form',
+                        'application/vnd.google-apps.site',
+                        'application/vnd.google-apps.map',
+                        'application/vnd.google-apps.fusiontable',
+                    ];
+                    if (nonExportableTypes.includes(file.mimeType)) {
+                        toast.error(`Không thể tải "${file.name}" - loại file này không hỗ trợ tải về`);
+                        continue;
+                    }
+
                     const blob = await googleDriveService.downloadFile(file.id);
 
                     let fileName = file.name;
-                    if (file.mimeType === 'application/vnd.google-apps.document' && !fileName.toLowerCase().endsWith('.docx')) {
-                        fileName += '.docx';
-                    } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet' && !fileName.toLowerCase().endsWith('.xlsx')) {
-                        fileName += '.xlsx';
-                    } else if (file.mimeType === 'application/vnd.google-apps.presentation' && !fileName.toLowerCase().endsWith('.pptx')) {
-                        fileName += '.pptx';
+                    // Map Google Apps types to proper extensions
+                    const extMap: Record<string, string> = {
+                        'application/vnd.google-apps.document': '.docx',
+                        'application/vnd.google-apps.spreadsheet': '.xlsx',
+                        'application/vnd.google-apps.presentation': '.pptx',
+                        'application/vnd.google-apps.drawing': '.pdf',
+                        'application/vnd.google-apps.jam': '.pdf',
+                        'application/vnd.google-apps.script': '.json',
+                    };
+                    const expectedExt = extMap[file.mimeType];
+                    if (expectedExt && !fileName.toLowerCase().endsWith(expectedExt)) {
+                        fileName += expectedExt;
                     }
 
                     const fileObj = new File([blob], fileName, { type: file.mimeType });

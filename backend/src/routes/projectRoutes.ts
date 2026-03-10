@@ -1,12 +1,18 @@
 import { Router } from 'express';
-import { createProject, getProjects, getProjectById, updateProject, deleteProject, downloadAttachment, updateProjectProgress, approveProject, createSubProject } from '../controllers/projectController.js';
+import { createProject, getProjects, getProjectById, updateProject, deleteProject, downloadAttachment, updateProjectProgress, approveProject, createSubProject, getDashboardStats } from '../controllers/projectController.js';
 import {
     getProjectAttachments,
     uploadProjectAttachment,
     uploadAttachmentFromFolder,
     deleteProjectAttachment,
     downloadProjectAttachment,
-    getAttachmentPresignedUrl
+    getAttachmentPresignedUrl,
+    uploadProjectFolder,
+    uploadFolderFromStorage,
+    downloadFolderAsZip,
+    saveFolderToStorage,
+    getFolderContents,
+    deleteProjectFolder
 } from '../controllers/projectAttachmentController.js';
 import { authenticateToken, isAdmin } from '../middleware/authMiddleware.js';
 
@@ -15,6 +21,9 @@ const router = Router();
 import multer from 'multer';
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Dashboard stats
+router.get('/dashboard/stats', authenticateToken, getDashboardStats);
 
 // Project CRUD
 // POST / accepts JSON body (no file)
@@ -38,5 +47,13 @@ router.post('/:projectId/attachments/from-folder', authenticateToken, uploadAtta
 router.delete('/:projectId/attachments/:attachmentId', authenticateToken, deleteProjectAttachment);
 router.get('/attachments/:attachmentId/download', authenticateToken, downloadProjectAttachment);
 router.get('/attachments/:attachmentId/presigned-url', authenticateToken, getAttachmentPresignedUrl);
+
+// Folder upload/download for project attachments
+router.post('/:projectId/attachments/folder', authenticateToken, upload.array('files', 500), uploadProjectFolder);
+router.post('/:projectId/attachments/folder-from-storage', authenticateToken, uploadFolderFromStorage);
+router.get('/:projectId/attachments/folder/download', authenticateToken, downloadFolderAsZip);
+router.post('/:projectId/attachments/folder/save-to-storage', authenticateToken, saveFolderToStorage);
+router.get('/:projectId/attachments/folder/contents', authenticateToken, getFolderContents);
+router.delete('/:projectId/attachments/folder', authenticateToken, deleteProjectFolder);
 
 export default router;

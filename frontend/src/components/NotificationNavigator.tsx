@@ -56,6 +56,8 @@ const NotificationNavigator = () => {
                 navigate(`${prefix}/projects/${detail.projectId}?tab=discussion`);
             } else if (detail.type === 'chat') {
                 // Chat notifications → home (chat is a popup)
+                // If the app is already open, ChatPopup will listen to openChatFromNotification directly via push service.
+                // We just make sure we are on a page where ChatPopup is rendered (home).
                 navigate(`${prefix}/`);
             }
         };
@@ -77,6 +79,7 @@ const NotificationNavigator = () => {
         const taskId = searchParams.get('taskId');
         const boardId = searchParams.get('boardId');
         const cardId = searchParams.get('cardId');
+        const conversationId = searchParams.get('conversationId');
         const prefix = getPrefix();
 
         // Clean up the URL params
@@ -87,6 +90,7 @@ const NotificationNavigator = () => {
         newParams.delete('tab');
         newParams.delete('boardId');
         newParams.delete('cardId');
+        newParams.delete('conversationId');
         setSearchParams(newParams, { replace: true });
 
         // Navigate after a small delay to ensure app is fully loaded
@@ -118,8 +122,8 @@ const NotificationNavigator = () => {
                 const query = params.toString() ? `?${params.toString()}` : '';
                 navigate(`${prefix}/kanban${query}`, { replace: true });
             } else if (notificationType === 'chat') {
-                // Chat notifications → home
-                navigate(`${prefix}/`, { replace: true });
+                // Chat notifications → home with openChat param
+                navigate(conversationId ? `${prefix}/?openChat=${conversationId}` : `${prefix}/`, { replace: true });
             }
         }, 300);
     }, [user, searchParams]);

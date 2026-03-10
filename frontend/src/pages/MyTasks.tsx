@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, List, Pencil, Trash2, X, StickyNote, MessageSquare } from 'lucide-react';
+import { CheckSquare, Clock, AlertCircle, Plus, Layout, Calendar, Pencil, Trash2, X, StickyNote, MessageSquare, Eye } from 'lucide-react';
 import { DndContext, useDraggable, useDroppable, type DragEndEvent, DragOverlay, type DragStartEvent, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useAuth } from '../context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 import { API_URL } from '../config/api';
 import { useDialog } from '../components/ui/Dialog';
 
@@ -11,7 +12,7 @@ interface Task {
     id: number;
     title: string;
     description: string | null;
-    status: 'TODO' | 'IN_PROGRESS' | 'COMPLETED';
+    status: 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'COMPLETED';
     type: 'ASSIGNED' | 'PERSONAL';
     startDate: string | null;
     endDate: string | null;
@@ -138,7 +139,7 @@ const DraggableTask = ({ task, children }: { task: Task, children: React.ReactNo
     );
 };
 
-const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNode }) => {
+const DroppableColumn = ({ id, onAddTask, children }: { id: string, onAddTask?: (status: string) => void, children: React.ReactNode }) => {
     const { setNodeRef } = useDroppable({
         id: id,
     });
@@ -152,6 +153,10 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
             bg: 'bg-amber-50/80 dark:bg-amber-900/20',
             border: 'border-amber-200/50 dark:border-amber-700/50'
         },
+        'REVIEW': {
+            bg: 'bg-purple-50/80 dark:bg-purple-900/20',
+            border: 'border-purple-200/50 dark:border-purple-700/50'
+        },
         'COMPLETED': {
             bg: 'bg-emerald-50/80 dark:bg-emerald-900/20',
             border: 'border-emerald-200/50 dark:border-emerald-700/50'
@@ -160,8 +165,16 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
     const config = columnConfig[id as keyof typeof columnConfig] || columnConfig['TODO'];
 
     return (
-        <div ref={setNodeRef} className={`${config.bg} ${config.border} p-2.5 sm:p-3 rounded-xl flex flex-col border`}>
+        <div ref={setNodeRef} data-status-column={id} className={`${config.bg} ${config.border} p-2.5 sm:p-3 rounded-xl flex flex-col border transition-all`}>
             {children}
+            {onAddTask && (
+                <button
+                    onClick={() => onAddTask(id)}
+                    className="mt-2 flex items-center justify-center gap-1.5 p-2 w-full rounded-lg border border-dashed border-gray-400/50 dark:border-gray-500/50 text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-white/50 border-gray-300 dark:hover:border-blue-500 dark:hover:bg-blue-900/20 transition-all text-xs font-medium"
+                >
+                    <Plus size={14} /> Thêm công việc
+                </button>
+            )}
         </div>
     );
 };
@@ -169,7 +182,20 @@ const DroppableColumn = ({ id, children }: { id: string, children: React.ReactNo
 const MyTasks = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [activeId, setActiveId] = useState<string | null>(null);
-    const [view, setView] = useState<'list' | 'kanban' | 'gantt'>('kanban'); // Default to kanban for mobile
+    const [view, setView] = useState<'kanban' | 'gantt'>('kanban');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const statusParam = searchParams.get('status') as 'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'COMPLETED' | null;
+    const [mobileColumn, setMobileColumn] = useState<'TODO' | 'IN_PROGRESS' | 'REVIEW' | 'COMPLETED'>(
+        statusParam && ['TODO', 'IN_PROGRESS', 'REVIEW', 'COMPLETED'].includes(statusParam) ? statusParam : 'TODO'
+    );
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 640);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
         useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
@@ -182,13 +208,43 @@ const MyTasks = () => {
     const [timeFilter, setTimeFilter] = useState<'all' | 'week' | 'month'>('all'); // Time filter
     const { token } = useAuth();
     const { showConfirm } = useDialog();
+
+    // Handle status URL parameter - scroll to/highlight the correct column
+    useEffect(() => {
+        if (statusParam && ['TODO', 'IN_PROGRESS', 'REVIEW', 'COMPLETED'].includes(statusParam)) {
+            setMobileColumn(statusParam);
+            // Clear the status param from URL after applying
+            setSearchParams(prev => {
+                const newParams = new URLSearchParams(prev);
+                newParams.delete('status');
+                return newParams;
+            }, { replace: true });
+
+            // On desktop, scroll to the column
+            if (!isMobile) {
+                setTimeout(() => {
+                    const columnIndex = ['TODO', 'IN_PROGRESS', 'REVIEW', 'COMPLETED'].indexOf(statusParam);
+                    const columns = document.querySelectorAll('[data-status-column]');
+                    if (columns[columnIndex]) {
+                        columns[columnIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        // Briefly highlight the column
+                        columns[columnIndex].classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+                        setTimeout(() => {
+                            columns[columnIndex].classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
+                        }, 2000);
+                    }
+                }, 500);
+            }
+        }
+    }, [statusParam]);
     const [formData, setFormData] = useState({
         title: '',
         description: '',
         startDate: '',
         endDate: '',
         reminderAt: '',
-        type: 'PERSONAL'
+        type: 'PERSONAL',
+        status: 'TODO'
     });
 
     const fetchTasks = useCallback(async () => {
@@ -238,9 +294,15 @@ const MyTasks = () => {
     const filteredTasks = getFilteredTasks();
 
     const resetForm = () => {
-        setFormData({ title: '', description: '', startDate: '', endDate: '', reminderAt: '', type: 'PERSONAL' });
+        setFormData({ title: '', description: '', startDate: '', endDate: '', reminderAt: '', type: 'PERSONAL', status: 'TODO' });
         setEditingTask(null);
         setShowModal(false);
+    };
+
+    const handleAddDirectTask = (status: string) => {
+        resetForm();
+        setFormData(prev => ({ ...prev, status }));
+        setShowModal(true);
     };
 
     // Open note modal
@@ -317,7 +379,8 @@ const MyTasks = () => {
             const payload: any = {
                 title: formData.title,
                 description: formData.description,
-                type: formData.type
+                type: formData.type,
+                status: formData.status
             };
 
             if (formData.type === 'PERSONAL') {
@@ -382,7 +445,8 @@ const MyTasks = () => {
             startDate: task.startDate ? new Date(task.startDate).toISOString().split('T')[0] : '',
             endDate: task.endDate ? new Date(task.endDate).toISOString().split('T')[0] : '',
             reminderAt: reminderAtStr,
-            type: task.type
+            type: task.type,
+            status: task.status
         });
         setShowModal(true);
     };
@@ -412,6 +476,7 @@ const MyTasks = () => {
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
+        setActiveId(null);
 
         if (over && active.id !== over.id) {
             const taskId = Number(active.id);
@@ -424,9 +489,14 @@ const MyTasks = () => {
         }
     };
 
+    const handleDragCancel = () => {
+        setActiveId(null);
+    };
+
     const stats = {
         todo: filteredTasks.filter(t => t.status === 'TODO').length,
         inProgress: filteredTasks.filter(t => t.status === 'IN_PROGRESS').length,
+        review: filteredTasks.filter(t => t.status === 'REVIEW').length,
         completed: filteredTasks.filter(t => t.status === 'COMPLETED').length,
     };
 
@@ -454,16 +524,6 @@ const MyTasks = () => {
 
                     {/* View Toggle */}
                     <div className="flex bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-0.5">
-                        <button
-                            onClick={() => setView('list')}
-                            className={`p-1.5 rounded-md transition-all ${view === 'list'
-                                ? 'bg-blue-600 text-white'
-                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
-                                }`}
-                            title="Danh sách"
-                        >
-                            <List size={16} />
-                        </button>
                         <button
                             onClick={() => setView('kanban')}
                             className={`p-1.5 rounded-md transition-all ${view === 'kanban'
@@ -498,7 +558,7 @@ const MyTasks = () => {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 lg:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 lg:gap-6">
                 <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none group">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
                         <div className="p-2 sm:p-2.5 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-blue-500/30 w-fit">
@@ -519,6 +579,15 @@ const MyTasks = () => {
                 </div>
                 <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none group">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
+                        <div className="p-2 sm:p-2.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-purple-500/30 w-fit">
+                            <Eye size={16} className="sm:w-5 sm:h-5" />
+                        </div>
+                        <span className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-2 sm:mt-0">{stats.review}</span>
+                    </div>
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400">Cần review</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 p-3 sm:p-4 lg:p-5 rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 shadow-lg shadow-gray-200/50 dark:shadow-none group">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 sm:mb-3">
                         <div className="p-2 sm:p-2.5 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg sm:rounded-xl text-white shadow-lg shadow-green-500/30 w-fit">
                             <AlertCircle size={16} className="sm:w-5 sm:h-5" />
                         </div>
@@ -528,109 +597,85 @@ const MyTasks = () => {
                 </div>
             </div>
 
-            {view === 'list' && (
-                <div className="bg-white rounded-xl sm:rounded-2xl border border-gray-100 shadow-lg shadow-gray-200/50 overflow-hidden">
-                    {tasks.length === 0 ? (
-                        <div className="p-8 sm:p-12 text-center">
-                            <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                                <CheckSquare size={24} className="text-gray-400 sm:w-8 sm:h-8" />
-                            </div>
-                            <h3 className="text-base sm:text-lg font-semibold text-gray-700 mb-1 sm:mb-2">Chưa có công việc</h3>
-                            <p className="text-gray-500 text-sm">Hãy tạo công việc mới!</p>
-                        </div>
-                    ) : (
-                        <div className="divide-y divide-gray-100">
-                            {tasks.map((task) => (
-                                <div key={task.id} className="p-3 lg:p-4 hover:bg-gray-50 active:bg-gray-100 flex flex-col gap-2 group">
-                                    <div className="flex items-start sm:items-center justify-between gap-3">
-                                        <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-                                            <input
-                                                type="checkbox"
-                                                checked={task.status === 'COMPLETED'}
-                                                onChange={() => updateStatus(task.id, task.status === 'COMPLETED' ? 'TODO' : 'COMPLETED')}
-                                                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 mt-0.5 sm:mt-0 touch-target"
-                                                title="Đánh dấu hoàn thành"
-                                            />
-                                            <div className="min-w-0 flex-1">
-                                                <h4 className={`font-medium text-gray-900 text-sm lg:text-base truncate ${task.status === 'COMPLETED' ? 'line-through text-gray-500' : ''}`}>{task.title}</h4>
-                                                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 mt-1">
-                                                    <span className={`px-1.5 py-0.5 rounded ${task.type === 'PERSONAL' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'}`}>
-                                                        {task.type === 'PERSONAL' ? 'Cá nhân' : 'Được giao'}
-                                                    </span>
-                                                    {task.reminderAt && (
-                                                        <span className="flex items-center gap-1 text-purple-600 font-medium bg-purple-50 px-1.5 py-0.5 rounded">
-                                                            <Clock size={12} />
-                                                            {formatDateTime(task.reminderAt)} {new Date(task.reminderAt) < new Date() && task.status !== 'COMPLETED' ? '(Quá hạn)' : ''}
-                                                        </span>
-                                                    )}
-                                                    {task.note && (
-                                                        <span className="flex items-center gap-1 text-amber-600">
-                                                            <StickyNote size={12} />
-                                                            Có ghi chú
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-                                            <select
-                                                value={task.status}
-                                                onChange={(e) => updateStatus(task.id, e.target.value)}
-                                                className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 border-none focus:ring-0 max-w-20 lg:max-w-none"
-                                                title="Chọn trạng thái"
-                                            >
-                                                <option value="TODO">Todo</option>
-                                                <option value="IN_PROGRESS">In Progress</option>
-                                                <option value="COMPLETED">Completed</option>
-                                            </select>
-                                            <div className="flex gap-1">
-                                                <NoteButton task={task} onOpenNote={openNoteModal} formatDateTime={formatDateTime} />
-                                                {task.type === 'PERSONAL' && (
-                                                    <>
-                                                        <button onClick={() => openEditModal(task)} className="p-2 text-gray-400 hover:text-blue-600 active:text-blue-700 touch-target" title="Chỉnh sửa">
-                                                            <Pencil size={16} />
-                                                        </button>
-                                                        <button onClick={() => handleDeleteTask(task.id)} className="p-2 text-gray-400 hover:text-red-600 active:text-red-700 touch-target" title="Xóa">
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
+            {view === 'kanban' && (
+                <DndContext sensors={sensors} onDragEnd={handleDragEnd} onDragStart={handleDragStart} onDragCancel={handleDragCancel}>
+                    {/* Mobile: tab selector for columns */}
+                    <div className="sm:hidden flex bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-1 mb-3 gap-1">
+                        {(['TODO', 'IN_PROGRESS', 'REVIEW', 'COMPLETED'] as const).map(status => {
+                            const labels = { TODO: '📋 Cần làm', IN_PROGRESS: '🔄 Đang làm', REVIEW: '👁 Review', COMPLETED: '✅ Xong' };
+                            const count = filteredTasks.filter(t => t.status === status).length;
+                            return (
+                                <button
+                                    key={status}
+                                    onClick={() => setMobileColumn(status)}
+                                    className={`flex-1 py-1.5 px-1 rounded-lg text-[11px] font-medium transition-all ${mobileColumn === status
+                                        ? 'bg-blue-600 text-white shadow-sm'
+                                        : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                        }`}
+                                >
+                                    {labels[status]} ({count})
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Desktop: 4 columns grid */}
+                    {!isMobile && (
+                        <div className="grid sm:grid-cols-4 gap-3 sm:gap-4">
+                            {(['TODO', 'IN_PROGRESS', 'REVIEW', 'COMPLETED'] as const).map(status => (
+                                <DroppableColumn key={status} id={status} onAddTask={handleAddDirectTask}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-200">
+                                            {status === 'TODO' ? '📋 Cần làm' : status === 'IN_PROGRESS' ? '🔄 Đang làm' : status === 'REVIEW' ? '👁 Cần review' : '✅ Hoàn thành'}
+                                        </h3>
+                                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
+                                            {filteredTasks.filter(t => t.status === status).length}
+                                        </span>
                                     </div>
-                                    {task.lastNoteAt && (
-                                        <div className="text-xs text-gray-400 ml-8">
-                                            Ghi chú lần cuối: {formatDateTime(task.lastNoteAt)}
-                                        </div>
-                                    )}
-                                </div>
+                                    <div className="space-y-2 max-h-[500px] overflow-y-auto overscroll-contain">
+                                        {filteredTasks.filter(t => t.status === status).length === 0 ? (
+                                            <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-xs">
+                                                Không có công việc
+                                            </div>
+                                        ) : (
+                                            filteredTasks.filter(t => t.status === status).map(task => (
+                                                <DraggableTask key={task.id} task={task}>
+                                                    <TaskCard
+                                                        task={task}
+                                                        onEdit={openEditModal}
+                                                        onDelete={handleDeleteTask}
+                                                        onOpenNote={openNoteModal}
+                                                        formatDateTime={formatDateTime}
+                                                        formatDateTimeSimple={formatDateTimeSimple}
+                                                    />
+                                                </DraggableTask>
+                                            ))
+                                        )}
+                                    </div>
+                                </DroppableColumn>
                             ))}
                         </div>
                     )}
-                </div>
-            )}
 
-            {view === 'kanban' && (
-                <DndContext sensors={sensors} onDragEnd={handleDragEnd} onDragStart={handleDragStart}>
-                    {/* Vertical columns layout */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                        {['TODO', 'IN_PROGRESS', 'COMPLETED'].map(status => (
-                            <DroppableColumn key={status} id={status}>
+                    {/* Mobile: single column view */}
+                    {isMobile && (
+                        <div>
+                            <DroppableColumn id={mobileColumn} onAddTask={handleAddDirectTask}>
                                 <div className="flex items-center justify-between mb-2">
                                     <h3 className="font-semibold text-sm text-gray-700 dark:text-gray-200">
-                                        {status === 'TODO' ? '📋 Cần làm' : status === 'IN_PROGRESS' ? '🔄 Đang làm' : '✅ Hoàn thành'}
+                                        {mobileColumn === 'TODO' ? '📋 Cần làm' : mobileColumn === 'IN_PROGRESS' ? '🔄 Đang làm' : mobileColumn === 'REVIEW' ? '👁 Cần review' : '✅ Hoàn thành'}
                                     </h3>
                                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700 px-1.5 py-0.5 rounded-full">
-                                        {filteredTasks.filter(t => t.status === status).length}
+                                        {filteredTasks.filter(t => t.status === mobileColumn).length}
                                     </span>
                                 </div>
-                                <div className="space-y-2 max-h-64 sm:max-h-[400px] overflow-y-auto overscroll-contain">
-                                    {filteredTasks.filter(t => t.status === status).length === 0 ? (
+                                <div className="space-y-2 max-h-[60vh] overflow-y-auto overscroll-contain">
+                                    {filteredTasks.filter(t => t.status === mobileColumn).length === 0 ? (
                                         <div className="text-center py-4 text-gray-400 dark:text-gray-500 text-xs">
                                             Không có công việc
                                         </div>
                                     ) : (
-                                        filteredTasks.filter(t => t.status === status).map(task => (
+                                        filteredTasks.filter(t => t.status === mobileColumn).map(task => (
                                             <DraggableTask key={task.id} task={task}>
                                                 <TaskCard
                                                     task={task}
@@ -645,9 +690,9 @@ const MyTasks = () => {
                                     )}
                                 </div>
                             </DroppableColumn>
-                        ))}
-                    </div>
-                    <DragOverlay>
+                        </div>
+                    )}
+                    <DragOverlay dropAnimation={null} zIndex={9999}>
                         {activeId ? (
                             <TaskCard
                                 task={filteredTasks.find(t => t.id.toString() === activeId)}
@@ -724,6 +769,7 @@ const MyTasks = () => {
                 const statusColors: Record<string, { bg: string; border: string; text: string }> = {
                     'TODO': { bg: 'bg-blue-500', border: 'border-blue-600', text: 'text-white' },
                     'IN_PROGRESS': { bg: 'bg-amber-500', border: 'border-amber-600', text: 'text-white' },
+                    'REVIEW': { bg: 'bg-purple-500', border: 'border-purple-600', text: 'text-white' },
                     'COMPLETED': { bg: 'bg-emerald-500', border: 'border-emerald-600', text: 'text-white' },
                 };
 
@@ -742,6 +788,7 @@ const MyTasks = () => {
                             <span className="font-semibold text-gray-700 dark:text-gray-200">Chú thích:</span>
                             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-500"></span> Cần làm</span>
                             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500"></span> Đang làm</span>
+                            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-500"></span> Cần review</span>
                             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500"></span> Hoàn thành</span>
                             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-500 ring-2 ring-purple-200"></span> Nhắc nhở</span>
                         </div>
@@ -760,15 +807,14 @@ const MyTasks = () => {
                                             <div
                                                 key={i}
                                                 style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
-                                                className={`text-center py-1.5 text-[10px] border-r border-gray-100 dark:border-gray-700/50 ${
-                                                    isToday(d) ? 'bg-blue-50 dark:bg-blue-900/30 font-bold text-blue-700 dark:text-blue-300' :
+                                                className={`text-center py-1.5 text-[10px] border-r border-gray-100 dark:border-gray-700/50 ${isToday(d) ? 'bg-blue-50 dark:bg-blue-900/30 font-bold text-blue-700 dark:text-blue-300' :
                                                     isSunday(d) ? 'bg-red-50/50 dark:bg-red-900/10 text-red-400' :
-                                                    isSaturday(d) ? 'bg-orange-50/50 dark:bg-orange-900/10 text-orange-400' :
-                                                    'text-gray-500 dark:text-gray-400'
-                                                }`}
+                                                        isSaturday(d) ? 'bg-orange-50/50 dark:bg-orange-900/10 text-orange-400' :
+                                                            'text-gray-500 dark:text-gray-400'
+                                                    }`}
                                             >
                                                 <div className="font-medium">{d.getDate()}/{d.getMonth() + 1}</div>
-                                                <div className="text-[9px] opacity-70">{['CN','T2','T3','T4','T5','T6','T7'][d.getDay()]}</div>
+                                                <div className="text-[9px] opacity-70">{['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][d.getDay()]}</div>
                                             </div>
                                         ))}
                                     </div>
@@ -810,10 +856,9 @@ const MyTasks = () => {
                                                         <div
                                                             key={i}
                                                             style={{ width: `${dayWidth}px`, minWidth: `${dayWidth}px` }}
-                                                            className={`border-r border-gray-50 dark:border-gray-700/20 ${
-                                                                isToday(d) ? 'bg-blue-50/40 dark:bg-blue-900/10' :
+                                                            className={`border-r border-gray-50 dark:border-gray-700/20 ${isToday(d) ? 'bg-blue-50/40 dark:bg-blue-900/10' :
                                                                 isSunday(d) || isSaturday(d) ? 'bg-gray-50/40 dark:bg-gray-700/10' : ''
-                                                            }`}
+                                                                }`}
                                                         />
                                                     ))}
                                                 </div>

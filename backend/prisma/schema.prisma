@@ -15,6 +15,7 @@ enum Role {
 enum TaskStatus {
   TODO
   IN_PROGRESS
+  REVIEW
   COMPLETED
   CANCELLED
 }
@@ -211,6 +212,11 @@ model ProjectAttachment {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Folder upload support
+  isFolder       Boolean @default(false) // true if this is a folder entry
+  folderName     String? // Root folder name (shared across all files in same folder upload)
+  relativePath   String? // Relative path within the folder (e.g. "subfolder/file.txt")
+
   projectId   Int
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -219,6 +225,7 @@ model ProjectAttachment {
 
   @@index([projectId])
   @@index([uploadedById])
+  @@index([folderName])
 }
 
 model Message {
@@ -694,6 +701,9 @@ model KanbanAttachment {
   category  String   @default("attachment") // "attachment" or "completion"
   googleDriveFileId String? // For Google Drive files
   googleDriveLink   String? // Web view link for Google Drive files
+  isFolder     Boolean  @default(false)
+  folderName   String?
+  relativePath String?
   createdAt DateTime @default(now())
 
   cardId Int
@@ -703,4 +713,5 @@ model KanbanAttachment {
   uploadedBy   User @relation("KanbanAttachmentUploader", fields: [uploadedById], references: [id])
 
   @@index([cardId])
+  @@index([folderName])
 }

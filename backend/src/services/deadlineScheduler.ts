@@ -5,9 +5,11 @@ import {
     notifyTaskDeadlineOverdue,
     notifyTaskDeadlineUpcoming
 } from './pushNotificationService.js';
-import { sendDeadlineReminderEmail } from './emailService.js';
+import { sendDeadlineReminderEmail, sendTaskDeadlineEmail } from './emailService.js';
 import { notifyKanbanDailyReminder, notifyKanbanCardDeadline } from './pushNotificationService.js';
 import { sendKanbanDailyReminderEmail } from './emailService.js';
+import { notifyPersonalTasksDailyReminder } from './pushNotificationService.js';
+import { sendPersonalTasksDailyReminderEmail } from './emailService.js';
 
 // Get start of today in UTC
 const getStartOfToday = (): Date => {
@@ -80,7 +82,7 @@ export const checkOverdueProjects = async (): Promise<void> => {
             // Send emails
             for (const user of uniqueUsers) {
                 if (user.email) {
-                    await sendDeadlineReminderEmail(
+                    const emailSent = await sendDeadlineReminderEmail(
                         user.email,
                         user.name,
                         project.id,
@@ -90,6 +92,9 @@ export const checkOverdueProjects = async (): Promise<void> => {
                         -daysOverdue, // Negative for overdue
                         true // isOverdue
                     );
+                    if (!emailSent) {
+                        console.error(`[DeadlineScheduler] ❌ Failed to send overdue project email to ${user.email} for project "${project.name}"`);
+                    }
                 }
             }
         }
@@ -154,7 +159,7 @@ export const checkUpcomingProjectDeadlines = async (): Promise<void> => {
             // Send emails
             for (const user of uniqueUsers) {
                 if (user.email) {
-                    await sendDeadlineReminderEmail(
+                    const emailSent = await sendDeadlineReminderEmail(
                         user.email,
                         user.name,
                         project.id,
@@ -164,6 +169,9 @@ export const checkUpcomingProjectDeadlines = async (): Promise<void> => {
                         1, // 1 day remaining
                         false // not overdue
                     );
+                    if (!emailSent) {
+                        console.error(`[DeadlineScheduler] ❌ Failed to send upcoming deadline email to ${user.email} for project "${project.name}"`);
+                    }
                 }
             }
         }
@@ -194,7 +202,7 @@ export const checkOverdueTasks = async (): Promise<void> => {
                 type: 'PERSONAL'
             },
             include: {
-                creator: { select: { id: true, name: true } }
+                creator: { select: { id: true, name: true, email: true } }
             }
         });
 
@@ -213,6 +221,22 @@ export const checkOverdueTasks = async (): Promise<void> => {
                 task.title,
                 daysOverdue
             );
+
+            // Send email notification
+            if (task.creator.email) {
+                const emailSent = await sendTaskDeadlineEmail(
+                    task.creator.email,
+                    task.creator.name,
+                    task.id,
+                    task.title,
+                    task.endDate,
+                    -daysOverdue,
+                    true // isOverdue
+                );
+                if (!emailSent) {
+                    console.error(`[DeadlineScheduler] ❌ Failed to send overdue task email to ${task.creator.email} for task "${task.title}"`);
+                }
+            }
         }
     } catch (error) {
         console.error('[DeadlineScheduler] Error checking overdue tasks:', error);
@@ -240,7 +264,7 @@ export const checkUpcomingTaskDeadlines = async (): Promise<void> => {
                 type: 'PERSONAL'
             },
             include: {
-                creator: { select: { id: true, name: true } }
+                creator: { select: { id: true, name: true, email: true } }
             }
         });
 
@@ -255,6 +279,22 @@ export const checkUpcomingTaskDeadlines = async (): Promise<void> => {
                 task.title,
                 1 // 1 day until deadline
             );
+
+            // Send email notification
+            if (task.endDate && task.creator.email) {
+                const emailSent = await sendTaskDeadlineEmail(
+                    task.creator.email,
+                    task.creator.name,
+                    task.id,
+                    task.title,
+                    task.endDate,
+                    1,
+                    false // not overdue
+                );
+                if (!emailSent) {
+                    console.error(`[DeadlineScheduler] ❌ Failed to send upcoming task deadline email to ${task.creator.email} for task "${task.title}"`);
+                }
+            }
         }
     } catch (error) {
         console.error('[DeadlineScheduler] Error checking upcoming task deadlines:', error);
@@ -363,11 +403,14 @@ export const checkKanbanIncompleteCards = async (): Promise<void> => {
 
             // Send ONE consolidated email
             if (userData.email) {
-                await sendKanbanDailyReminderEmail(
+                const emailSent = await sendKanbanDailyReminderEmail(
                     userData.email,
                     userData.userName,
                     boardsArray
                 );
+                if (!emailSent) {
+                    console.error(`[DeadlineScheduler] ❌ Failed to send kanban email to ${userData.email} for user ${userId}`);
+                }
             }
 
             console.log(`[DeadlineScheduler] Sent kanban reminder to user ${userId}: ${totalCards} cards across ${boardsArray.length} boards`);
@@ -447,6 +490,76 @@ export const checkKanbanCardDeadlines = async (): Promise<void> => {
     }
 };
 
+// Check personal tasks not completed and send daily reminder
+export const checkPersonalTasksIncomplete = async (): Promise<void> => {
+    console.log('[DeadlineScheduler] Checking incomplete personal tasks...');
+
+    try {
+        const incompleteTasks = await prisma.task.findMany({
+            where: {
+                type: 'PERSONAL',
+                status: {
+                    notIn: ['COMPLETED', 'CANCELLED']
+                }
+            },
+            include: {
+                creator: { select: { id: true, name: true, email: true } }
+            }
+        });
+
+        if (incompleteTasks.length === 0) return;
+
+        // Group by user
+        const userTasksMap: Map<number, {
+            userName: string;
+            email: string | null;
+            tasks: { title: string; dueDate: string | null; status: string }[];
+        }> = new Map();
+
+        for (const task of incompleteTasks) {
+            const uid = task.creatorId;
+            if (!userTasksMap.has(uid)) {
+                userTasksMap.set(uid, {
+                    userName: task.creator.name,
+                    email: task.creator.email ?? null,
+                    tasks: []
+                });
+            }
+            userTasksMap.get(uid)!.tasks.push({
+                title: task.title,
+                status: task.status,
+                dueDate: task.endDate?.toISOString() ?? task.reminderAt?.toISOString() ?? null
+            });
+        }
+
+        console.log(`[DeadlineScheduler] Found ${userTasksMap.size} users with incomplete personal tasks`);
+
+        for (const [userId, userData] of userTasksMap) {
+            const totalTasks = userData.tasks.length;
+            const taskTitles = userData.tasks.map(t => t.title);
+
+            // Send push notification
+            await notifyPersonalTasksDailyReminder(userId, taskTitles, totalTasks);
+
+            // Send ONE consolidated email
+            if (userData.email) {
+                const emailSent = await sendPersonalTasksDailyReminderEmail(
+                    userData.email,
+                    userData.userName,
+                    userData.tasks
+                );
+                if (!emailSent) {
+                    console.error(`[DeadlineScheduler] ❌ Failed to send personal tasks email to ${userData.email} for user ${userId}`);
+                }
+            }
+
+            console.log(`[DeadlineScheduler] Sent personal tasks reminder to user ${userId}: ${totalTasks} tasks`);
+        }
+    } catch (error) {
+        console.error('[DeadlineScheduler] Error checking personal incomplete tasks:', error);
+    }
+};
+
 // Run all deadline checks
 export const runDeadlineChecks = async (): Promise<void> => {
     console.log('[DeadlineScheduler] ========== Running deadline checks ==========');
@@ -457,6 +570,7 @@ export const runDeadlineChecks = async (): Promise<void> => {
     await checkOverdueTasks();
     await checkUpcomingTaskDeadlines();
     await checkKanbanIncompleteCards();
+    await checkPersonalTasksIncomplete();
 
     console.log('[DeadlineScheduler] ========== Deadline checks completed ==========');
 };
@@ -592,5 +706,6 @@ export default {
     checkUpcomingTaskDeadlines,
     checkTaskReminders,
     checkKanbanCardDeadlines,
-    checkKanbanIncompleteCards
+    checkKanbanIncompleteCards,
+    checkPersonalTasksIncomplete
 };

@@ -323,17 +323,52 @@ export const downloadFile = async (req: Request, res: Response) => {
         let isGoogleDoc = false;
 
         // Map Google Apps types to export types
-        if (originalMimeType === 'application/vnd.google-apps.document') {
-            mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-            name = `${originalName}.docx`;
-            isGoogleDoc = true;
-        } else if (originalMimeType === 'application/vnd.google-apps.spreadsheet') {
-            mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-            name = `${originalName}.xlsx`;
-            isGoogleDoc = true;
-        } else if (originalMimeType === 'application/vnd.google-apps.presentation') {
-            mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-            name = `${originalName}.pptx`;
+        const googleAppsExportMap: Record<string, { mimeType: string; ext: string }> = {
+            'application/vnd.google-apps.document': {
+                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                ext: '.docx'
+            },
+            'application/vnd.google-apps.spreadsheet': {
+                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                ext: '.xlsx'
+            },
+            'application/vnd.google-apps.presentation': {
+                mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                ext: '.pptx'
+            },
+            'application/vnd.google-apps.drawing': {
+                mimeType: 'application/pdf',
+                ext: '.pdf'
+            },
+            'application/vnd.google-apps.jam': {
+                mimeType: 'application/pdf',
+                ext: '.pdf'
+            },
+            'application/vnd.google-apps.script': {
+                mimeType: 'application/vnd.google-apps.script+json',
+                ext: '.json'
+            },
+        };
+
+        // Non-exportable Google Apps types (Forms, Sites, Maps, etc.)
+        const nonExportableTypes = [
+            'application/vnd.google-apps.form',
+            'application/vnd.google-apps.site',
+            'application/vnd.google-apps.map',
+            'application/vnd.google-apps.fusiontable',
+        ];
+
+        if (nonExportableTypes.includes(originalMimeType)) {
+            return res.status(400).json({
+                error: 'Loại file này không thể tải về (Google Forms, Sites, Maps...)',
+                fileType: originalMimeType
+            });
+        }
+
+        const exportConfig = googleAppsExportMap[originalMimeType];
+        if (exportConfig) {
+            mimeType = exportConfig.mimeType;
+            name = `${originalName}${exportConfig.ext}`;
             isGoogleDoc = true;
         }
 
@@ -341,14 +376,48 @@ export const downloadFile = async (req: Request, res: Response) => {
         res.setHeader('Content-Type', mimeType);
 
         if (isGoogleDoc) {
-            // Export file
+            // Export Google Docs Editor file
             const response = await drive.files.export({
                 fileId: fileId,
                 mimeType: mimeType
             }, { responseType: 'stream' });
             (response.data as any).pipe(res);
         } else {
-            // Stream normal file
+            // Stream normal binary file (including shortcuts and unknown google-apps types)
+            // For shortcuts, resolve the target file first
+            if (originalMimeType === 'application/vnd.google-apps.shortcut') {
+                const shortcutMeta = await drive.files.get({
+                    fileId: fileId,
+                    fields: 'shortcutDetails'
+                });
+                const targetId = (shortcutMeta.data as any).shortcutDetails?.targetId;
+                if (targetId) {
+                    const targetMeta = await drive.files.get({
+                        fileId: targetId,
+                        fields: 'name, mimeType'
+                    });
+                    const targetMime = targetMeta.data.mimeType || 'application/octet-stream';
+                    const targetExport = googleAppsExportMap[targetMime];
+                    if (targetExport) {
+                        res.setHeader('Content-Type', targetExport.mimeType);
+                        const targetName = `${targetMeta.data.name || originalName}${targetExport.ext}`;
+                        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(targetName)}"`);
+                        const response = await drive.files.export({
+                            fileId: targetId,
+                            mimeType: targetExport.mimeType
+                        }, { responseType: 'stream' });
+                        (response.data as any).pipe(res);
+                        return;
+                    }
+                    // Regular binary target
+                    const response = await drive.files.get({
+                        fileId: targetId,
+                        alt: 'media'
+                    }, { responseType: 'stream' });
+                    (response.data as any).pipe(res);
+                    return;
+                }
+            }
             const response = await drive.files.get({
                 fileId: fileId,
                 alt: 'media'

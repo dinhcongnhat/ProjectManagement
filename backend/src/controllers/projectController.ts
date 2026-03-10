@@ -4,9 +4,173 @@ import prisma from '../config/prisma.js';
 import { createActivity } from './activityController.js';
 import { notifyProjectAssignment, notifyProjectUpdate } from '../services/pushNotificationService.js';
 import { sendProjectAssignmentEmail } from '../services/emailService.js';
-import { getOrCreateProjectBoard } from './kanbanController.js';
 
 import { uploadFile, getFileStream, getFileStats, normalizeVietnameseFilename, deleteFile } from '../services/minioService.js';
+
+// ==================== DASHBOARD STATS ====================
+export const getDashboardStats = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const userRole = req.user?.role;
+
+        // 1. Project stats for this user
+        const projectWhere: any = userRole === 'ADMIN' 
+            ? {} 
+            : {
+                OR: [
+                    { createdById: userId },
+                    { managerId: userId },
+                    { implementers: { some: { id: userId } } },
+                    { followers: { some: { id: userId } } },
+                    { cooperators: { some: { id: userId } } },
+                ]
+            };
+
+        const projects = await prisma.project.findMany({
+            where: { ...projectWhere, parentId: null },
+            select: {
+                id: true,
+                code: true,
+                name: true,
+                status: true,
+                progress: true,
+                priority: true,
+                startDate: true,
+                endDate: true,
+                manager: { select: { id: true, name: true } },
+                children: {
+                    select: {
+                        id: true,
+                        code: true,
+                        name: true,
+                        status: true,
+                        progress: true,
+                        priority: true,
+                        manager: { select: { id: true, name: true } },
+                    },
+                    orderBy: { updatedAt: 'desc' as const },
+                },
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 10,
+        });
+
+        const allProjects = await prisma.project.findMany({
+            where: projectWhere,
+            select: { status: true, parentId: true },
+        });
+
+        const projectStats = {
+            total: allProjects.filter(p => !p.parentId).length,
+            inProgress: allProjects.filter(p => !p.parentId && p.status === 'IN_PROGRESS').length,
+            pendingApproval: allProjects.filter(p => !p.parentId && p.status === 'PENDING_APPROVAL').length,
+            completed: allProjects.filter(p => !p.parentId && p.status === 'COMPLETED').length,
+            subProjects: allProjects.filter(p => p.parentId).length,
+        };
+
+        // 2. Kanban boards stats
+        const boards = await prisma.kanbanBoard.findMany({
+            where: {
+                OR: [
+                    { ownerId: userId },
+                    { members: { some: { userId } } }
+                ]
+            },
+            select: {
+                id: true,
+                title: true,
+                background: true,
+                isProjectBoard: true,
+                lists: {
+                    orderBy: { position: 'asc' },
+                    select: {
+                        id: true,
+                        title: true,
+                        _count: { select: { cards: true } }
+                    }
+                },
+                _count: { select: { members: true } }
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 6,
+        });
+
+        const totalBoards = await prisma.kanbanBoard.count({
+            where: {
+                OR: [
+                    { ownerId: userId },
+                    { members: { some: { userId } } }
+                ]
+            }
+        });
+
+        // 3. Personal tasks stats
+        const tasks = await prisma.task.findMany({
+            where: {
+                OR: [
+                    { assigneeId: userId },
+                    { creatorId: userId }
+                ]
+            },
+            select: { status: true, type: true },
+        });
+
+        const taskStats = {
+            todo: tasks.filter(t => t.status === 'TODO').length,
+            inProgress: tasks.filter(t => t.status === 'IN_PROGRESS').length,
+            completed: tasks.filter(t => t.status === 'COMPLETED').length,
+            personal: tasks.filter(t => t.type === 'PERSONAL').length,
+            assigned: tasks.filter(t => t.type === 'ASSIGNED').length,
+        };
+
+        // 4. Kanban card counts grouped by column title (across ALL user boards)
+        const allBoardIds = await prisma.kanbanBoard.findMany({
+            where: {
+                OR: [
+                    { ownerId: userId },
+                    { members: { some: { userId } } }
+                ]
+            },
+            select: { id: true },
+        });
+        const boardIds = allBoardIds.map(b => b.id);
+
+        const kanbanLists = await prisma.kanbanList.findMany({
+            where: { boardId: { in: boardIds } },
+            select: {
+                title: true,
+                _count: { select: { cards: true } },
+            },
+        });
+
+        // Normalize column titles to standard categories
+        const kanbanStats = { canLam: 0, dangLam: 0, canReview: 0, hoanThanh: 0 };
+        for (const list of kanbanLists) {
+            const t = list.title.toLowerCase().trim();
+            if (t.includes('cần làm') || t === 'to do' || t === 'todo' || t === 'backlog') {
+                kanbanStats.canLam += list._count.cards;
+            } else if (t.includes('đang làm') || t === 'in progress' || t === 'doing') {
+                kanbanStats.dangLam += list._count.cards;
+            } else if (t.includes('review') || t.includes('cần review') || t === 'review') {
+                kanbanStats.canReview += list._count.cards;
+            } else if (t.includes('hoàn thành') || t === 'done' || t === 'completed') {
+                kanbanStats.hoanThanh += list._count.cards;
+            }
+        }
+
+        res.json({
+            projects: projects,
+            projectStats,
+            boards,
+            totalBoards,
+            taskStats,
+            kanbanStats,
+        });
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
 
 export const createProject = async (req: AuthRequest, res: Response) => {
     try {
@@ -23,6 +187,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             description,
             parentId,  // Add parentId for sub-project
             priority,
+            kanbanBoardId,  // Kanban board to add project card to
             // New fields for sub-project
             documentNumber,
             documentDate,
@@ -226,46 +391,57 @@ export const createProject = async (req: AuthRequest, res: Response) => {
             console.error('[createProject] Notification/Email error:', pushError);
         }
 
-        // Auto-create Kanban board for project with implementers
-        try {
-            if (Array.isArray(implementerIds) && implementerIds.length > 0) {
-                const board = await getOrCreateProjectBoard(project.id, projectManagerId);
-                if (board) {
-                    // Add all implementers as board members
-                    for (const implId of implementerIds) {
-                        const uid = Number(implId);
-                        if (!board.members.some(m => m.userId === uid)) {
-                            await prisma.kanbanBoardMember.create({
-                                data: { boardId: board.id, userId: uid, role: 'MEMBER' }
-                            }).catch(() => { });
-                        }
+        // ===== Add project as card to selected kanban board =====
+        if (kanbanBoardId) {
+            try {
+                const targetBoard = await prisma.kanbanBoard.findUnique({
+                    where: { id: Number(kanbanBoardId) },
+                    include: { 
+                        lists: { orderBy: { position: 'asc' } },
+                        members: true
                     }
-                    // Add followers as board members too
-                    if (Array.isArray(followerIds)) {
-                        for (const fId of followerIds) {
-                            const uid = Number(fId);
-                            if (!board.members.some(m => m.userId === uid)) {
-                                await prisma.kanbanBoardMember.create({
-                                    data: { boardId: board.id, userId: uid, role: 'ADMIN' }
-                                }).catch(() => { });
+                });
+                if (targetBoard) {
+                    // Find "Cần làm" list (first list / todo column)
+                    const todoList = targetBoard.lists.find(l => l.title.toLowerCase().includes('cần làm')) || targetBoard.lists[0];
+                    if (todoList) {
+                        const maxPos = await prisma.kanbanCard.aggregate({
+                            where: { listId: todoList.id },
+                            _max: { position: true }
+                        });
+                        await prisma.kanbanCard.create({
+                            data: {
+                                title: `${code} - ${name}`,
+                                description: description || null,
+                                position: (maxPos._max.position ?? -1) + 1,
+                                dueDate: endDate ? new Date(endDate) : null,
+                                listId: todoList.id,
+                                creatorId: req.user!.id,
+                                projectId: project.id,
+                                assignees: {
+                                    connect: Array.isArray(implementerIds) 
+                                        ? implementerIds.map((uid: string | number) => ({ id: Number(uid) }))
+                                        : []
+                                }
                             }
-                        }
-                    }
-                    // Add cooperators as board members too
-                    if (Array.isArray(cooperatorIds)) {
-                        for (const cId of cooperatorIds) {
-                            const uid = Number(cId);
-                            if (!board.members.some(m => m.userId === uid)) {
+                        });
+                        // Add project members as board members if not already
+                        const memberIds = new Set<number>();
+                        if (projectManagerId) memberIds.add(projectManagerId);
+                        if (Array.isArray(implementerIds)) implementerIds.forEach((id: string | number) => memberIds.add(Number(id)));
+                        if (Array.isArray(cooperatorIds)) cooperatorIds.forEach((id: string | number) => memberIds.add(Number(id)));
+                        for (const uid of memberIds) {
+                            if (!targetBoard.members.some(m => m.userId === uid)) {
                                 await prisma.kanbanBoardMember.create({
-                                    data: { boardId: board.id, userId: uid, role: 'MEMBER' }
-                                }).catch(() => { });
+                                    data: { boardId: targetBoard.id, userId: uid, role: 'MEMBER' }
+                                }).catch(() => {});
                             }
                         }
                     }
                 }
+            } catch (kanbanCardError) {
+                console.error('[createProject] Kanban card creation error:', kanbanCardError);
             }
-        } catch (kanbanError) {
-            console.error('[createProject] Kanban board creation error:', kanbanError);
         }
 
         res.status(201).json(project);
@@ -999,6 +1175,7 @@ export const createSubProject = async (req: AuthRequest, res: Response) => {
             managerId,
             description,
             priority,
+            kanbanBoardId,  // Kanban board to add sub-project card to
             documentNumber,
             documentDate,
             implementingUnit,
@@ -1158,6 +1335,58 @@ export const createSubProject = async (req: AuthRequest, res: Response) => {
             }
         } catch (pushError) {
             console.error('[createSubProject] Notification/Email error:', pushError);
+        }
+
+        // ===== Add sub-project as card to selected kanban board =====
+        if (kanbanBoardId) {
+            try {
+                const targetBoard = await prisma.kanbanBoard.findUnique({
+                    where: { id: Number(kanbanBoardId) },
+                    include: { 
+                        lists: { orderBy: { position: 'asc' } },
+                        members: true
+                    }
+                });
+                if (targetBoard) {
+                    const todoList = targetBoard.lists.find(l => l.title.toLowerCase().includes('cần làm')) || targetBoard.lists[0];
+                    if (todoList) {
+                        const maxPos = await prisma.kanbanCard.aggregate({
+                            where: { listId: todoList.id },
+                            _max: { position: true }
+                        });
+                        await prisma.kanbanCard.create({
+                            data: {
+                                title: `${code} - ${name}`,
+                                description: description || null,
+                                position: (maxPos._max.position ?? -1) + 1,
+                                dueDate: endDate ? new Date(endDate) : null,
+                                listId: todoList.id,
+                                creatorId: userId!,
+                                projectId: project.id,
+                                assignees: {
+                                    connect: Array.isArray(implementerIds) 
+                                        ? implementerIds.map((uid: string | number) => ({ id: Number(uid) }))
+                                        : []
+                                }
+                            }
+                        });
+                        // Add members to board if not already
+                        const memberIds = new Set<number>();
+                        if (Number(managerId)) memberIds.add(Number(managerId));
+                        if (Array.isArray(implementerIds)) implementerIds.forEach((id: string | number) => memberIds.add(Number(id)));
+                        if (Array.isArray(cooperatorIds)) cooperatorIds.forEach((id: string | number) => memberIds.add(Number(id)));
+                        for (const uid of memberIds) {
+                            if (!targetBoard.members.some(m => m.userId === uid)) {
+                                await prisma.kanbanBoardMember.create({
+                                    data: { boardId: targetBoard.id, userId: uid, role: 'MEMBER' }
+                                }).catch(() => {});
+                            }
+                        }
+                    }
+                }
+            } catch (kanbanCardError) {
+                console.error('[createSubProject] Kanban card creation error:', kanbanCardError);
+            }
         }
 
         res.status(201).json(project);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, File, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, FileText, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Send, File, X, Loader2, MessageSquare, Mic, MicOff, Play, Pause, FileText, RefreshCw, Wifi, WifiOff, FolderUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DiscussionOnlyOfficeViewer } from './DiscussionOnlyOfficeViewer';
 import { FileDownloadButton } from './ui/DownloadOptions';
@@ -23,6 +23,8 @@ interface Message {
 
 interface DiscussionPanelProps {
     projectId: number;
+    onUnreadCountChange?: (count: number) => void;
+    isVisible?: boolean;
 }
 
 // Check if running as installed PWA
@@ -68,7 +70,7 @@ const resolveAttachmentUrl = (url: string | null): string | null => {
     return `${baseUrl}${url}`;
 };
 
-export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
+export const DiscussionPanel = ({ projectId, onUnreadCountChange, isVisible = true }: DiscussionPanelProps) => {
     const { user, token } = useAuth();
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState('');
@@ -85,6 +87,8 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [wsConnected, setWsConnected] = useState(false);
     const [typingUsers, setTypingUsers] = useState<{ userId: number; userName: string }[]>([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +100,7 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
     const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const shouldScrollRef = useRef(true);
+    const isVisibleRef = useRef(isVisible);
 
     const scrollToBottom = (force = false) => {
         if (force || shouldScrollRef.current) {
@@ -190,6 +195,10 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                     if (prev.some(m => m.id === data.message.id)) return prev;
                     return [...prev, data.message];
                 });
+                // Track unread count if message is from another user and panel is not visible
+                if (data.message.sender?.id !== user?.id && !isVisibleRef.current) {
+                    setUnreadCount(prev => prev + 1);
+                }
                 // Scroll to bottom for new messages
                 setTimeout(() => scrollToBottom(true), 100);
             }
@@ -241,6 +250,19 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
         };
     }, [token, projectId, user?.id]);
 
+    // Track visibility changes and reset unread count
+    useEffect(() => {
+        isVisibleRef.current = isVisible;
+        if (isVisible) {
+            setUnreadCount(0);
+        }
+    }, [isVisible]);
+
+    // Notify parent of unread count changes
+    useEffect(() => {
+        onUnreadCountChange?.(unreadCount);
+    }, [unreadCount, onUnreadCountChange]);
+
     // Initial fetch
     useEffect(() => {
         fetchMessages();
@@ -278,42 +300,92 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
     // Handle file selection - auto send when file is selected
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
 
         // Reset input
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
 
-        // Auto send the file immediately
+        // If single file, auto send immediately
+        if (files.length === 1) {
+            const file = files[0];
+            setSending(true);
+            shouldScrollRef.current = true;
+
+            try {
+                const authToken = localStorage.getItem('token');
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${API_URL}/projects/${projectId}/messages/file`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error('Failed to send file');
+
+                const sentMessage = await response.json();
+                setMessages(prev => {
+                    if (prev.some(m => m.id === sentMessage.id)) return prev;
+                    return [...prev, sentMessage];
+                });
+                setTimeout(() => scrollToBottom(true), 100);
+            } catch (err) {
+                setError('Không thể gửi file');
+                console.error('Error sending file:', err);
+            } finally {
+                setSending(false);
+            }
+        } else {
+            // Multiple files - add to pending queue
+            setPendingFiles(prev => [...prev, ...Array.from(files)]);
+        }
+    };
+
+    // Send all pending files sequentially
+    const sendPendingFiles = async () => {
+        if (pendingFiles.length === 0) return;
+
         setSending(true);
         shouldScrollRef.current = true;
 
         try {
             const authToken = localStorage.getItem('token');
-            const formData = new FormData();
-            formData.append('file', file);
 
-            const response = await fetch(`${API_URL}/projects/${projectId}/messages/file`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${authToken}`
-                },
-                body: formData
-            });
+            for (const file of pendingFiles) {
+                const formData = new FormData();
+                formData.append('file', file);
 
-            if (!response.ok) throw new Error('Failed to send file');
+                const response = await fetch(`${API_URL}/projects/${projectId}/messages/file`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: formData
+                });
 
-            const sentMessage = await response.json();
-            setMessages(prev => {
-                if (prev.some(m => m.id === sentMessage.id)) return prev;
-                return [...prev, sentMessage];
-            });
+                if (!response.ok) {
+                    console.error(`Failed to send file: ${file.name}`);
+                    continue;
+                }
+
+                const sentMessage = await response.json();
+                setMessages(prev => {
+                    if (prev.some(m => m.id === sentMessage.id)) return prev;
+                    return [...prev, sentMessage];
+                });
+            }
+
+            setPendingFiles([]);
             setTimeout(() => scrollToBottom(true), 100);
         } catch (err) {
-            setError('Không thể gửi file');
-            console.error('Error sending file:', err);
+            setError('Không thể gửi một số file');
+            console.error('Error sending files:', err);
         } finally {
             setSending(false);
         }
@@ -853,6 +925,45 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
 
             {/* Input area */}
             <div className="p-3 sm:p-4 border-t border-gray-100 flex-shrink-0 bg-white safe-area-bottom sticky bottom-0">
+                {/* Pending files preview */}
+                {pendingFiles.length > 0 && (
+                    <div className="mb-2 p-2 bg-blue-50 rounded-xl border border-blue-200">
+                        <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-semibold text-blue-700 flex items-center gap-1">
+                                <FolderUp size={14} />
+                                {pendingFiles.length} file sẵn sàng gửi
+                            </span>
+                            <button
+                                onClick={() => setPendingFiles([])}
+                                className="text-xs text-gray-500 hover:text-red-500 transition-colors"
+                            >
+                                Xóa tất cả
+                            </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 mb-2 max-h-20 overflow-y-auto">
+                            {pendingFiles.map((file, idx) => (
+                                <div key={idx} className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg text-xs border border-blue-100">
+                                    <FileText size={12} className="text-blue-500 shrink-0" />
+                                    <span className="truncate max-w-[120px]">{file.name}</span>
+                                    <button
+                                        onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))}
+                                        className="text-gray-400 hover:text-red-500 shrink-0"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={sendPendingFiles}
+                            disabled={sending}
+                            className="w-full py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-xs font-medium flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
+                        >
+                            {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                            {sending ? 'Đang gửi...' : `Gửi ${pendingFiles.length} file`}
+                        </button>
+                    </div>
+                )}
                 <div className="flex items-center gap-1 sm:gap-2">
                     {/* File attachment button */}
                     <input
@@ -862,16 +973,21 @@ export const DiscussionPanel = ({ projectId }: DiscussionPanelProps) => {
                         className="hidden"
                         accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
                         title="Chọn file để đính kèm"
+                        multiple
                     />
                     <AttachmentPicker
                         token={token || ''}
                         onFilesSelected={(files) => {
-                            if (files.length > 0) {
+                            if (files.length === 1) {
+                                // Single file - set as selected for immediate send
                                 setSelectedFile(files[0]);
+                            } else if (files.length > 1) {
+                                // Multiple files - add to pending queue
+                                setPendingFiles(prev => [...prev, ...files]);
                             }
                         }}
-                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
-                        multiple={false}
+                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar,.mp4,.mov,.avi,.mp3,.wav"
+                        multiple={true}
                         buttonClassName="p-2.5 sm:p-2 text-gray-500 hover:bg-gray-100 active:bg-gray-200 rounded-lg touch-manipulation shrink-0"
                         iconSize={22}
                     />

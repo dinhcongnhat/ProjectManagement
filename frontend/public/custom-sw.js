@@ -1,6 +1,6 @@
-// Version: 1.0.214
+// Version: 1.0.236
 
-const CACHE_NAME = 'pwa-cache-1771894306238';
+const CACHE_NAME = 'pwa-cache-1773025956309';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -232,9 +232,9 @@ self.addEventListener('notificationclick', (event) => {
   // The app will handle role-based routing on load
   let fallbackUrl = '/';
   if (data.type === 'chat' && data.conversationId) {
-    fallbackUrl = `/?openChat=${data.conversationId}`;
+    fallbackUrl = `/?notificationType=chat&conversationId=${data.conversationId}`;
   } else if (data.type === 'mention' && data.conversationId) {
-    fallbackUrl = `/?openChat=${data.conversationId}`;
+    fallbackUrl = `/?notificationType=chat&conversationId=${data.conversationId}`;
   } else if (data.type === 'mention' && data.projectId) {
     fallbackUrl = `/?notificationType=mention&projectId=${data.projectId}`;
   } else if (data.type === 'discussion' && data.projectId) {

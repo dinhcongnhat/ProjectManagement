@@ -4,7 +4,7 @@ import {
     TrendingUp, Sparkles, ArrowRight, ChevronDown, ChevronRight,
     CornerDownRight, BarChart3, Target, Zap, Quote
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import styled from '@emotion/styled';
 import { Helmet } from 'react-helmet-async';
@@ -90,7 +90,7 @@ const StatCardStyled = styled(motion.div)`
   position: relative;
   overflow: hidden;
   transition: all 0.3s;
-  cursor: default;
+  cursor: pointer;
 
   &:hover {
     box-shadow: 0 8px 30px -8px rgba(0,0,0,0.12);
@@ -216,13 +216,14 @@ const itemVariants = {
 };
 
 /* ── Sub-Components ── */
-const StatCard = ({ icon: Icon, label, value, gradient }: {
+const StatCard = ({ icon: Icon, label, value, gradient, onClick }: {
     icon: React.ComponentType<{ size?: number }>;
     label: string;
     value: number;
     gradient: string;
+    onClick?: () => void;
 }) => (
-    <StatCardStyled variants={itemVariants}>
+    <StatCardStyled variants={itemVariants} onClick={onClick}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
             <StatIconWrap gradient={gradient}><Icon size={20} /></StatIconWrap>
             <StatValue>{value}</StatValue>
@@ -297,6 +298,7 @@ const Dashboard = () => {
     const [stats, setStats] = useState({ totalProjects: 0, totalUsers: 0, completedProjects: 0, pendingProjects: 0 });
     const [projects, setProjects] = useState<Project[]>([]);
     const { token, user } = useAuth();
+    const navigate = useNavigate();
     const [quoteIndex, setQuoteIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
 
     // Auto-cycle quotes every 8 seconds
@@ -337,10 +339,10 @@ const Dashboard = () => {
         : 0;
 
     const statCards = [
-        { icon: FolderKanban, label: 'Tổng dự án', value: stats.totalProjects, gradient: 'linear-gradient(135deg, #3b82f6, #6366f1)' },
-        { icon: Users, label: 'Thành viên', value: stats.totalUsers, gradient: 'linear-gradient(135deg, #8b5cf6, #a855f7)' },
-        { icon: CheckCircle2, label: 'Hoàn thành', value: stats.completedProjects, gradient: 'linear-gradient(135deg, #10b981, #059669)' },
-        { icon: AlertCircle, label: 'Chờ duyệt', value: stats.pendingProjects, gradient: 'linear-gradient(135deg, #f59e0b, #d97706)' },
+        { icon: FolderKanban, label: 'Tổng dự án', value: stats.totalProjects, gradient: 'linear-gradient(135deg, #3b82f6, #6366f1)', onClick: () => navigate('/admin/projects') },
+        { icon: Users, label: 'Thành viên', value: stats.totalUsers, gradient: 'linear-gradient(135deg, #8b5cf6, #a855f7)', onClick: () => navigate('/admin/users') },
+        { icon: CheckCircle2, label: 'Hoàn thành', value: stats.completedProjects, gradient: 'linear-gradient(135deg, #10b981, #059669)', onClick: () => navigate('/admin/projects?status=COMPLETED') },
+        { icon: AlertCircle, label: 'Chờ duyệt', value: stats.pendingProjects, gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', onClick: () => navigate('/admin/projects?status=PENDING_APPROVAL') },
     ];
 
     return (
@@ -413,9 +415,9 @@ const Dashboard = () => {
                                         style={{
                                             position: 'absolute', left: 24, right: 24, top: 0, bottom: 0,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            fontSize: 'clamp(13px, 2vw, 15px)', fontWeight: 700, lineHeight: 1.5,
-                                            textAlign: 'center', fontStyle: 'italic',
-                                            background: 'linear-gradient(90deg, #fde047, #f59e0b, #ef4444, #f59e0b, #fde047)',
+                                            fontSize: 'clamp(12px, 2vw, 14px)', fontWeight: 700, lineHeight: 1.5,
+                                            textAlign: 'center', fontStyle: 'italic', letterSpacing: '0.5px',
+                                            background: 'linear-gradient(90deg, #ff015eff, #ffa200ff, #f87171, #f59e0b, #ffe625ff)',
                                             backgroundSize: '200% auto',
                                             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                                             backgroundClip: 'text',

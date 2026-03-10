@@ -17,7 +17,7 @@ export const createTask = async (req: AuthRequest, res: Response) => {
             data: {
                 title,
                 description,
-                status: 'TODO',
+                status: req.body.status || 'TODO',
                 type: taskType,
                 startDate: startDate ? new Date(startDate) : null,
                 endDate: endDate ? new Date(endDate) : null,

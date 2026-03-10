@@ -107,6 +107,7 @@ const ProjectDetails = () => {
     const [editingSubProject, setEditingSubProject] = useState<any>(null);
     const [users, setUsers] = useState<{ id: number; name: string; role: string }[]>([]);
     const [subProjectPage, setSubProjectPage] = useState(1);
+    const [unreadDiscussionCount, setUnreadDiscussionCount] = useState(0);
     const SUBPROJECTS_PER_PAGE = 10;
     const { showConfirm, showSuccess, showError } = useDialog();
 
@@ -345,7 +346,7 @@ const ProjectDetails = () => {
                         {[
                             { id: 'info', label: 'Thông tin', icon: FileText },
                             { id: 'workflow', label: 'Tiến trình', icon: Target },
-                            { id: 'discussion', label: 'Thảo luận', icon: MessageSquare },
+                            { id: 'discussion', label: 'Thảo luận', icon: MessageSquare, badge: unreadDiscussionCount },
                             { id: 'activity', label: 'Lịch sử', icon: History }
                         ].map(tab => {
                             const Icon = tab.icon;
@@ -353,14 +354,24 @@ const ProjectDetails = () => {
                             return (
                                 <button
                                     key={tab.id}
-                                    onClick={() => setActiveTab(tab.id as any)}
-                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-200 ${isActive
+                                    onClick={() => {
+                                        setActiveTab(tab.id as any);
+                                        if (tab.id === 'discussion') {
+                                            setUnreadDiscussionCount(0);
+                                        }
+                                    }}
+                                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-200 relative ${isActive
                                         ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25'
                                         : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                                         }`}
                                 >
                                     <Icon size={18} />
                                     <span className="hidden sm:inline">{tab.label}</span>
+                                    {'badge' in tab && tab.badge && tab.badge > 0 && !isActive && (
+                                        <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1.5 flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full shadow-lg shadow-red-500/30 animate-pulse">
+                                            {tab.badge > 99 ? '99+' : tab.badge}
+                                        </span>
+                                    )}
                                 </button>
                             );
                         })}
@@ -767,11 +778,15 @@ const ProjectDetails = () => {
                     />
                 )}
 
-                {activeTab === 'discussion' && (
+                <div style={{ display: activeTab === 'discussion' ? 'block' : 'none' }}>
                     <div className="bg-white rounded-2xl shadow-lg shadow-gray-100 overflow-hidden border border-gray-100">
-                        <DiscussionPanel projectId={project.id} />
+                        <DiscussionPanel
+                            projectId={project.id}
+                            isVisible={activeTab === 'discussion'}
+                            onUnreadCountChange={setUnreadDiscussionCount}
+                        />
                     </div>
-                )}
+                </div>
 
                 {activeTab === 'activity' && (
                     <div className="bg-white rounded-2xl shadow-lg shadow-gray-100 overflow-hidden border border-gray-100">

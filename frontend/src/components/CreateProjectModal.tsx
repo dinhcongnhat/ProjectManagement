@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, X, ChevronDown, Check, CloudUpload, FolderTree, Loader2, FolderOpen } from 'lucide-react';
+import { Calendar, X, ChevronDown, Check, CloudUpload, FolderTree, Loader2, FolderOpen, Columns3 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/api';
 import { useDialog } from './ui/Dialog';
@@ -79,6 +79,8 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
     const [showFilePicker, setShowFilePicker] = useState(false);
     const [showDriveBrowser, setShowDriveBrowser] = useState(false);
     const [selectedLinks, setSelectedLinks] = useState<{ name: string; url: string; type: string }[]>([]);
+    const [kanbanBoards, setKanbanBoards] = useState<{ id: number; title: string; background: string }[]>([]);
+    const [selectedBoardId, setSelectedBoardId] = useState<string>('');
 
     // Upload Progress State
     const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -134,9 +136,24 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
             }
         };
 
+        const fetchKanbanBoards = async () => {
+            try {
+                const response = await fetch(`${API_URL}/kanban/boards`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setKanbanBoards(data.map((b: any) => ({ id: b.id, title: b.title, background: b.background })));
+                }
+            } catch (error) {
+                console.error('Error fetching kanban boards:', error);
+            }
+        };
+
         if (token) {
             fetchUsers();
             fetchParentProject();
+            fetchKanbanBoards();
         }
     }, [isOpen, token, parentId]);
 
@@ -238,6 +255,7 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                 implementerIds: JSON.stringify(formData.implementerIds),
                 cooperatorIds: JSON.stringify(formData.cooperatorIds),
                 priority: formData.priority,
+                kanbanBoardId: selectedBoardId || undefined,
                 // New fields for sub-project
                 ...(parentProject && {
                     documentNumber: formData.documentNumber,
@@ -847,6 +865,30 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
                                 <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={formData.implementerIds} />
                                 <UserMultiSelect label="Người phối hợp" name="cooperatorIds" selectedIds={formData.cooperatorIds} />
 
+                                {/* Kanban Board Selector */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                        <span className="flex items-center gap-1.5">
+                                            <Columns3 size={14} className="text-indigo-500" />
+                                            Thêm vào bảng làm việc nhóm
+                                        </span>
+                                    </label>
+                                    <div className="relative">
+                                        <select
+                                            value={selectedBoardId}
+                                            onChange={(e) => setSelectedBoardId(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white text-sm"
+                                        >
+                                            <option value="">-- Không thêm vào bảng --</option>
+                                            {kanbanBoards.map(b => (
+                                                <option key={b.id} value={b.id}>{b.title}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">Dự án sẽ được tạo thẻ trong cột "Cần làm" của bảng được chọn</p>
+                                </div>
+
                                 <div className="mt-4">
                                     <FileAttachment />
                                 </div>
@@ -1013,6 +1055,30 @@ export const CreateProjectModal = ({ isOpen, onClose, onSuccess, parentId }: Cre
 
                                 <UserMultiSelect label="Người thực hiện" name="implementerIds" selectedIds={formData.implementerIds} />
                                 <UserMultiSelect label="Phối hợp thực hiện" name="cooperatorIds" selectedIds={formData.cooperatorIds} />
+
+                                {/* Kanban Board Selector */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                        <span className="flex items-center gap-1.5">
+                                            <Columns3 size={14} className="text-indigo-500" />
+                                            Thêm vào bảng làm việc nhóm
+                                        </span>
+                                    </label>
+                                    <div className="relative">
+                                        <select
+                                            value={selectedBoardId}
+                                            onChange={(e) => setSelectedBoardId(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none bg-white text-sm"
+                                        >
+                                            <option value="">-- Không thêm vào bảng --</option>
+                                            {kanbanBoards.map(b => (
+                                                <option key={b.id} value={b.id}>{b.title}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-2.5 text-gray-400 pointer-events-none" size={16} />
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">Dự án sẽ được tạo thẻ trong cột "Cần làm" của bảng được chọn</p>
+                                </div>
 
                                 <div className="mt-4">
                                     <label className="block text-sm font-medium text-gray-700 mb-1.5">Mô tả</label>

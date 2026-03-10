@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Loader2, AlertCircle } from 'lucide-react';
-import { API_URL } from '../config/api';
+import api, { API_URL } from '../config/api';
 
 interface ProjectAttachmentViewerProps {
     attachmentId: number;
@@ -64,7 +64,27 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
             initializingRef.current = true;
 
             try {
-                // Get config from backend
+                // Check if image - fetch as blob with auth headers
+                const ext = fileName.split('.').pop()?.toLowerCase() || '';
+                const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+                if (imageExtensions.includes(ext)) {
+                    try {
+                        // Fetch the image blob directly using our api wrapper
+                        const response = await api.get(`/projects/attachments/${attachmentId}/download`, {
+                            responseType: 'blob'
+                        });
+                        const blobUrl = URL.createObjectURL(response.data);
+                        setImageUrl(blobUrl);
+                        setLoading(false);
+                    } catch (err: any) {
+                        console.error('Error fetching image blob:', err);
+                        const errorMsg = err?.response?.data?.message || err?.message || 'Lỗi mạng hoặc server';
+                        throw new Error(`Không thể tải hình ảnh (${errorMsg})`);
+                    }
+                    return;
+                }
+
+                // Get config from backend for non-image files
                 const response = await fetch(`${API_URL}/projects/attachments/${attachmentId}/presigned-url`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
@@ -74,15 +94,6 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
                 }
 
                 const data = await response.json();
-
-                // Check if image
-                const ext = fileName.split('.').pop()?.toLowerCase() || '';
-                const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
-                if (imageExtensions.includes(ext)) {
-                    setImageUrl(data.url);
-                    setLoading(false);
-                    return;
-                }
 
                 const onlyofficeUrl = data.onlyofficeUrl || 'https://jtsconlyoffice.duckdns.org';
 
@@ -147,7 +158,7 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
 
                 editorInstanceRef.current = new window.DocsAPI.DocEditor(editorId, config);
             } catch (err) {
-                console.error('Error initializing OnlyOffice:', err);
+                console.error('Error initializing viewer:', err);
                 setError(err instanceof Error ? err.message : 'Lỗi không xác định');
                 setLoading(false);
             }
@@ -156,6 +167,10 @@ export const ProjectAttachmentViewer = ({ attachmentId, fileName, onClose, token
         initEditor();
 
         return () => {
+            // Revoke blob URL if it was created
+            if (imageUrl && imageUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(imageUrl);
+            }
             if (editorInstanceRef.current && typeof (editorInstanceRef.current as any).destroyEditor === 'function') {
                 try {
                     (editorInstanceRef.current as any).destroyEditor();

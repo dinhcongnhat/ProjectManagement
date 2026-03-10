@@ -534,14 +534,13 @@ export const downloadAttachment = async (req: Request, res: Response): Promise<v
             return;
         }
 
-        const { getFileStream, getFileStats } = await import('../services/minioService.js');
-        const fileStream = await getFileStream(message.attachment);
-        const stats = await getFileStats(message.attachment);
+        const { proxyFileViaPresignedUrl } = await import('../services/minioService.js');
+        const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(message.attachment);
 
-        res.setHeader('Content-Type', stats.metaData['content-type'] || 'application/octet-stream');
-        res.setHeader('Content-Length', stats.size);
+        res.setHeader('Content-Type', contentType || 'application/octet-stream');
+        res.setHeader('Content-Length', contentLength);
 
-        fileStream.pipe(res);
+        stream.pipe(res);
     } catch (error) {
         console.error('Error downloading attachment:', error);
         res.status(500).json({ error: 'Failed to download attachment' });
@@ -566,24 +565,23 @@ export const serveAttachment = async (req: Request, res: Response): Promise<void
             return;
         }
 
-        const { getFileStream, getFileStats } = await import('../services/minioService.js');
-        const fileStream = await getFileStream(message.attachment);
-        const stats = await getFileStats(message.attachment);
+        const { proxyFileViaPresignedUrl } = await import('../services/minioService.js');
+        const { stream, contentType, contentLength } = await proxyFileViaPresignedUrl(message.attachment);
 
         // Set appropriate content type
-        const contentType = stats.metaData['content-type'] || 'application/octet-stream';
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Length', stats.size);
+        const resolvedContentType = contentType || 'application/octet-stream';
+        res.setHeader('Content-Type', resolvedContentType);
+        res.setHeader('Content-Length', contentLength);
 
         // For images, allow caching
-        if (contentType.startsWith('image/')) {
+        if (resolvedContentType.startsWith('image/')) {
             res.setHeader('Cache-Control', 'public, max-age=3600');
         }
 
         // Allow CORS
         res.setHeader('Access-Control-Allow-Origin', '*');
 
-        fileStream.pipe(res);
+        stream.pipe(res);
     } catch (error) {
         console.error('Error serving attachment:', error);
         res.status(500).json({ error: 'Failed to serve attachment' });

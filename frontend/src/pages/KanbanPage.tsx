@@ -9,7 +9,7 @@ import {
     Plus, X, MoreHorizontal, Users, Calendar, MessageSquare, CheckSquare,
     Trash2, Edit3, ChevronLeft, UserPlus, Clock,
     Star, ShieldCheck, Paperclip, Download, Eye, FileText, Image, Film, HardDrive, FolderOpen,
-    BarChart3, Layout, Upload, ClipboardCheck, Search
+    BarChart3, Layout, Upload, ClipboardCheck, Search, FolderUp, Loader2
 } from 'lucide-react';
 import {
     DndContext,
@@ -37,6 +37,8 @@ import { FilePickerDialog } from '../components/ui/FilePickerDialog';
 import type { SelectedFile } from '../components/ui/FilePickerDialog';
 import { GoogleDriveBrowser } from '../components/GoogleDrive/GoogleDriveBrowser';
 import { GoogleDriveIcon } from '../components/ui/AttachmentPicker';
+import { FolderPickerDialog } from '../components/ui/FolderPickerDialog';
+import { KanbanFolderViewer } from '../components/KanbanFolderViewer';
 
 // ==================== TYPES ====================
 interface BoardMember {
@@ -126,6 +128,9 @@ interface KanbanAttachment {
     category: string; // 'attachment' or 'completion'
     googleDriveFileId?: string;
     googleDriveLink?: string;
+    isFolder?: boolean;
+    folderName?: string;
+    relativePath?: string;
     createdAt: string;
     uploadedBy: { id: number; name: string };
 }
@@ -678,6 +683,14 @@ const KanbanPage: React.FC = () => {
     const { socketRef, connected } = useWebSocket(token);
     const isDark = resolvedTheme === 'dark';
 
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 640);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     // View state
     const [view, setView] = useState<'boards' | 'board' | 'gantt'>('boards');
     const [selectedBoard, setSelectedBoard] = useState<KanbanBoard | null>(null);
@@ -717,9 +730,17 @@ const KanbanPage: React.FC = () => {
     const [previewIsOffice, setPreviewIsOffice] = useState(false);
     const [kanbanOnlyOfficeId, setKanbanOnlyOfficeId] = useState<number | null>(null);
     const attachFileRef = React.useRef<HTMLInputElement>(null);
+    const attachFolderRef = React.useRef<HTMLInputElement>(null);
     const completionFileRef = React.useRef<HTMLInputElement>(null);
+    const completionFolderRef = React.useRef<HTMLInputElement>(null);
     const attachMenuRef = React.useRef<HTMLDivElement>(null);
     const [uploadingCompletion, setUploadingCompletion] = useState(false);
+    const [uploadingFolder, setUploadingFolder] = useState(false);
+    const [folderUploadProgress, setFolderUploadProgress] = useState(0);
+    const [viewingFolder, setViewingFolder] = useState<{ cardId: number; folderName: string } | null>(null);
+    const [showFolderPicker, setShowFolderPicker] = useState(false);
+    const [showCompletionFolderPicker, setShowCompletionFolderPicker] = useState(false);
+    const [folderPickerCategory, setFolderPickerCategory] = useState<'attachment' | 'completion'>('attachment');
 
     // Member management
     const [showMembers, setShowMembers] = useState(false);
@@ -729,6 +750,7 @@ const KanbanPage: React.FC = () => {
     // DnD
     const [, setActiveId] = useState<string | null>(null);
     const [activeCard, setActiveCard] = useState<KanbanCard | null>(null);
+    const dragOriginalListIdRef = useRef<number | null>(null);
 
     // Mobile column tab
     const [mobileActiveListIndex, setMobileActiveListIndex] = useState(0);
@@ -1385,6 +1407,112 @@ const KanbanPage: React.FC = () => {
         }
     };
 
+    // ==================== FOLDER UPLOAD ====================
+    const handleUploadFolder = async (files: FileList, category: 'attachment' | 'completion' = 'attachment') => {
+        if (!selectedCard || !files || files.length === 0) return;
+
+        // Extract folder name from webkitRelativePath
+        const firstFile = files[0] as any;
+        const relativePath = firstFile.webkitRelativePath || firstFile.name;
+        const folderName = relativePath.split('/')[0];
+
+        if (!folderName) return;
+
+        const setter = category === 'completion' ? setUploadingCompletion : setUploadingAttachment;
+        setUploadingFolder(true);
+        setter(true);
+        setFolderUploadProgress(0);
+
+        try {
+            const formData = new FormData();
+            const relativePaths: string[] = [];
+
+            Array.from(files).forEach(file => {
+                formData.append('files', file);
+                const fAny = file as any;
+                const relPath = fAny.webkitRelativePath || file.name;
+                // Remove the root folder name from relative path
+                const pathParts = relPath.split('/');
+                pathParts.shift(); // Remove root folder name
+                relativePaths.push(pathParts.join('/'));
+            });
+
+            formData.append('folderName', folderName);
+            formData.append('relativePaths', JSON.stringify(relativePaths));
+            formData.append('category', category);
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${API_URL}/kanban/cards/${selectedCard.id}/attachments/folder`);
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    setFolderUploadProgress(Math.round((e.loaded / e.total) * 100));
+                }
+            };
+
+            await new Promise<void>((resolve, reject) => {
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            setCardAttachments(prev => [...(data.attachments || []), ...prev]);
+                        } catch { /* ignore */ }
+                        resolve();
+                    } else {
+                        reject(new Error('Upload failed'));
+                    }
+                };
+                xhr.onerror = () => reject(new Error('Upload failed'));
+                xhr.send(formData);
+            });
+        } catch (error) {
+            console.error('Error uploading folder:', error);
+        } finally {
+            setUploadingFolder(false);
+            setter(false);
+            setFolderUploadProgress(0);
+        }
+    };
+
+    const handleUploadFolderFromStorage = async (folder: { id: number; name: string }, category: 'attachment' | 'completion' = 'attachment') => {
+        if (!selectedCard) return;
+        const setter = category === 'completion' ? setUploadingCompletion : setUploadingAttachment;
+        setter(true);
+        try {
+            const res = await api.post(`/kanban/cards/${selectedCard.id}/attachments/folder-from-storage`, {
+                folderId: folder.id,
+                category
+            });
+            setCardAttachments(prev => [...(res.data.attachments || []), ...prev]);
+        } catch (error) {
+            console.error('Error uploading folder from storage:', error);
+        } finally {
+            setter(false);
+            setShowFolderPicker(false);
+            setShowCompletionFolderPicker(false);
+        }
+    };
+
+    const handleDeleteCardFolder = async (cardId: number, folderName: string) => {
+        if (!confirm(`Bạn có chắc muốn xóa thư mục "${folderName}" và tất cả tệp bên trong?`)) return;
+        try {
+            const response = await fetch(`${API_URL}/kanban/cards/${cardId}/attachments/folder`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ folderName })
+            });
+            if (response.ok) {
+                setCardAttachments(prev => prev.filter(a => !(a.isFolder && a.folderName === folderName)));
+            }
+        } catch (error) {
+            console.error('Error deleting folder:', error);
+        }
+    };
+
 
     const handleDeleteAttachment = async (attachmentId: number) => {
         try {
@@ -1547,10 +1675,15 @@ const KanbanPage: React.FC = () => {
 
         if (String(active.id).startsWith('card-')) {
             const cardId = Number(String(active.id).replace('card-', ''));
+            // Store original listId in ref so handleDragOver state changes don't overwrite it
+            dragOriginalListIdRef.current = (active.data.current as any)?.listId || null;
             for (const list of selectedBoard?.lists || []) {
                 const card = list.cards.find(c => c.id === cardId);
                 if (card) {
                     setActiveCard(card);
+                    if (!dragOriginalListIdRef.current) {
+                        dragOriginalListIdRef.current = list.id;
+                    }
                     break;
                 }
             }
@@ -1632,6 +1765,8 @@ const KanbanPage: React.FC = () => {
         const { active, over } = event;
         setActiveId(null);
         setActiveCard(null);
+        const savedOriginalListId = dragOriginalListIdRef.current;
+        dragOriginalListIdRef.current = null;
 
         if (!over || !selectedBoard) return;
 
@@ -1666,8 +1801,8 @@ const KanbanPage: React.FC = () => {
         if (activeIdStr.startsWith('card-')) {
             const activeCardId = Number(activeIdStr.replace('card-', ''));
 
-            // Determine original list (from active.data)
-            const originalListId = (active.data.current as any)?.listId;
+            // Determine original list (from ref saved at drag start)
+            const originalListId = savedOriginalListId;
 
             // Find which list the card is now in (after handleDragOver moved it in state)
             for (const list of selectedBoard.lists) {
@@ -1730,6 +1865,16 @@ const KanbanPage: React.FC = () => {
                     break;
                 }
             }
+        }
+    };
+
+    const handleDragCancel = () => {
+        setActiveId(null);
+        setActiveCard(null);
+        dragOriginalListIdRef.current = null;
+        // Revert any optimistic state changes by refetching
+        if (selectedBoard) {
+            fetchBoard(selectedBoard.id);
         }
     };
 
@@ -1798,7 +1943,7 @@ const KanbanPage: React.FC = () => {
 
             {/* Create Board Modal */}
             {showCreateBoard && (
-                <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+                <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[999]">
                     <div className={`w-full sm:max-w-md sm:mx-4 rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
                         <div className="p-4 sm:p-6">
                             <h2 className={`text-lg font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}>
@@ -1914,121 +2059,126 @@ const KanbanPage: React.FC = () => {
                         onDragStart={handleDragStart}
                         onDragOver={handleDragOver}
                         onDragEnd={handleDragEnd}
+                        onDragCancel={handleDragCancel}
                     >
                         {/* Desktop: columns fill full width equally */}
-                        <div className="hidden sm:flex flex-row gap-3 h-full items-start">
-                            <SortableContext
-                                items={selectedBoard.lists.map(l => `list-${l.id}`)}
-                                strategy={horizontalListSortingStrategy}
-                            >
-                                {selectedBoard.lists.map(list => {
-                                    const filteredList = dateFilter === 'all' ? list : { ...list, cards: getFilteredCards(list.cards) };
-                                    return (
-                                        <SortableList
-                                            key={list.id}
-                                            list={filteredList}
-                                            isDark={isDark}
-                                            onCardClick={openCardDetail}
-                                            onAddCard={(listId) => {
-                                                setAddingCardToList(listId);
-                                                setNewCardTitle('');
-                                                setNewCardDueDate('');
-                                            }}
-                                            onEditTitle={handleEditListTitle}
-                                            onDeleteList={handleDeleteList}
-                                            addingCardToList={addingCardToList}
-                                            newCardTitle={newCardTitle}
-                                            newCardDueDate={newCardDueDate}
-                                            setNewCardTitle={setNewCardTitle}
-                                            setNewCardDueDate={setNewCardDueDate}
-                                            setAddingCardToList={setAddingCardToList}
-                                            handleCreateCard={handleCreateCard}
-                                            allLists={selectedBoard.lists}
-                                            onMoveCard={handleMoveCard}
-                                        />
-                                    );
-                                })}
-                            </SortableContext>
+                        {!isMobile && (
+                            <div className="flex flex-row gap-3 h-full items-start">
+                                <SortableContext
+                                    items={selectedBoard.lists.map(l => `list-${l.id}`)}
+                                    strategy={horizontalListSortingStrategy}
+                                >
+                                    {selectedBoard.lists.map(list => {
+                                        const filteredList = dateFilter === 'all' ? list : { ...list, cards: getFilteredCards(list.cards) };
+                                        return (
+                                            <SortableList
+                                                key={list.id}
+                                                list={filteredList}
+                                                isDark={isDark}
+                                                onCardClick={openCardDetail}
+                                                onAddCard={(listId) => {
+                                                    setAddingCardToList(listId);
+                                                    setNewCardTitle('');
+                                                    setNewCardDueDate('');
+                                                }}
+                                                onEditTitle={handleEditListTitle}
+                                                onDeleteList={handleDeleteList}
+                                                addingCardToList={addingCardToList}
+                                                newCardTitle={newCardTitle}
+                                                newCardDueDate={newCardDueDate}
+                                                setNewCardTitle={setNewCardTitle}
+                                                setNewCardDueDate={setNewCardDueDate}
+                                                setAddingCardToList={setAddingCardToList}
+                                                handleCreateCard={handleCreateCard}
+                                                allLists={selectedBoard.lists}
+                                                onMoveCard={handleMoveCard}
+                                            />
+                                        );
+                                    })}
+                                </SortableContext>
 
-                            {/* Add list column removed - 4 default columns are sufficient */}
-                        </div>
+                                {/* Add list column removed - 4 default columns are sufficient */}
+                            </div>
+                        )}
 
                         {/* Mobile: single column view with swipe */}
-                        <div
-                            ref={mobileColumnRef}
-                            className="sm:hidden flex flex-col h-full overflow-y-auto"
-                            onTouchStart={(e) => {
-                                const touch = e.touches[0];
-                                const ref = mobileColumnRef.current as any;
-                                if (ref) {
-                                    ref.__touchStartX = touch.clientX;
-                                    ref.__touchStartY = touch.clientY;
-                                }
-                            }}
-                            onTouchEnd={(e) => {
-                                const ref = mobileColumnRef.current as any;
-                                if (!ref?.__touchStartX) return;
-                                const touch = e.changedTouches[0];
-                                const deltaX = touch.clientX - ref.__touchStartX;
-                                const deltaY = touch.clientY - ref.__touchStartY;
-                                // Only trigger horizontal swipe if deltaX > deltaY (not scrolling vertically)
-                                if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-                                    if (deltaX < 0 && mobileActiveListIndex < (selectedBoard?.lists.length || 1) - 1) {
-                                        setMobileActiveListIndex(prev => prev + 1);
-                                    } else if (deltaX > 0 && mobileActiveListIndex > 0) {
-                                        setMobileActiveListIndex(prev => prev - 1);
+                        {isMobile && (
+                            <div
+                                ref={mobileColumnRef}
+                                className="flex flex-col h-full overflow-y-auto"
+                                onTouchStart={(e) => {
+                                    const touch = e.touches[0];
+                                    const ref = mobileColumnRef.current as any;
+                                    if (ref) {
+                                        ref.__touchStartX = touch.clientX;
+                                        ref.__touchStartY = touch.clientY;
                                     }
-                                }
-                                ref.__touchStartX = null;
-                                ref.__touchStartY = null;
-                            }}
-                        >
-                            <SortableContext
-                                items={selectedBoard.lists[mobileActiveListIndex]?.cards.map(c => `card-${c.id}`) || []}
-                                strategy={verticalListSortingStrategy}
+                                }}
+                                onTouchEnd={(e) => {
+                                    const ref = mobileColumnRef.current as any;
+                                    if (!ref?.__touchStartX) return;
+                                    const touch = e.changedTouches[0];
+                                    const deltaX = touch.clientX - ref.__touchStartX;
+                                    const deltaY = touch.clientY - ref.__touchStartY;
+                                    // Only trigger horizontal swipe if deltaX > deltaY (not scrolling vertically)
+                                    if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+                                        if (deltaX < 0 && mobileActiveListIndex < (selectedBoard?.lists.length || 1) - 1) {
+                                            setMobileActiveListIndex(prev => prev + 1);
+                                        } else if (deltaX > 0 && mobileActiveListIndex > 0) {
+                                            setMobileActiveListIndex(prev => prev - 1);
+                                        }
+                                    }
+                                    ref.__touchStartX = null;
+                                    ref.__touchStartY = null;
+                                }}
                             >
-                                {selectedBoard.lists[mobileActiveListIndex] && (() => {
-                                    const mList = selectedBoard.lists[mobileActiveListIndex];
-                                    const filteredMobileList = dateFilter === 'all' ? mList : { ...mList, cards: getFilteredCards(mList.cards) };
-                                    return (
-                                        <SortableList
-                                            key={mList.id}
-                                            list={filteredMobileList}
-                                            isDark={isDark}
-                                            onCardClick={openCardDetail}
-                                            onAddCard={(listId) => {
-                                                setAddingCardToList(listId);
-                                                setNewCardTitle('');
-                                                setNewCardDueDate('');
-                                            }}
-                                            onEditTitle={handleEditListTitle}
-                                            onDeleteList={handleDeleteList}
-                                            addingCardToList={addingCardToList}
-                                            newCardTitle={newCardTitle}
-                                            newCardDueDate={newCardDueDate}
-                                            setNewCardTitle={setNewCardTitle}
-                                            setNewCardDueDate={setNewCardDueDate}
-                                            setAddingCardToList={setAddingCardToList}
-                                            handleCreateCard={handleCreateCard}
-                                            allLists={selectedBoard.lists}
-                                            onMoveCard={handleMoveCard}
-                                        />
-                                    );
-                                })()}
-                            </SortableContext>
+                                <SortableContext
+                                    items={selectedBoard.lists[mobileActiveListIndex]?.cards.map(c => `card-${c.id}`) || []}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    {selectedBoard.lists[mobileActiveListIndex] && (() => {
+                                        const mList = selectedBoard.lists[mobileActiveListIndex];
+                                        const filteredMobileList = dateFilter === 'all' ? mList : { ...mList, cards: getFilteredCards(mList.cards) };
+                                        return (
+                                            <SortableList
+                                                key={mList.id}
+                                                list={filteredMobileList}
+                                                isDark={isDark}
+                                                onCardClick={openCardDetail}
+                                                onAddCard={(listId) => {
+                                                    setAddingCardToList(listId);
+                                                    setNewCardTitle('');
+                                                    setNewCardDueDate('');
+                                                }}
+                                                onEditTitle={handleEditListTitle}
+                                                onDeleteList={handleDeleteList}
+                                                addingCardToList={addingCardToList}
+                                                newCardTitle={newCardTitle}
+                                                newCardDueDate={newCardDueDate}
+                                                setNewCardTitle={setNewCardTitle}
+                                                setNewCardDueDate={setNewCardDueDate}
+                                                setAddingCardToList={setAddingCardToList}
+                                                handleCreateCard={handleCreateCard}
+                                                allLists={selectedBoard.lists}
+                                                onMoveCard={handleMoveCard}
+                                            />
+                                        );
+                                    })()}
+                                </SortableContext>
 
-                            {/* Mobile add list removed */}
+                                {/* Mobile add list removed */}
 
-                            {/* Swipe hint */}
-                            {selectedBoard.lists.length > 1 && (
-                                <div className={`text-center py-3 text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                                    ← Vuốt để chuyển cột →
-                                </div>
-                            )}
-                        </div>
+                                {/* Swipe hint */}
+                                {selectedBoard.lists.length > 1 && (
+                                    <div className={`text-center py-3 text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                        ← Vuốt để chuyển cột →
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Drag Overlay */}
-                        <DragOverlay>
+                        <DragOverlay dropAnimation={null} zIndex={9999}>
                             {activeCard && (
                                 <div className={`p-3 rounded-lg shadow-xl w-[80vw] sm:w-[22vw] ${isDark ? 'bg-gray-700' : 'bg-white'}`}>
                                     <p className={`text-sm font-medium ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>
@@ -2042,7 +2192,7 @@ const KanbanPage: React.FC = () => {
 
                 {/* Members Modal */}
                 {showMembers && (
-                    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+                    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[999]">
                         <div className={`w-full sm:max-w-md sm:mx-4 rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
                             {/* Mobile drag handle */}
                             <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mt-2 sm:hidden" />
@@ -2133,7 +2283,7 @@ const KanbanPage: React.FC = () => {
 
                 {/* Card Detail Modal */}
                 {selectedCard && (
-                    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-start justify-center z-50 sm:pt-10 sm:pb-10 sm:overflow-y-auto" onClick={() => setSelectedCard(null)}>
+                    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-start justify-center z-[999] sm:pt-10 sm:pb-10 sm:overflow-y-auto" onClick={() => setSelectedCard(null)}>
                         <div onClick={e => e.stopPropagation()} className={`w-full sm:max-w-2xl sm:mx-4 rounded-t-2xl sm:rounded-xl shadow-2xl max-h-[95dvh] sm:max-h-[85vh] overflow-y-auto overscroll-contain ${isDark ? 'bg-gray-800' : 'bg-white'}`}>
                             {/* Card Header */}
                             <div className={`p-4 sm:p-6 pb-2 sticky top-0 z-10 rounded-t-2xl sm:rounded-t-xl ${isDark ? 'bg-gray-800' : 'bg-white'}`} style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}>
@@ -2403,15 +2553,25 @@ const KanbanPage: React.FC = () => {
                                                         e.target.value = '';
                                                     }}
                                                 />
+                                                <input
+                                                    ref={attachFolderRef}
+                                                    type="file"
+                                                    className="hidden"
+                                                    {...{ webkitdirectory: '', directory: '', mozdirectory: '' } as any}
+                                                    onChange={e => {
+                                                        if (e.target.files && e.target.files.length > 0) handleUploadFolder(e.target.files, 'attachment');
+                                                        e.target.value = '';
+                                                    }}
+                                                />
                                                 <button
                                                     onClick={() => setShowAttachMenu(!showAttachMenu)}
-                                                    disabled={uploadingAttachment}
+                                                    disabled={uploadingAttachment || uploadingFolder}
                                                     className={`px-2 py-1 rounded text-xs font-medium ${isDark ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                                 >
-                                                    {uploadingAttachment ? 'Đang tải...' : '+ Thêm'}
+                                                    {uploadingAttachment || uploadingFolder ? 'Đang tải...' : '+ Thêm'}
                                                 </button>
                                                 {showAttachMenu && (
-                                                    <div className={`absolute right-0 top-full mt-1 rounded-lg shadow-xl border z-50 py-1 min-w-[180px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                    <div className={`absolute right-0 top-full mt-1 rounded-lg shadow-xl border z-50 py-1 min-w-[200px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
                                                         <button
                                                             onClick={() => { setShowAttachMenu(false); attachFileRef.current?.click(); }}
                                                             className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
@@ -2420,11 +2580,26 @@ const KanbanPage: React.FC = () => {
                                                             File từ thiết bị
                                                         </button>
                                                         <button
+                                                            onClick={() => { setShowAttachMenu(false); attachFolderRef.current?.click(); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <FolderUp size={16} className="text-indigo-500" />
+                                                            Thư mục từ thiết bị
+                                                        </button>
+                                                        <div className={`border-t my-1 ${isDark ? 'border-gray-600' : 'border-gray-100'}`}></div>
+                                                        <button
                                                             onClick={() => { setShowAttachMenu(false); setShowFilePicker(true); }}
                                                             className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
                                                         >
                                                             <FolderOpen size={16} className="text-amber-500" />
-                                                            Từ Kho dữ liệu
+                                                            File từ Kho dữ liệu
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setShowAttachMenu(false); setFolderPickerCategory('attachment'); setShowFolderPicker(true); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <FolderUp size={16} className="text-amber-600" />
+                                                            Thư mục từ Kho dữ liệu
                                                         </button>
                                                         <div className={`border-t my-1 ${isDark ? 'border-gray-600' : 'border-gray-100'}`}></div>
                                                         <button
@@ -2439,9 +2614,71 @@ const KanbanPage: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        {cardAttachments.filter(a => a.category !== 'completion').length > 0 ? (
-                                            <div className="space-y-2 max-h-60 overflow-y-auto">
-                                                {cardAttachments.filter(a => a.category !== 'completion').map(attachment => (
+                                        {/* Folder upload progress */}
+                                        {uploadingFolder && folderUploadProgress > 0 && (
+                                            <div className={`mb-2 p-2 rounded-lg ${isDark ? 'bg-gray-700' : 'bg-blue-50'}`}>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                                                    <span className="text-xs text-blue-600">Đang tải thư mục lên... {folderUploadProgress}%</span>
+                                                </div>
+                                                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                                    <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${folderUploadProgress}%` }} />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Folders grouped display */}
+                                        {(() => {
+                                            const regularAttachments = cardAttachments.filter(a => a.category !== 'completion');
+                                            const folders = regularAttachments.filter(a => a.isFolder && a.folderName);
+                                            const folderNames = [...new Set(folders.map(a => a.folderName!))];
+                                            const nonFolderAttachments = regularAttachments.filter(a => !a.isFolder);
+
+                                            return (
+                                                <>
+                                                    {/* Folder cards */}
+                                                    {folderNames.length > 0 && (
+                                                        <div className="space-y-2 mb-2">
+                                                            {folderNames.map(fname => {
+                                                                const folderFiles = folders.filter(a => a.folderName === fname);
+                                                                const totalSize = folderFiles.reduce((s, f) => s + f.fileSize, 0);
+                                                                return (
+                                                                    <div key={fname}
+                                                                        className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg group cursor-pointer border ${isDark ? 'bg-indigo-900/20 border-indigo-800/40 hover:bg-indigo-900/30' : 'bg-indigo-50/50 border-indigo-200 hover:bg-indigo-50'}`}
+                                                                        onClick={() => selectedCard && setViewingFolder({ cardId: selectedCard.id, folderName: fname })}
+                                                                    >
+                                                                        <div className="shrink-0">
+                                                                            <FolderOpen className="w-5 h-5 text-amber-500" />
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <p className={`text-xs sm:text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                                                                                {fname}
+                                                                            </p>
+                                                                            <p className="text-[10px] sm:text-xs text-gray-500">
+                                                                                {folderFiles.length} tệp • {formatFileSize(totalSize)} • {folderFiles[0]?.uploadedBy.name}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                                            {(folderFiles[0]?.uploadedBy.id === user?.id || selectedBoard?.ownerId === user?.id) && (
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); selectedCard && handleDeleteCardFolder(selectedCard.id, fname); }}
+                                                                                    className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
+                                                                                    title="Xóa thư mục"
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Individual files (non-folder) */}
+                                                    {nonFolderAttachments.length > 0 && (
+                                                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {nonFolderAttachments.map(attachment => (
                                                     <div key={attachment.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg group ${isDark ? 'bg-gray-700/50 hover:bg-gray-700' : 'bg-gray-50 hover:bg-gray-100'}`}>
                                                         <div className="shrink-0">
                                                             {getAttachmentIcon(attachment.fileName, attachment.mimeType)}
@@ -2503,12 +2740,17 @@ const KanbanPage: React.FC = () => {
                                                         </div>
                                                     </div>
                                                 ))}
-                                            </div>
-                                        ) : (
-                                            <p className={`text-sm italic ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                                                Chưa có file đính kèm
-                                            </p>
-                                        )}
+                                                        </div>
+                                                    )}
+
+                                                    {folderNames.length === 0 && nonFolderAttachments.length === 0 && (
+                                                        <p className={`text-sm italic ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                            Chưa có file đính kèm
+                                                        </p>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
 
                                     {/* Completion Documents */}
@@ -2528,6 +2770,16 @@ const KanbanPage: React.FC = () => {
                                                         e.target.value = '';
                                                     }}
                                                 />
+                                                <input
+                                                    ref={completionFolderRef}
+                                                    type="file"
+                                                    className="hidden"
+                                                    {...{ webkitdirectory: '', directory: '', mozdirectory: '' } as any}
+                                                    onChange={e => {
+                                                        if (e.target.files && e.target.files.length > 0) handleUploadFolder(e.target.files, 'completion');
+                                                        e.target.value = '';
+                                                    }}
+                                                />
                                                 <button
                                                     onClick={() => setShowCompletionMenu(!showCompletionMenu)}
                                                     disabled={uploadingCompletion}
@@ -2538,7 +2790,7 @@ const KanbanPage: React.FC = () => {
                                                     )}
                                                 </button>
                                                 {showCompletionMenu && (
-                                                    <div className={`absolute right-0 top-full mt-1 rounded-lg shadow-xl border z-[60] py-1 min-w-[180px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                                                    <div className={`absolute right-0 top-full mt-1 rounded-lg shadow-xl border z-[60] py-1 min-w-[200px] ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
                                                         <button
                                                             onClick={() => { setShowCompletionMenu(false); completionFileRef.current?.click(); }}
                                                             className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
@@ -2547,11 +2799,26 @@ const KanbanPage: React.FC = () => {
                                                             File từ thiết bị
                                                         </button>
                                                         <button
+                                                            onClick={() => { setShowCompletionMenu(false); completionFolderRef.current?.click(); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <FolderUp size={16} className="text-indigo-500" />
+                                                            Thư mục từ thiết bị
+                                                        </button>
+                                                        <div className={`border-t my-1 ${isDark ? 'border-gray-600' : 'border-gray-100'}`}></div>
+                                                        <button
                                                             onClick={() => { setShowCompletionMenu(false); setShowCompletionFilePicker(true); }}
                                                             className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
                                                         >
                                                             <FolderOpen size={16} className="text-amber-500" />
-                                                            Từ Kho dữ liệu
+                                                            File từ Kho dữ liệu
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setShowCompletionMenu(false); setFolderPickerCategory('completion'); setShowCompletionFolderPicker(true); }}
+                                                            className={`w-full px-3 py-2 text-left flex items-center gap-2 text-sm ${isDark ? 'hover:bg-gray-600 text-gray-300' : 'hover:bg-gray-50 text-gray-700'}`}
+                                                        >
+                                                            <FolderUp size={16} className="text-amber-600" />
+                                                            Thư mục từ Kho dữ liệu
                                                         </button>
                                                         <div className={`border-t my-1 ${isDark ? 'border-gray-600' : 'border-gray-100'}`}></div>
                                                         <button
@@ -2598,9 +2865,56 @@ const KanbanPage: React.FC = () => {
                                                 </div>
                                             </div>
                                         )}
-                                        {cardAttachments.filter(a => a.category === 'completion').length > 0 ? (
-                                            <div className="space-y-2 max-h-60 overflow-y-auto">
-                                                {cardAttachments.filter(a => a.category === 'completion').map(attachment => (
+                                        {(() => {
+                                            const completionAttachments = cardAttachments.filter(a => a.category === 'completion');
+                                            const completionFolders = completionAttachments.filter(a => a.isFolder && a.folderName);
+                                            const completionFolderNames = [...new Set(completionFolders.map(a => a.folderName!))];
+                                            const completionNonFolder = completionAttachments.filter(a => !a.isFolder);
+
+                                            return (
+                                                <>
+                                                    {/* Completion folder cards */}
+                                                    {completionFolderNames.length > 0 && (
+                                                        <div className="space-y-2 mb-2">
+                                                            {completionFolderNames.map(fname => {
+                                                                const folderFiles = completionFolders.filter(a => a.folderName === fname);
+                                                                const totalSize = folderFiles.reduce((s, f) => s + f.fileSize, 0);
+                                                                return (
+                                                                    <div key={fname}
+                                                                        className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg group cursor-pointer border ${isDark ? 'bg-green-900/20 border-green-800/40 hover:bg-green-900/30' : 'bg-green-50/50 border-green-200 hover:bg-green-50'}`}
+                                                                        onClick={() => selectedCard && setViewingFolder({ cardId: selectedCard.id, folderName: fname })}
+                                                                    >
+                                                                        <div className="shrink-0">
+                                                                            <FolderOpen className="w-5 h-5 text-amber-500" />
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <p className={`text-xs sm:text-sm font-medium truncate ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>
+                                                                                {fname}
+                                                                            </p>
+                                                                            <p className="text-[10px] sm:text-xs text-gray-500">
+                                                                                {folderFiles.length} tệp • {formatFileSize(totalSize)} • {folderFiles[0]?.uploadedBy.name}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                                                            {(folderFiles[0]?.uploadedBy.id === user?.id || selectedBoard?.ownerId === user?.id) && (
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); selectedCard && handleDeleteCardFolder(selectedCard.id, fname); }}
+                                                                                    className="p-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30"
+                                                                                    title="Xóa thư mục"
+                                                                                >
+                                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+
+                                                    {completionNonFolder.length > 0 && (
+                                                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {completionNonFolder.map(attachment => (
                                                     <div key={attachment.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg group border ${isDark ? 'bg-green-900/20 border-green-800/40 hover:bg-green-900/30' : 'bg-green-50/50 border-green-200 hover:bg-green-50'}`}>
                                                         <div className="shrink-0">
                                                             {getAttachmentIcon(attachment.fileName, attachment.mimeType)}
@@ -2660,12 +2974,17 @@ const KanbanPage: React.FC = () => {
                                                         </div>
                                                     </div>
                                                 ))}
-                                            </div>
-                                        ) : (
-                                            <p className={`text-sm italic ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                                                Chưa có tài liệu hoàn thành
-                                            </p>
-                                        )}
+                                                        </div>
+                                                    )}
+
+                                                    {completionFolderNames.length === 0 && completionNonFolder.length === 0 && (
+                                                        <p className={`text-sm italic ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                                            Chưa có tài liệu hoàn thành
+                                                        </p>
+                                                    )}
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
 
@@ -2773,6 +3092,51 @@ const KanbanPage: React.FC = () => {
                             />
                         </div>
                     </div>
+                )}
+
+                {/* Folder Picker from Kho dữ liệu (regular attachments) */}
+                {showFolderPicker && token && (
+                    <FolderPickerDialog
+                        isOpen={showFolderPicker}
+                        onClose={() => setShowFolderPicker(false)}
+                        onSelect={(folder) => {
+                            handleUploadFolderFromStorage(folder, folderPickerCategory);
+                            setShowFolderPicker(false);
+                        }}
+                        token={token}
+                        title="Chọn thư mục từ Kho dữ liệu"
+                    />
+                )}
+
+                {/* Folder Picker from Kho dữ liệu (completion docs) */}
+                {showCompletionFolderPicker && token && (
+                    <FolderPickerDialog
+                        isOpen={showCompletionFolderPicker}
+                        onClose={() => setShowCompletionFolderPicker(false)}
+                        onSelect={(folder) => {
+                            handleUploadFolderFromStorage(folder, 'completion');
+                            setShowCompletionFolderPicker(false);
+                        }}
+                        token={token}
+                        title="Chọn thư mục từ Kho dữ liệu"
+                    />
+                )}
+
+                {/* Kanban Folder Viewer */}
+                {viewingFolder && (
+                    <KanbanFolderViewer
+                        cardId={viewingFolder.cardId}
+                        folderName={viewingFolder.folderName}
+                        onClose={() => setViewingFolder(null)}
+                        onDelete={() => {
+                            setCardAttachments(prev => prev.filter(a => !(a.isFolder && a.folderName === viewingFolder.folderName)));
+                            setViewingFolder(null);
+                        }}
+                        canDelete={
+                            selectedBoard?.ownerId === user?.id ||
+                            cardAttachments.some(a => a.isFolder && a.folderName === viewingFolder.folderName && a.uploadedBy.id === user?.id)
+                        }
+                    />
                 )}
 
                 {/* File Preview Modal */}
@@ -3078,7 +3442,7 @@ const KanbanPage: React.FC = () => {
     const renderBoardHeader = () => {
         if (!selectedBoard) return null;
         return (
-            <div className={`px-2 sm:px-4 py-2 sm:py-3 border-b ${isDark ? 'border-gray-700 bg-gray-800/80' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
+            <div className={`px-2 sm:px-4 py-2 sm:py-3 border-b relative z-10 ${isDark ? 'border-gray-700 bg-gray-800/80' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => { setView('boards'); setSelectedBoard(null); setDateFilter('all'); }}

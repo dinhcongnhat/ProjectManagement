@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Filter, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, Download, Check, Search, User, FolderTree } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Plus, Calendar, Briefcase, Pencil, Trash2, X, ChevronDown, ChevronRight, Download, Check, Search, User, FolderTree } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { API_URL } from '../../config/api';
 import { useDialog } from '../../components/ui/Dialog';
@@ -116,11 +116,12 @@ const ProjectTasks = () => {
     const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
     const [expandedChildDetails, setExpandedChildDetails] = useState<Set<number>>(new Set());
 
-    // Search state
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const statusParam = searchParams.get('status');
 
     // Pagination state
     const [projectPage, setProjectPage] = useState(1);
@@ -346,13 +347,44 @@ const ProjectTasks = () => {
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-900/50 gap-4">
-                    <div className="flex items-center gap-2">
-                        <button title="Lọc dự án" className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-400">
-                            <Filter size={20} />
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between bg-gray-50 dark:bg-gray-900/50 gap-4">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
+                        <button
+                            onClick={() => {
+                                setSearchParams(prev => {
+                                    const params = new URLSearchParams(prev);
+                                    params.delete('status');
+                                    return params;
+                                });
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${!statusParam ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                        >
+                            Tất cả ({projects.filter(p => !p.parentId).length})
                         </button>
-                        <div className="h-6 w-px bg-gray-300 mx-2"></div>
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{projects.length} dự án</span>
+                        <button
+                            onClick={() => {
+                                setSearchParams(prev => {
+                                    const params = new URLSearchParams(prev);
+                                    params.set('status', 'PENDING_APPROVAL');
+                                    return params;
+                                });
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${statusParam === 'PENDING_APPROVAL' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                        >
+                            Chờ duyệt ({projects.filter(p => !p.parentId && p.status === 'PENDING_APPROVAL').length})
+                        </button>
+                        <button
+                            onClick={() => {
+                                setSearchParams(prev => {
+                                    const params = new URLSearchParams(prev);
+                                    params.set('status', 'COMPLETED');
+                                    return params;
+                                });
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${statusParam === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                        >
+                            Hoàn thành ({projects.filter(p => !p.parentId && p.status === 'COMPLETED').length})
+                        </button>
                     </div>
 
                     {/* Search Bar with Dropdown */}
@@ -445,7 +477,19 @@ const ProjectTasks = () => {
                         </div>
                     ) : (
                         (() => {
-                            const parentProjects = projects.filter(p => !p.parentId);
+                            const parentProjects = projects.filter(p => {
+                                if (p.parentId) return false;
+                                if (statusParam && p.status !== statusParam) return false;
+                                return true;
+                            });
+
+                            if (parentProjects.length === 0) {
+                                return (
+                                    <div className="p-8 text-center text-gray-500">
+                                        Không tìm thấy dự án nào phù hợp với bộ lọc hiện tại.
+                                    </div>
+                                );
+                            }
 
                             // Pagination for parent projects
                             const totalParentProjects = parentProjects.length;

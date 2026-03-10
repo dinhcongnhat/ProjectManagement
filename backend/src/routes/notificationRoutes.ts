@@ -48,6 +48,48 @@ router.get('/dev-test-email/:email', async (req, res) => {
     }
 });
 
+// DEV ONLY: Check email configuration status
+router.get('/email-config-status', async (req, res) => {
+    try {
+        const apiKey = process.env.RESEND_API_KEY;
+        const fromEmail = process.env.FROM_EMAIL;
+        const frontendUrl = process.env.FRONTEND_URL;
+
+        // Check how many users have email addresses
+        const usersWithEmail = await prisma.user.findMany({
+            where: { email: { not: null } },
+            select: { id: true, name: true, email: true }
+        });
+        const totalUsers = await prisma.user.count();
+
+        res.json({
+            config: {
+                RESEND_API_KEY: apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT SET ❌',
+                FROM_EMAIL: fromEmail || 'NOT SET (using fallback: JTSC Project <noreply@jtsc.vn>)',
+                FRONTEND_URL: frontendUrl || 'NOT SET (using fallback: https://jtsc.io.vn)',
+            },
+            users: {
+                totalUsers,
+                usersWithEmail: usersWithEmail.length,
+                usersWithoutEmail: totalUsers - usersWithEmail.length,
+                userEmails: usersWithEmail.map(u => ({
+                    id: u.id,
+                    name: u.name,
+                    email: u.email
+                }))
+            },
+            tips: [
+                'Kiểm tra domain jtsc.vn đã được verify trên Resend chưa',
+                'Kiểm tra API key có đúng không (phải là key của domain jtsc.vn)',
+                'Kiểm tra users có email không (nếu không có email thì không gửi được)',
+                'Gọi GET /api/notifications/dev-test-email/<your-email> để test gửi email'
+            ]
+        });
+    } catch (error: any) {
+        res.status(500).json({ message: error.message });
+    }
+});
+
 // Subscribe to push notifications
 router.post('/subscribe', authenticateToken, async (req: AuthRequest, res: Response) => {
     try {

@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
+import * as fs from 'fs';
+import * as path from 'path';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import {
     getFoldersAndFiles,
@@ -33,11 +35,22 @@ import {
 
 const router = Router();
 
-// Configure multer for file uploads (500MB limit for large files)
+// Ensure uploads directory exists before multer tries to use it
+const uploadsDir = path.resolve('uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log('[FolderRoutes] Created uploads directory:', uploadsDir);
+}
+
+// Configure multer for file uploads (5GB limit for large files)
 const upload = multer({
     storage: multer.diskStorage({
         destination: (req, file, cb) => {
-            cb(null, 'uploads/');
+            // Double-check directory exists at runtime too
+            if (!fs.existsSync(uploadsDir)) {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+            cb(null, uploadsDir);
         },
         filename: (req, file, cb) => {
             // Keep original extension if possible, but safer to use random name

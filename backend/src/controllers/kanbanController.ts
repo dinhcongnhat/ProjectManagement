@@ -3,7 +3,8 @@ import type { AuthRequest } from '../middleware/authMiddleware.js';
 import prisma from '../config/prisma.js';
 import { getIO } from '../index.js';
 import { createNotification } from './notificationController.js';
-import { uploadFile, deleteFile, getPresignedUrl, normalizeVietnameseFilename, isOfficeFile } from '../services/minioService.js';
+import { uploadFile, deleteFile, getPresignedUrl, getFileStream, normalizeVietnameseFilename, isOfficeFile } from '../services/minioService.js';
+import archiver from 'archiver';
 import {
     notifyKanbanCardCreated,
     notifyKanbanComment,
@@ -927,6 +928,59 @@ export const moveCard = async (req: AuthRequest, res: Response) => {
 
         await prisma.kanbanCard.update({ where: { id: Number(id) }, data: updateData });
 
+        // ===== Sync project status based on kanban column =====
+        if (card.projectId) {
+            try {
+                const project = await prisma.project.findUnique({
+                    where: { id: card.projectId },
+                    select: { id: true, status: true, parentId: true }
+                });
+                if (project && project.status !== 'COMPLETED') {
+                    let newStatus: string | null = null;
+                    if (targetTitle.includes('cần làm') || targetTitle === 'todo') {
+                        newStatus = 'IN_PROGRESS';
+                    } else if (targetTitle.includes('đang làm') || targetTitle === 'in progress') {
+                        newStatus = 'IN_PROGRESS';
+                    } else if (targetTitle.includes('cần review') || targetTitle === 'review') {
+                        newStatus = 'PENDING_APPROVAL';
+                    } else if (targetTitle.includes('hoàn thành') || targetTitle === 'done') {
+                        newStatus = 'COMPLETED';
+                    }
+                    if (newStatus && newStatus !== project.status) {
+                        const updateProjectData: any = { status: newStatus };
+                        if (newStatus === 'COMPLETED') {
+                            updateProjectData.progress = 100;
+                        } else if (newStatus === 'PENDING_APPROVAL') {
+                            updateProjectData.progress = 100;
+                        } else if (newStatus === 'IN_PROGRESS' && targetTitle.includes('đang làm')) {
+                            updateProjectData.progress = 50;
+                        }
+                        await prisma.project.update({
+                            where: { id: card.projectId },
+                            data: updateProjectData
+                        });
+                        // Recalculate parent progress if needed
+                        if (project.parentId) {
+                            const children = await prisma.project.findMany({
+                                where: { parentId: project.parentId },
+                                select: { progress: true }
+                            });
+                            if (children.length > 0) {
+                                const totalProgress = children.reduce((sum, child) => sum + (child.progress ?? 0), 0);
+                                const avgProgress = Math.round(totalProgress / children.length);
+                                await prisma.project.update({
+                                    where: { id: project.parentId },
+                                    data: { progress: avgProgress }
+                                });
+                            }
+                        }
+                    }
+                }
+            } catch (syncErr) {
+                console.error('[Kanban] Error syncing project status:', syncErr);
+            }
+        }
+
         const updates = targetCards.map((c, index) => {
             const newPos = index >= (position ?? 0) ? index + 1 : index;
             return prisma.kanbanCard.update({ where: { id: c.id }, data: { position: newPos } });
@@ -1705,6 +1759,461 @@ export const getAttachmentPresignedUrl = async (req: AuthRequest, res: Response)
         res.json({ url, isOffice: isOfficeFile(attachment.fileName) });
     } catch (error) {
         console.error('Error getting presigned URL:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ==================== FOLDER UPLOAD ====================
+
+const sanitizeFolderName = (name: string): string => {
+    return name
+        .replace(/[\/\\:*?"<>|]/g, '')
+        .replace(/\s+/g, '_')
+        .trim();
+};
+
+const getKanbanFolderPath = (cardId: number, folderName: string, relativePath: string): string => {
+    const sanitizedFolder = sanitizeFolderName(folderName);
+    return `kanban/cards/${cardId}/folders/${sanitizedFolder}/${relativePath}`;
+};
+
+export const uploadCardFolder = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { cardId } = req.params;
+
+        const card = await prisma.kanbanCard.findUnique({
+            where: { id: Number(cardId) },
+            include: {
+                list: {
+                    include: {
+                        board: { include: { members: true } }
+                    }
+                }
+            }
+        });
+
+        if (!card) return res.status(404).json({ message: 'Card not found' });
+
+        const board = card.list.board;
+        const isMember = board.members.some(m => m.userId === userId) || board.ownerId === userId;
+        if (!isMember) return res.status(403).json({ message: 'Access denied' });
+
+        const files = req.files as Express.Multer.File[];
+        const folderName = req.body.folderName;
+        const category = req.body.category || 'attachment';
+        let relativePaths: string[] = [];
+        if (req.body.relativePaths) {
+            try {
+                relativePaths = JSON.parse(req.body.relativePaths);
+            } catch {
+                relativePaths = Array.isArray(req.body.relativePaths)
+                    ? req.body.relativePaths
+                    : [req.body.relativePaths];
+            }
+        }
+
+        if (!files || files.length === 0) {
+            return res.status(400).json({ message: 'No files uploaded' });
+        }
+
+        if (!folderName) {
+            return res.status(400).json({ message: 'Folder name is required' });
+        }
+
+        const attachments = [];
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i]!;
+            const relPath = relativePaths[i] || file.originalname;
+            const normalizedFilename = normalizeVietnameseFilename(file.originalname);
+            const normalizedRelPath = normalizeVietnameseFilename(relPath);
+            const minioPath = getKanbanFolderPath(Number(cardId), folderName, normalizedRelPath);
+
+            await uploadFile(minioPath, file.buffer, {
+                'Content-Type': file.mimetype,
+            });
+
+            const attachment = await prisma.kanbanAttachment.create({
+                data: {
+                    fileName: normalizedFilename,
+                    fileSize: file.size,
+                    mimeType: file.mimetype,
+                    minioPath,
+                    source: 'upload',
+                    category,
+                    isFolder: true,
+                    folderName,
+                    relativePath: normalizedRelPath,
+                    cardId: Number(cardId),
+                    uploadedById: userId
+                },
+                include: {
+                    uploadedBy: { select: { id: true, name: true } }
+                }
+            });
+            attachments.push(attachment);
+        }
+
+        await emitBoardUpdate(board.id, userId, { action: 'attachment_added', cardId: Number(cardId) });
+
+        // Push notification
+        const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+        const userName = currentUser?.name || 'Người dùng';
+        const io = getIO();
+        const allMemberIds = board.members.map(m => m.userId).filter(mid => mid !== userId);
+
+        for (const mid of allMemberIds) {
+            await createNotification(mid, 'KANBAN_ATTACHMENT', 'Thư mục đính kèm mới',
+                `${userName} đã tải lên thư mục "${folderName}" (${files.length} tệp) vào thẻ "${card.title}"`,
+                card.projectId ?? undefined, card.taskId ?? undefined, board.id, card.id);
+            io.to(`user:${mid}`).emit('new_notification', {
+                type: 'KANBAN_ATTACHMENT', title: 'Thư mục đính kèm mới',
+                message: `${userName} đã tải lên thư mục "${folderName}" vào "${card.title}"`,
+                cardId: card.id, boardId: board.id
+            });
+        }
+
+        notifyKanbanAttachment(
+            board.members.map(m => m.userId), userId, userName,
+            board.id, card.title, folderName
+        ).catch(err => console.error('[Kanban] Push folder upload notification error:', err));
+
+        res.status(201).json({
+            message: `Đã tải lên thư mục "${folderName}" với ${attachments.length} tệp`,
+            attachments,
+            folderName
+        });
+    } catch (error) {
+        console.error('Error uploading card folder:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const getCardFolderContents = async (req: AuthRequest, res: Response) => {
+    try {
+        const { cardId } = req.params;
+        const { folderName } = req.query;
+
+        if (!folderName) {
+            return res.status(400).json({ message: 'Folder name is required' });
+        }
+
+        const attachments = await prisma.kanbanAttachment.findMany({
+            where: {
+                cardId: Number(cardId),
+                isFolder: true,
+                folderName: folderName as string
+            },
+            include: {
+                uploadedBy: { select: { id: true, name: true } }
+            },
+            orderBy: { relativePath: 'asc' }
+        });
+
+        // Build tree structure
+        const buildTree = (files: typeof attachments) => {
+            const root: any = { name: folderName, type: 'folder', children: [] };
+            const folderMap: Record<string, any> = { '': root };
+
+            for (const file of files) {
+                const relPath = file.relativePath || file.fileName;
+                const parts = relPath.split('/');
+                const fileName = parts.pop()!;
+
+                let currentPath = '';
+                let currentNode = root;
+                for (const part of parts) {
+                    const prevPath = currentPath;
+                    currentPath = currentPath ? `${currentPath}/${part}` : part;
+                    if (!folderMap[currentPath]) {
+                        const folderNode = { name: part, type: 'folder', children: [] };
+                        folderMap[currentPath] = folderNode;
+                        folderMap[prevPath].children.push(folderNode);
+                    }
+                    currentNode = folderMap[currentPath];
+                }
+
+                currentNode.children.push({
+                    id: file.id,
+                    name: fileName,
+                    type: 'file',
+                    fileType: file.mimeType,
+                    fileSize: file.fileSize,
+                    relativePath: relPath,
+                    uploadedBy: file.uploadedBy,
+                    createdAt: file.createdAt
+                });
+            }
+
+            return root;
+        };
+
+        const tree = buildTree(attachments);
+        const totalSize = attachments.reduce((sum, a) => sum + a.fileSize, 0);
+
+        res.json({
+            folderName,
+            totalFiles: attachments.length,
+            totalSize,
+            tree,
+            files: attachments
+        });
+    } catch (error) {
+        console.error('Error getting card folder contents:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const downloadCardFolderAsZip = async (req: AuthRequest, res: Response) => {
+    try {
+        const { cardId } = req.params;
+        const { folderName } = req.query;
+
+        if (!folderName) {
+            return res.status(400).json({ message: 'Folder name is required' });
+        }
+
+        const attachments = await prisma.kanbanAttachment.findMany({
+            where: {
+                cardId: Number(cardId),
+                isFolder: true,
+                folderName: folderName as string
+            }
+        });
+
+        if (attachments.length === 0) {
+            return res.status(404).json({ message: 'Folder not found' });
+        }
+
+        const encodedFolderName = encodeURIComponent(folderName as string);
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${folderName}.zip"; filename*=UTF-8''${encodedFolderName}.zip`);
+
+        const archive = archiver('zip', { zlib: { level: 6 } });
+
+        archive.on('error', (err: Error) => {
+            console.error('Archive error:', err);
+            if (!res.headersSent) {
+                res.status(500).json({ message: 'Error creating ZIP file' });
+            }
+        });
+
+        archive.pipe(res);
+
+        for (const attachment of attachments) {
+            try {
+                const stream = await getFileStream(attachment.minioPath);
+                const filePath = attachment.relativePath || attachment.fileName;
+                archive.append(stream, { name: filePath });
+            } catch (err) {
+                console.error(`Error adding file ${attachment.fileName} to archive:`, err);
+            }
+        }
+
+        await archive.finalize();
+    } catch (error) {
+        console.error('Error downloading card folder as ZIP:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Error downloading folder' });
+        }
+    }
+};
+
+export const deleteCardFolder = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { cardId } = req.params;
+        const { folderName } = req.body;
+
+        if (!folderName) return res.status(400).json({ message: 'Folder name is required' });
+
+        const card = await prisma.kanbanCard.findUnique({
+            where: { id: Number(cardId) },
+            include: {
+                list: {
+                    include: {
+                        board: { include: { members: true } }
+                    }
+                }
+            }
+        });
+
+        if (!card) return res.status(404).json({ message: 'Card not found' });
+
+        const board = card.list.board;
+        const isOwnerOrAdmin = board.ownerId === userId || board.members.some(m => m.userId === userId && m.role === 'ADMIN');
+
+        const attachments = await prisma.kanbanAttachment.findMany({
+            where: {
+                cardId: Number(cardId),
+                isFolder: true,
+                folderName
+            }
+        });
+
+        if (attachments.length === 0) return res.status(404).json({ message: 'Folder not found' });
+
+        const isUploader = attachments[0]!.uploadedById === userId;
+        if (!isOwnerOrAdmin && !isUploader) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        // Delete all files from MinIO
+        for (const att of attachments) {
+            try {
+                await deleteFile(att.minioPath);
+            } catch (err) {
+                console.error(`Error deleting file ${att.minioPath}:`, err);
+            }
+        }
+
+        // Delete all records
+        await prisma.kanbanAttachment.deleteMany({
+            where: {
+                cardId: Number(cardId),
+                isFolder: true,
+                folderName
+            }
+        });
+
+        await emitBoardUpdate(board.id, userId, { action: 'attachment_deleted', cardId: Number(cardId) });
+        res.json({ message: `Đã xóa thư mục "${folderName}" (${attachments.length} tệp)` });
+    } catch (error) {
+        console.error('Error deleting card folder:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+export const uploadCardFolderFromStorage = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user!.id;
+        const { cardId } = req.params;
+        const { folderId, category: folderCategory } = req.body;
+        const category = folderCategory || 'attachment';
+
+        if (!folderId) {
+            return res.status(400).json({ message: 'Folder ID is required' });
+        }
+
+        const card = await prisma.kanbanCard.findUnique({
+            where: { id: Number(cardId) },
+            include: {
+                list: {
+                    include: {
+                        board: { include: { members: true } }
+                    }
+                }
+            }
+        });
+
+        if (!card) return res.status(404).json({ message: 'Card not found' });
+
+        const board = card.list.board;
+        const isMember = board.members.some(m => m.userId === userId) || board.ownerId === userId;
+        if (!isMember) return res.status(403).json({ message: 'Access denied' });
+
+        // Get the folder from personal storage
+        const userFolder = await prisma.userFolder.findUnique({
+            where: { id: Number(folderId) }
+        });
+
+        if (!userFolder) return res.status(404).json({ message: 'Folder not found' });
+
+        // Recursively get all files from the folder
+        const getAllFilesFromFolder = async (parentFolderId: number, basePath: string): Promise<Array<{ name: string; minioPath: string; fileType: string; fileSize: number; relativePath: string }>> => {
+            const files: Array<{ name: string; minioPath: string; fileType: string; fileSize: number; relativePath: string }> = [];
+
+            // Get files in this folder
+            const folderFiles = await prisma.userFile.findMany({
+                where: { folderId: parentFolderId }
+            });
+
+            for (const file of folderFiles) {
+                files.push({
+                    name: file.name,
+                    minioPath: file.minioPath,
+                    fileType: file.fileType,
+                    fileSize: file.fileSize,
+                    relativePath: basePath ? `${basePath}/${file.name}` : file.name
+                });
+            }
+
+            // Get subfolders
+            const subFolders = await prisma.userFolder.findMany({
+                where: { parentId: parentFolderId }
+            });
+
+            for (const subFolder of subFolders) {
+                const subPath = basePath ? `${basePath}/${subFolder.name}` : subFolder.name;
+                const subFiles = await getAllFilesFromFolder(subFolder.id, subPath);
+                files.push(...subFiles);
+            }
+
+            return files;
+        };
+
+        const allFiles = await getAllFilesFromFolder(Number(folderId), '');
+
+        if (allFiles.length === 0) {
+            return res.status(400).json({ message: 'Folder is empty' });
+        }
+
+        const attachments = [];
+        for (const file of allFiles) {
+            const minioPath = getKanbanFolderPath(Number(cardId), userFolder.name, file.relativePath);
+
+            // Copy file from personal storage to kanban storage
+            try {
+                const stream = await getFileStream(file.minioPath);
+                const chunks: Buffer[] = [];
+                for await (const chunk of stream) {
+                    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                }
+                const buffer = Buffer.concat(chunks);
+                await uploadFile(minioPath, buffer, { 'Content-Type': file.fileType });
+            } catch (err) {
+                console.error(`Error copying file ${file.name}:`, err);
+                continue;
+            }
+
+            const attachment = await prisma.kanbanAttachment.create({
+                data: {
+                    fileName: file.name,
+                    fileSize: file.fileSize,
+                    mimeType: file.fileType,
+                    minioPath,
+                    source: 'folder',
+                    category,
+                    isFolder: true,
+                    folderName: userFolder.name,
+                    relativePath: file.relativePath,
+                    cardId: Number(cardId),
+                    uploadedById: userId
+                },
+                include: {
+                    uploadedBy: { select: { id: true, name: true } }
+                }
+            });
+            attachments.push(attachment);
+        }
+
+        await emitBoardUpdate(board.id, userId, { action: 'attachment_added', cardId: Number(cardId) });
+
+        // Push notification
+        const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+        const userName = currentUser?.name || 'Người dùng';
+        notifyKanbanAttachment(
+            board.members.map(m => m.userId), userId, userName,
+            board.id, card.title, userFolder.name, Number(cardId)
+        ).catch(err => console.error('[Kanban] Push folder-from-storage notification error:', err));
+
+        res.status(201).json({
+            message: `Đã tải lên thư mục "${userFolder.name}" với ${attachments.length} tệp`,
+            attachments,
+            folderName: userFolder.name
+        });
+    } catch (error) {
+        console.error('Error uploading folder from storage:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };

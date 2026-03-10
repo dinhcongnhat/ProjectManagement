@@ -2173,10 +2173,11 @@ const ChatPopup: React.FC = () => {
         setReplyingTo(prev => ({ ...prev, [conversationId]: msg }));
         setMessageMenuOpen(null);
         setShowReactionPicker(null);
-        // Focus the input
+        // Focus the input and scroll to bottom so reply bar doesn't cover messages
         setTimeout(() => {
             inputRefs.current[conversationId]?.focus();
-        }, 100);
+            scrollToBottom();
+        }, 150);
     };
 
     // Forward message
@@ -2838,7 +2839,7 @@ const ChatPopup: React.FC = () => {
                     );
                 }
 
-                return <p className="whitespace-pre-wrap break-words">{renderMessageWithMentions(msg.content)}</p>;
+                return <p className="whitespace-pre-wrap break-words min-w-0">{renderMessageWithMentions(msg.content)}</p>;
             }
         }
     };
@@ -2901,12 +2902,12 @@ const ChatPopup: React.FC = () => {
         return (
             <div
                 key={window.id}
-                className="bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden transition-all duration-200"
+                className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden transition-all duration-200"
                 style={windowStyle}
             >
                 {/* Header - Clean White Design */}
                 <div
-                    className="flex items-center justify-between px-3 py-2.5 bg-white border-b border-gray-100 cursor-pointer shrink-0"
+                    className="flex items-center justify-between px-3 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 cursor-pointer shrink-0"
                     onClick={() => toggleMinimize(window.id)}
                 >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -2921,7 +2922,7 @@ const ChatPopup: React.FC = () => {
                             <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 ${otherStatus.isOnline ? 'bg-green-500' : 'bg-gray-400'} rounded-full border-2 border-white`}></div>
                         </div>
                         <div className="min-w-0 flex-1">
-                            <span className="font-semibold text-gray-800 text-sm truncate block">{window.conversation.displayName}</span>
+                            <span className="font-semibold text-gray-800 dark:text-gray-100 text-sm truncate block">{window.conversation.displayName}</span>
                             <div className="flex items-center gap-1">
                                 {otherStatus.isOnline && <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>}
                                 <span className={`text-xs ${otherStatus.isOnline ? 'text-green-600' : 'text-gray-500'}`}>
@@ -2993,7 +2994,7 @@ const ChatPopup: React.FC = () => {
                                 </div>
                             )}
                             {/* Messages */}
-                            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
+                            <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50 dark:bg-gray-900">
                                 {window.messages.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-gray-400 py-12">
                                         <MessageSquare size={40} className="mb-2 opacity-30" />
@@ -3061,7 +3062,7 @@ const ChatPopup: React.FC = () => {
                                                             </div>
                                                         )}
 
-                                                        <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative`}>
+                                                        <div className={`max-w-[85%] sm:max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col relative min-w-0`}>
                                                             {/* Sender name with time - only show on first message in group */}
                                                             {!isOwn && isNewSenderGroup && (
                                                                 <div className="flex items-center gap-1.5 mb-0.5 ml-1">
@@ -3076,20 +3077,20 @@ const ChatPopup: React.FC = () => {
                                                                     <span className="text-xs text-gray-400">{formatMessageTime(msg.createdAt)}</span>
                                                                 </div>
                                                             )}
-                                                            <div className="relative">
+                                                            <div className="relative max-w-full min-w-0">
                                                                 {/* Reply preview - if this message is a reply */}
                                                                 {msg.replyTo && (
                                                                     <div
-                                                                        className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 cursor-pointer ${isOwn
+                                                                        className={`mb-1 px-2 py-1 rounded-lg text-xs border-l-2 cursor-pointer max-w-full overflow-hidden ${isOwn
                                                                             ? 'bg-blue-700/50 border-blue-300 text-blue-100'
-                                                                            : 'bg-gray-100 border-gray-400 text-gray-600'
+                                                                            : 'bg-gray-100 dark:bg-gray-800 border-gray-400 dark:border-gray-600 text-gray-600 dark:text-gray-300'
                                                                             }`}
                                                                         onClick={() => {
                                                                             const el = document.getElementById(`msg-${msg.replyTo!.id}`);
                                                                             if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.add('bg-yellow-100'); setTimeout(() => el.classList.remove('bg-yellow-100'), 2000); }
                                                                         }}
                                                                     >
-                                                                        <div className="font-medium">{msg.replyTo.sender.name}</div>
+                                                                        <div className="font-medium truncate">{msg.replyTo.sender.name}</div>
                                                                         <div className="truncate opacity-80">
                                                                             {msg.replyTo.messageType === 'TEXT' && msg.replyTo.content
                                                                                 ? decryptMessage(msg.replyTo.content)
@@ -3107,9 +3108,9 @@ const ChatPopup: React.FC = () => {
                                                                         <span>Đã chuyển tiếp</span>
                                                                     </div>
                                                                 )}
-                                                                <div className={`px-3 py-2 rounded-2xl shadow-sm text-sm ${isOwn
+                                                                <div className={`px-3 py-2 rounded-2xl shadow-sm text-sm max-w-full ${isOwn
                                                                     ? 'bg-blue-600 text-white'
-                                                                    : 'bg-white text-gray-800 border border-gray-100'
+                                                                    : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-gray-700'
                                                                     } ${isOwn && isLastInGroup ? 'rounded-br-md' : ''} ${!isOwn && isLastInGroup ? 'rounded-bl-md' : ''}`}>
                                                                     {renderMessage({ ...msg, content: displayContent }, isOwn)}
                                                                 </div>
@@ -3299,14 +3300,14 @@ const ChatPopup: React.FC = () => {
                             )}
 
                             {/* Input Area */}
-                            <div className="border-t border-gray-200 bg-white shrink-0">
+                            <div className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
                                 {/* Reply preview bar */}
                                 {replyingTo[conversationId] && (
-                                    <div className="px-3 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+                                    <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/30 border-b border-blue-100 dark:border-blue-800 flex items-center gap-2">
                                         <Reply size={14} className="text-blue-500 shrink-0" />
                                         <div className="flex-1 min-w-0 border-l-2 border-blue-400 pl-2">
-                                            <div className="text-xs font-medium text-blue-600">{replyingTo[conversationId]!.sender.name}</div>
-                                            <div className="text-xs text-gray-500 truncate">
+                                            <div className="text-xs font-medium text-blue-600 dark:text-blue-400">{replyingTo[conversationId]!.sender.name}</div>
+                                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate">
                                                 {replyingTo[conversationId]!.messageType === 'TEXT' && replyingTo[conversationId]!.content
                                                     ? decryptMessage(replyingTo[conversationId]!.content!)
                                                     : replyingTo[conversationId]!.messageType === 'IMAGE' ? '📷 Hình ảnh'
@@ -3317,9 +3318,9 @@ const ChatPopup: React.FC = () => {
                                         </div>
                                         <button
                                             onClick={() => setReplyingTo(prev => ({ ...prev, [conversationId]: null }))}
-                                            className="p-1 hover:bg-blue-100 rounded-full transition-colors shrink-0"
+                                            className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800 rounded-full transition-colors shrink-0"
                                         >
-                                            <X size={14} className="text-gray-400" />
+                                            <X size={14} className="text-gray-400 dark:text-gray-500" />
                                         </button>
                                     </div>
                                 )}
@@ -3377,7 +3378,7 @@ const ChatPopup: React.FC = () => {
                                             <div className="relative shrink-0">
                                                 <button
                                                     onClick={() => setShowEmojiPicker(showEmojiPicker === conversationId ? null : conversationId)}
-                                                    className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
+                                                    className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 transition-colors"
                                                     title="Chọn emoji"
                                                 >
                                                     <Smile size={18} />
@@ -3387,7 +3388,7 @@ const ChatPopup: React.FC = () => {
                                                 {showEmojiPicker === conversationId && (
                                                     <>
                                                         <div className="fixed inset-0 z-[9990]" onClick={() => setShowEmojiPicker(null)} />
-                                                        <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border p-2 z-[9991] w-64 max-h-48 overflow-y-auto">
+                                                        <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 p-2 z-[9991] w-64 max-h-48 overflow-y-auto">
                                                             <div className="grid grid-cols-8 gap-0.5">
                                                                 {COMMON_EMOJIS.map((emoji, i) => (
                                                                     <button
@@ -3399,7 +3400,7 @@ const ChatPopup: React.FC = () => {
                                                                             }));
                                                                             setShowEmojiPicker(null);
                                                                         }}
-                                                                        className="text-lg p-1 hover:bg-gray-100 rounded transition-colors"
+                                                                        className="text-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                                                                     >
                                                                         {emoji}
                                                                     </button>
@@ -3454,20 +3455,20 @@ const ChatPopup: React.FC = () => {
                                                     }}
                                                     placeholder="Aa"
                                                     rows={1}
-                                                    className="w-full px-3 py-1.5 bg-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
+                                                    className="w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-700 dark:text-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-hidden"
                                                     style={{ minHeight: '36px', maxHeight: '120px' }}
                                                     data-conversation-id={conversationId}
                                                 />
 
                                                 {/* Mention Popup */}
                                                 {showMentionPopup === conversationId && (
-                                                    <div className="absolute bottom-full left-0 mb-2 bg-white rounded-lg shadow-xl border py-1 z-[9999] w-56 max-h-48 overflow-y-auto">
+                                                    <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-800 rounded-lg shadow-xl border dark:border-gray-700 py-1 z-[9999] w-56 max-h-48 overflow-y-auto">
                                                         {getMentionSuggestions(conversationId).length > 0 ? (
                                                             getMentionSuggestions(conversationId).map((member) => (
                                                                 <button
                                                                     key={member.user.id}
                                                                     onClick={() => insertMention(conversationId, member.user.name)}
-                                                                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 transition-colors text-left"
+                                                                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors text-left"
                                                                 >
                                                                     <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden shrink-0">
                                                                         {member.user.id > 0 ? (
@@ -3477,8 +3478,8 @@ const ChatPopup: React.FC = () => {
                                                                         )}
                                                                     </div>
                                                                     <div className="flex-1 min-w-0">
-                                                                        <div className="text-sm font-medium text-gray-800 truncate">{member.user.id === -1 ? 'Nhắc cả nhóm (@all)' : member.user.name}</div>
-                                                                        <div className="text-xs text-gray-500 truncate">{member.user.email}</div>
+                                                                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{member.user.id === -1 ? 'Nhắc cả nhóm (@all)' : member.user.name}</div>
+                                                                        <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{member.user.email}</div>
                                                                     </div>
                                                                 </button>
                                                             ))
@@ -3492,7 +3493,7 @@ const ChatPopup: React.FC = () => {
                                             {/* Voice Button - Always visible */}
                                             <button
                                                 onClick={() => startRecording(conversationId)}
-                                                className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 transition-colors shrink-0"
+                                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 transition-colors shrink-0"
                                                 title="Ghi âm"
                                             >
                                                 <Mic size={18} />
@@ -3518,7 +3519,7 @@ const ChatPopup: React.FC = () => {
 
                         {/* INFO SIDEBAR */}
                         {window.showInfo && (
-                            <div className="w-[300px] border-l border-gray-200 bg-white flex flex-col h-full overflow-hidden shrink-0 animate-slideInRight">
+                            <div className="w-[300px] border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-full overflow-hidden shrink-0 animate-slideInRight">
                                 {/* Sidebar Header */}
                                 <div className="p-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                                     <h3 className="font-semibold text-gray-700">Thông tin</h3>

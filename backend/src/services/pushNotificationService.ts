@@ -811,6 +811,48 @@ export const notifyKanbanDailyReminder = async (
 
 // ==================== KANBAN ACTIVITY NOTIFICATIONS ====================
 
+// Notify personal tasks daily reminder (consolidated for one user)
+export const notifyPersonalTasksDailyReminder = async (
+    userId: number,
+    taskTitles: string[],
+    totalTasks: number
+) => {
+    const title = '📋 Nhắc nhở công việc cá nhân hàng ngày';
+    const body = totalTasks <= 3
+        ? `Bạn có ${totalTasks} công việc cá nhân chưa hoàn thành: ${taskTitles.join(', ')}`
+        : `Bạn có ${totalTasks} công việc cá nhân chưa hoàn thành: ${taskTitles.slice(0, 3).join(', ')} và ${totalTasks - 3} việc khác`;
+
+    // Save to DB for bell icon
+    try {
+        await prisma.notification.create({
+            data: {
+                userId,
+                type: 'TASK_DAILY_REMINDER',
+                title,
+                message: body
+            }
+        });
+    } catch (error) {
+        console.error('[PushService] Error saving task daily reminder to DB:', error);
+    }
+
+    const payload: PushPayload = {
+        title,
+        body,
+        tag: `task-daily-reminder-${userId}`,
+        data: {
+            type: 'task',
+            url: '/'
+        },
+        requireInteraction: true,
+        vibrate: [200, 100, 200]
+    };
+
+    return sendPushToUser(userId, payload);
+};
+
+// ==================== KANBAN ACTIVITY NOTIFICATIONS ====================
+
 // Notify when a new card is created on a kanban board
 export const notifyKanbanCardCreated = async (
     recipientIds: number[],

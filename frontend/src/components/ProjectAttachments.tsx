@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { googleDriveService } from '../services/googleDriveService';
 import { GoogleDriveBrowser } from './GoogleDrive/GoogleDriveBrowser';
-import { FileText, Trash2, CloudUpload, FolderOpen, X, Loader2, Eye, Paperclip, ChevronDown, HardDrive, ExternalLink } from 'lucide-react';
+import { FileText, Trash2, CloudUpload, FolderOpen, X, Loader2, Eye, Paperclip, ChevronDown, HardDrive, ExternalLink, FolderUp, Download, FolderInput } from 'lucide-react';
 import { API_URL } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from './ui/Dialog';
@@ -10,7 +10,9 @@ import type { UploadFile } from './ui/UploadProgressDialog';
 import { FileDownloadButton } from './ui/DownloadOptions';
 import { FilePickerDialog } from './ui/FilePickerDialog';
 import type { SelectedFile } from './ui/FilePickerDialog';
+import { FolderPickerDialog } from './ui/FolderPickerDialog';
 import { OnlyOfficeViewer } from './OnlyOfficeViewer';
+import { ProjectFolderViewer } from './ProjectFolderViewer';
 
 import { ProjectAttachmentViewer } from './ProjectAttachmentViewer';
 
@@ -22,6 +24,9 @@ interface Attachment {
     fileSize: number;
     category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem';
     createdAt: string;
+    isFolder?: boolean;
+    folderName?: string;
+    relativePath?: string;
     uploadedBy: {
         id: number;
         name: string;
@@ -139,6 +144,11 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     const [uploadFilesList, setUploadFilesList] = useState<UploadFile[]>([]);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'completed' | 'error'>('idle');
+
+    // Folder states
+    const [showFolderPicker, setShowFolderPicker] = useState(false);
+    const [viewingFolder, setViewingFolder] = useState<{ folderName: string; category: string } | null>(null);
+    const [pendingFolders, setPendingFolders] = useState<{ files: File[]; folderName: string }[]>([]);
 
     // Close upload dropdown when clicking outside
     useEffect(() => {
@@ -382,6 +392,142 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
         }
     };
 
+    // Upload folder from device
+    const uploadFolderFiles = async (files: File[], folderName: string) => {
+        if (files.length === 0) return;
+
+        const filesToUpload: UploadFile[] = files.map(f => ({
+            name: f.name,
+            size: f.size,
+            progress: 0,
+            status: 'pending' as const
+        }));
+
+        setUploadFilesList(filesToUpload);
+        setUploadProgress(0);
+        setUploadStatus('uploading');
+        setShowUploadDialog(true);
+        setUploading(true);
+
+        try {
+            const formData = new FormData();
+            formData.append('category', activeCategory);
+            formData.append('folderName', folderName);
+
+            // Build relative paths from webkitRelativePath
+            const relativePaths: string[] = [];
+            files.forEach(file => {
+                formData.append('files', file);
+                // webkitRelativePath = "folderName/subfolder/file.txt"
+                // We want the relative path WITHOUT the root folder name
+                const fullPath = (file as any).webkitRelativePath || file.name;
+                const parts = fullPath.split('/');
+                // Remove the root folder part (first segment)
+                const relPath = parts.length > 1 ? parts.slice(1).join('/') : file.name;
+                relativePaths.push(relPath);
+            });
+            formData.append('relativePaths', JSON.stringify(relativePaths));
+
+            const xhr = new XMLHttpRequest();
+            const uploadPromise = new Promise<{ ok: boolean; data?: any; message?: string }>((resolve, reject) => {
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        const percentComplete = Math.round((event.loaded / event.total) * 100);
+                        setUploadProgress(percentComplete);
+                        setUploadFilesList(prev => prev.map(f => ({
+                            ...f,
+                            progress: percentComplete,
+                            status: percentComplete < 100 ? 'uploading' : 'completed'
+                        })));
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve({ ok: true, data: response });
+                        } else {
+                            resolve({ ok: false, message: response.message || 'Lỗi không xác định' });
+                        }
+                    } catch {
+                        resolve({ ok: false, message: 'Lỗi phản hồi từ server' });
+                    }
+                });
+
+                xhr.addEventListener('error', () => reject(new Error('Lỗi kết nối mạng')));
+
+                xhr.open('POST', `${API_URL}/projects/${projectId}/attachments/folder`);
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                xhr.send(formData);
+            });
+
+            const result = await uploadPromise;
+
+            if (result.ok) {
+                setUploadStatus('completed');
+                setUploadFilesList(prev => prev.map(f => ({ ...f, status: 'completed', progress: 100 })));
+                showSuccess(result.data?.message || `Đã tải lên thư mục "${folderName}"`);
+                setPendingFolders(prev => prev.filter(f => f.folderName !== folderName));
+                setSelectedFiles([]);
+
+                setTimeout(() => {
+                    setShowUploadDialog(false);
+                    fetchAttachments();
+                    onRefresh?.();
+                }, 1000);
+            } else {
+                setUploadStatus('error');
+                setUploadFilesList(prev => prev.map(f => ({ ...f, status: 'error', error: result.message })));
+                showError(result.message || 'Lỗi khi tải thư mục');
+            }
+        } catch (error) {
+            console.error('Error uploading folder:', error);
+            setUploadStatus('error');
+            setUploadFilesList(prev => prev.map(f => ({
+                ...f, status: 'error',
+                error: error instanceof Error ? error.message : 'Có lỗi xảy ra'
+            })));
+            showError('Lỗi khi tải thư mục lên');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    // Handle folder selected from personal storage (Kho dữ liệu)
+    const handleStorageFolderSelected = async (folder: { id: number; name: string }) => {
+        setUploading(true);
+        setShowFolderPicker(false);
+        try {
+            const response = await fetch(`${API_URL}/projects/${projectId}/attachments/folder-from-storage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    folderId: folder.id,
+                    category: activeCategory
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                showSuccess(data.message || `Đã đính kèm thư mục "${folder.name}"`);
+                fetchAttachments();
+                onRefresh?.();
+            } else {
+                const err = await response.json();
+                showError(err.message || 'Lỗi khi đính kèm thư mục');
+            }
+        } catch (error) {
+            console.error('Error attaching folder from storage:', error);
+            showError('Lỗi khi đính kèm thư mục từ kho dữ liệu');
+        } finally {
+            setUploading(false);
+        }
+    };
+
     const renderSection = (
         title: string,
         category: 'TaiLieuDinhKem' | 'NhanVienDinhKem' | 'PhoiHopDinhKem',
@@ -391,6 +537,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
     ) => {
         const isDropdownOpen = dropdownCategory === category;
         const hasSelectedFiles = activeCategory === category && (selectedFiles.length > 0 || selectedLinks.length > 0);
+        const hasPendingFolder = activeCategory === category && pendingFolders.length > 0;
 
         const handleUploadClick = () => {
             if (isDropdownOpen) {
@@ -431,17 +578,7 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                     <button
                                         onClick={() => {
                                             setDropdownCategory(null);
-                                            fileInputRef.current?.click();
-                                        }}
-                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
-                                    >
-                                        <HardDrive size={16} className="text-blue-500" />
-                                        <span className="text-gray-700">File từ thiết bị</span>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setDropdownCategory(null);
-                                            // Handle folder selection
+                                            // Handle folder selection - upload as folder structure
                                             const folderInput = document.createElement('input');
                                             folderInput.type = 'file';
                                             folderInput.setAttribute('webkitdirectory', '');
@@ -452,15 +589,30 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                                 const target = e.target as HTMLInputElement;
                                                 if (target.files && target.files.length > 0) {
                                                     const newFiles = Array.from(target.files);
-                                                    setSelectedFiles(prev => [...prev, ...newFiles]);
+                                                    // Extract folder name from webkitRelativePath
+                                                    const firstPath = (newFiles[0] as any).webkitRelativePath || '';
+                                                    const rootFolderName = firstPath.split('/')[0] || 'Unnamed';
+                                                    setPendingFolders(prev => [...prev, { files: newFiles, folderName: rootFolderName }]);
                                                 }
                                             };
                                             folderInput.click();
                                         }}
                                         className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
                                     >
-                                        <FolderOpen size={16} className="text-indigo-500" />
+                                        <FolderUp size={16} className="text-indigo-500" />
                                         <span className="text-gray-700">Thư mục từ thiết bị</span>
+                                    </button>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <p className="px-3 py-1 text-xs text-gray-400 font-medium uppercase tracking-wider">File đơn lẻ</p>
+                                    <button
+                                        onClick={() => {
+                                            setDropdownCategory(null);
+                                            fileInputRef.current?.click();
+                                        }}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                        <HardDrive size={16} className="text-blue-500" />
+                                        <span className="text-gray-700">File từ thiết bị</span>
                                     </button>
                                     <button
                                         onClick={() => {
@@ -470,7 +622,19 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                                         className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
                                     >
                                         <FolderOpen size={16} className="text-amber-500" />
-                                        <span className="text-gray-700">Từ Kho dữ liệu</span>
+                                        <span className="text-gray-700">File từ Kho dữ liệu</span>
+                                    </button>
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    <p className="px-3 py-1 text-xs text-gray-400 font-medium uppercase tracking-wider">Thư mục</p>
+                                    <button
+                                        onClick={() => {
+                                            setDropdownCategory(null);
+                                            setShowFolderPicker(true);
+                                        }}
+                                        className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 text-sm transition-colors"
+                                    >
+                                        <FolderInput size={16} className="text-amber-600" />
+                                        <span className="text-gray-700">Thư mục từ Kho dữ liệu</span>
                                     </button>
                                     <div className="border-t border-gray-100 my-1"></div>
                                     <button
@@ -490,6 +654,47 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                 </div>
 
                 <div className="p-4 space-y-4">
+                    {/* Pending Folder Upload Area */}
+                    {hasPendingFolder && pendingFolders.length > 0 && (
+                        <div className="w-full mb-4 space-y-2 bg-indigo-50/50 p-3 rounded-xl border border-indigo-200">
+                            {pendingFolders.map((pendingFolder, folderIdx) => (
+                                <div key={`pending-folder-${folderIdx}`} className="flex items-center gap-2 text-sm bg-white px-3 py-2.5 rounded-lg border border-indigo-200">
+                                    <FolderUp size={18} className="text-indigo-500 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-indigo-700 truncate">📁 {pendingFolder.folderName}</p>
+                                        <p className="text-xs text-gray-500">{pendingFolder.files.length} tệp • {formatFileSize(pendingFolder.files.reduce((sum, f) => sum + f.size, 0))}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setPendingFolders(prev => prev.filter((_, i) => i !== folderIdx))}
+                                        className="p-1 text-gray-400 hover:text-red-500 rounded"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                            <div className="flex gap-2 mt-2">
+                                <button
+                                    onClick={async () => {
+                                        for (const pf of pendingFolders) {
+                                            await uploadFolderFiles(pf.files, pf.folderName);
+                                        }
+                                    }}
+                                    disabled={uploading}
+                                    className="flex-1 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                >
+                                    {uploading ? <Loader2 size={16} className="animate-spin" /> : <FolderUp size={16} />}
+                                    {uploading ? 'Đang tải...' : `Tải ${pendingFolders.length} thư mục lên`}
+                                </button>
+                                <button
+                                    onClick={() => setPendingFolders([])}
+                                    className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm transition-colors"
+                                >
+                                    Hủy
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Selected Files Area */
                         hasSelectedFiles && (
                             <div className="w-full mb-4 space-y-2 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
@@ -548,20 +753,141 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {/* Local Attachments */}
-                            <div className="space-y-2">
-                                {sectionAttachments.map(attachment => (
-                                    <AttachmentItem
-                                        key={attachment.id}
-                                        attachment={attachment}
-                                        downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
-                                        token={token || ''}
-                                        onView={() => setViewingAttachment(attachment)}
-                                        onDelete={() => deleteAttachment(attachment)}
-                                        canDelete={isAdmin || isManager || (attachment.uploadedBy.id === (useAuth().user?.id || 0))}
-                                    />
-                                ))}
-                            </div>
+                            {/* Folder Groups */}
+                            {(() => {
+                                const folderAttachments = sectionAttachments.filter(a => a.isFolder && a.folderName);
+                                const folderNames = [...new Set(folderAttachments.map(a => a.folderName!))];
+                                const individualAttachments = sectionAttachments.filter(a => !a.isFolder);
+                                return (
+                                    <>
+                                        {/* Render folder groups */}
+                                        {folderNames.length > 0 && (
+                                            <div className="space-y-2">
+                                                {folderNames.map(fname => {
+                                                    const folderFiles = folderAttachments.filter(a => a.folderName === fname);
+                                                    const totalSize = folderFiles.reduce((sum, f) => sum + f.fileSize, 0);
+                                                    const uploader = folderFiles[0]?.uploadedBy;
+                                                    const uploadDate = folderFiles[0]?.createdAt;
+                                                    return (
+                                                        <div
+                                                            key={`folder-${fname}`}
+                                                            className="flex items-center gap-3 p-3 bg-indigo-50/50 rounded-lg hover:bg-indigo-100 transition-colors group cursor-pointer border border-indigo-100"
+                                                            onClick={() => setViewingFolder({ folderName: fname, category })}
+                                                        >
+                                                            <div className="shrink-0 flex items-center justify-center w-8">
+                                                                <span className="text-2xl">📁</span>
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-sm font-medium text-indigo-700 hover:underline truncate">
+                                                                    {fname}
+                                                                </p>
+                                                                <p className="text-xs text-gray-500">
+                                                                    {folderFiles.length} tệp • {formatFileSize(totalSize)}
+                                                                    {uploader && <> • {uploader.name}</>}
+                                                                    {uploadDate && (
+                                                                        <span className="text-gray-400 ml-2">
+                                                                            {new Date(uploadDate).toLocaleDateString('vi-VN')}
+                                                                        </span>
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setViewingFolder({ folderName: fname, category });
+                                                                    }}
+                                                                    className="p-2 text-indigo-600 hover:bg-indigo-200 rounded-lg transition-colors"
+                                                                    title="Xem thư mục"
+                                                                >
+                                                                    <Eye size={16} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={async (e) => {
+                                                                        e.stopPropagation();
+                                                                        try {
+                                                                            const response = await fetch(
+                                                                                `${API_URL}/projects/${projectId}/attachments/folder/download?folderName=${encodeURIComponent(fname)}`,
+                                                                                { headers: { Authorization: `Bearer ${token}` } }
+                                                                            );
+                                                                            if (response.ok) {
+                                                                                const blob = await response.blob();
+                                                                                const url = window.URL.createObjectURL(blob);
+                                                                                const a = document.createElement('a');
+                                                                                a.href = url;
+                                                                                a.download = `${fname}.zip`;
+                                                                                document.body.appendChild(a);
+                                                                                a.click();
+                                                                                document.body.removeChild(a);
+                                                                                window.URL.revokeObjectURL(url);
+                                                                            }
+                                                                        } catch (err) {
+                                                                            console.error('Error downloading folder:', err);
+                                                                        }
+                                                                    }}
+                                                                    className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+                                                                    title="Tải xuống ZIP"
+                                                                >
+                                                                    <Download size={16} />
+                                                                </button>
+                                                                {(isAdmin || isManager || (uploader && uploader.id === (useAuth().user?.id || 0))) && (
+                                                                    <button
+                                                                        onClick={async (e) => {
+                                                                            e.stopPropagation();
+                                                                            const confirmed = await showConfirm(
+                                                                                `Bạn có chắc muốn xóa thư mục "${fname}" (${folderFiles.length} tệp)?`,
+                                                                                { title: 'Xóa thư mục' }
+                                                                            );
+                                                                            if (confirmed) {
+                                                                                try {
+                                                                                    const response = await fetch(`${API_URL}/projects/${projectId}/attachments/folder`, {
+                                                                                        method: 'DELETE',
+                                                                                        headers: {
+                                                                                            'Content-Type': 'application/json',
+                                                                                            Authorization: `Bearer ${token}`
+                                                                                        },
+                                                                                        body: JSON.stringify({ folderName: fname })
+                                                                                    });
+                                                                                    if (response.ok) {
+                                                                                        showSuccess(`Đã xóa thư mục "${fname}"`);
+                                                                                        fetchAttachments();
+                                                                                        onRefresh?.();
+                                                                                    }
+                                                                                } catch (err) {
+                                                                                    showError('Lỗi khi xóa thư mục');
+                                                                                }
+                                                                            }
+                                                                        }}
+                                                                        className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+                                                                        title="Xóa thư mục"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Individual Attachments */}
+                                        <div className="space-y-2">
+                                            {individualAttachments.map(attachment => (
+                                                <AttachmentItem
+                                                    key={attachment.id}
+                                                    attachment={attachment}
+                                                    downloadUrl={`${API_URL}/projects/attachments/${attachment.id}/download`}
+                                                    token={token || ''}
+                                                    onView={() => setViewingAttachment(attachment)}
+                                                    onDelete={() => deleteAttachment(attachment)}
+                                                    canDelete={isAdmin || isManager || (attachment.uploadedBy.id === (useAuth().user?.id || 0))}
+                                                />
+                                            ))}
+                                        </div>
+                                    </>
+                                );
+                            })()}
 
                             {/* Google Drive Links - integrated here if category matches or separate section? 
                                 Requirements say "Tree combined".
@@ -662,6 +988,14 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                 </div>
             )}
 
+            <FolderPickerDialog
+                isOpen={showFolderPicker}
+                onClose={() => setShowFolderPicker(false)}
+                onSelect={handleStorageFolderSelected}
+                token={token || ''}
+                title="Chọn thư mục từ kho dữ liệu"
+            />
+
             <input
                 type="file"
                 ref={fileInputRef}
@@ -713,6 +1047,21 @@ export const ProjectAttachments: React.FC<ProjectAttachmentsProps> = ({
                         token={token || ''}
                     />
                 )
+            )}
+
+            {/* Folder Viewer */}
+            {viewingFolder && (
+                <ProjectFolderViewer
+                    projectId={projectId}
+                    folderName={viewingFolder.folderName}
+                    category={viewingFolder.category}
+                    onClose={() => setViewingFolder(null)}
+                    onDelete={() => {
+                        fetchAttachments();
+                        onRefresh?.();
+                    }}
+                    canDelete={isAdmin || isManager}
+                />
             )}
         </>
     );

@@ -150,6 +150,32 @@ export const AttachmentPicker: React.FC<AttachmentPickerProps> = ({
                             <span className="text-gray-700">File từ thiết bị</span>
                         </button>
                         <button
+                            onClick={() => {
+                                setIsOpen(false);
+                                // Create a folder input dynamically
+                                const folderInput = document.createElement('input');
+                                folderInput.type = 'file';
+                                folderInput.setAttribute('webkitdirectory', '');
+                                folderInput.setAttribute('directory', '');
+                                folderInput.multiple = true;
+                                folderInput.style.display = 'none';
+                                folderInput.onchange = (e) => {
+                                    const target = e.target as HTMLInputElement;
+                                    if (target.files && target.files.length > 0) {
+                                        onFilesSelected(Array.from(target.files));
+                                    }
+                                    document.body.removeChild(folderInput);
+                                };
+                                document.body.appendChild(folderInput);
+                                folderInput.click();
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 transition-colors text-sm"
+                        >
+                            <FolderOpen size={16} className="text-indigo-500" />
+                            <span className="text-gray-700">Thư mục từ thiết bị</span>
+                        </button>
+                        <div className="border-t border-gray-100 my-1"></div>
+                        <button
                             onClick={handleSelectFromFolder}
                             className="w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center gap-2 transition-colors text-sm"
                         >
